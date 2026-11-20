@@ -15,4 +15,9 @@ an explicit promotion pull request may copy approved files here.
 
 Public contributions are welcome for released documentation. Do not include
 customer data, secrets, roadmap details, or unreleased functionality. The
-portal validates navigation, links, and frontmatter before release.
+portal validates the public-content boundary before release.
+
+## License
+
+No open-source license has been selected for this repository yet. Choose and
+add one before accepting contributions under an open-source license.
