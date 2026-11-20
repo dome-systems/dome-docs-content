@@ -1,0 +1,25 @@
+name: Preview public content
+
+on:
+  pull_request:
+    paths: ["content/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm run check
+      - name: Request protected portal preview
+        env:
+          DISPATCH_TOKEN: ${{ secrets.PORTAL_PREVIEW_DISPATCH_TOKEN }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          curl --fail --request POST \
+            --url https://api.github.com/repos/dome-systems/web-developer/dispatches \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer ${DISPATCH_TOKEN}" \
+            --data "{\"event_type\":\"content-preview\",\"client_payload\":{\"content_repository\":\"dome-systems/dome-docs-content\",\"content_ref\":\"${SHA}\",\"visibility\":\"public\"}}"
