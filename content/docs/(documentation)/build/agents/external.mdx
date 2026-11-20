@@ -1,0 +1,965 @@
+---
+title: External agents
+sidebarTitle: External agents
+description: Register external agents, issue credentials, allow resources, and manage lifecycle
+---
+
+import { agent } from '@/snippets/glossary';
+
+<p>{agent}</p>
+
+Refer to [Agents](/concepts/agents) concept for how agent identity works.
+
+## Overview
+
+An external agent runs in your own runtime. Registering it creates a durable identity for the application or process, but does not grant access. An API key lets the runtime authenticate as that identity. Allowed resources, gateway membership, and [Rules](/govern/rules) determine what requests Dome permits.
+
+Because credentials and access are separate, you can rotate a key without changing permissions or change permissions without issuing a new key.
+
+Configure [delegated identity](#delegated-identity) only when access must depend on the person the agent acts for. When one agent spawns others, set a [parent](#hierarchy) at registration time.
+
+For an external agent, the typical workflow is:
+
+1. [Register the agent](#register-agent) to create the identity.
+2. [Get the agent](#get-agent) to confirm the record and note the workspace gateway endpoint.
+3. Allow the [resources](#allowed-resources) it needs.
+4. [Create an API key](#create-key) for the runtime.
+5. Point the client at Dome. Refer to [Develop](/develop#authenticate).
+
+### Allowed resources
+
+An agent reaches only the resources you allow it: model pools, individual models, MCP tools, and gateways. When an agent allows a gateway, Dome lets it use that endpoint.
+
+Allowing a resource is shorthand for creating a rule. Each entry generates a rule in the agent's rule bundle which the gateway enforces on the next request without a separate deploy. Because it creates rules, allowing a resource needs `rules.deploy` in addition to the permission to edit the agent, so someone with the developer role can register an agent and change its metadata but cannot change which resources it reaches.
+
+Each selection generates the actions it implies:
+
+| You allow | Actions Dome permits |
+|-----------|----------------------|
+| model pool or model | `llm:invoke` |
+| tool | `mcp:call`, `mcp:discover` |
+| gateway | `llm:invoke`, `mcp:call`, `mcp:discover` |
+
+When the shorthand cannot express a condition, such as a time window, a PII field, or an act-as claim, create [Rules](/govern/rules) directly. A generated bundle adds to workspace defaults rather than replacing them.
+
+You can allow resources when you [register an agent](#register-agent) or [change them later](#change-allowed-resources).
+
+### Delegated identity
+
+An agent can act for a person rather than only for itself. When it presents an act-as claim, Dome verifies the claim before authorizing the request, and the audit trail records the end user alongside the agent.
+
+On the agent you choose the verification method (`oidc`, `hmac`, `bound`, or `none`), whether a claim is mandatory on every request, which provider to use, and optional allow-lists by group, email, or subject. An agent with no restrictions accepts any verified identity. Like allowed resources, these settings generate rules, so changing them needs `rules.deploy`.
+
+Workspace providers, the workspace floor, and claim-aware rules are on [Delegated agents](/build/agents/delegated). You can configure per-agent settings when you [register](#register-agent) or [update](#change-end-user-identity) the agent.
+
+### Hierarchy
+
+An agent can have a parent. The parent and its descendants form a hierarchy, which helps when one agent spawns or manages others and you want to act on them together. A hierarchy grants no access on its own, and each agent reaches only what you allow it.
+
+A hierarchy can be at most 10 levels deep, and a parent and child must belong to the same tenant. You can set an agent's parent when you [register](#register-agent) it. An update cannot change it afterward. How lifecycle operations reach descendants is under [Manage lifecycle](#manage-lifecycle).
+
+### Token lifetime
+
+Each agent carries its own access-token lifetime. Set it on [register](#register-agent) or [update](#update-agent) with `--token-ttl` (CLI) or `token_ttl` (MCP and API), as a duration such as `15m`. The default is `10m` and the accepted range is `1m` to `24h`.
+
+Shorten the lifetime for ephemeral jobs. Lengthen it only when refresh overhead justifies the larger exposure window. Clearing the value returns the agent to the `10m` default.
+
+## Requirements
+
+Before you begin:
+
+- Install and authenticate the Dome CLI, then select a workspace context
+- Create or select a [Gateway](/build/gateways), attach the required resources, and grant the agent access
+
+### Permissions
+
+Agent registry, lifecycle, and key operations require platform permissions. Each operation states the permission it requires. For exhaustive flags, tool parameters, and endpoint contracts, refer to the [CLI](/cli/build/agents), [MCP](/reference/mcp/agents), and [API](/api/tag/agents/register-agent) references.
+
+| Default roles | Permission | Grants |
+|---------------|------------|--------|
+| All workspace roles | `agents.view` | Get and list agents and keys |
+| `admin`, `operator`, `developer` | `agents.register` | Register and update agents |
+| `admin`, `operator`, `security`, `developer` | `agents.suspend` | Suspend and reactivate agents |
+| `admin`, `operator`, `developer` | `agents.revoke` | Revoke agents |
+| `admin`, `operator` | `agents.delete` | Delete agents |
+| `admin`, `operator`, `developer` | `agentkeys.manage` | Create, rotate, or revoke agent keys |
+| `admin`, `operator`, `security` | `rules.deploy` | Change allowed resources or end-user identity (with `agents.register`) |
+| All workspace roles | `rules.view` | View generated rule bundles |
+
+## Register agent
+
+Register an agent to create the record that credentials, allowed resources, and lifecycle operations attach to. You can set [allowed resources](#allowed-resources), [end-user identity](#delegated-identity), a [parent](#hierarchy), and a [token lifetime](#token-lifetime) in the same call.
+
+<Callout icon="key">Requires `agents.register`, plus `rules.deploy` if you set allowed resources or end-user identity in the same call.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome agents register \
+      --name "data-pipeline-agent"
+    ```
+
+    Add `--parent-id` to place the agent in a hierarchy, `--metadata key=value` for your own labels, `--token-ttl 15m` to override the default token lifetime, and `--if-not-exists` to return the existing agent instead of failing when the name is taken.
+
+    <Callout icon="terminal">Reference: [`dome agents register`](/cli/build/agents#register-agent)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_agents_register`
+
+    ```json
+    {
+      "name": "data-pipeline-agent"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_agents_register`](/reference/mcp/agents#agents-register)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    POST /v1/agents
+    Content-Type: application/json
+
+    {
+      "name": "data-pipeline-agent",
+      "workspace_id": "{{WORKSPACE_ID}}"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`RegisterAgent`](/api/tag/agents/register-agent)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Register an agent"
+    Register an agent named "data-pipeline-agent".
+    ```
+  </Tab>
+</Tabs>
+
+```json Response
+{
+  "id": "a1b2c3d4-...",
+  "name": "data-pipeline-agent",
+  "status": "provisioned"
+}
+```
+
+A new agent starts in `provisioned` and becomes `active` on its first gateway request. Refer to [Manage lifecycle](#manage-lifecycle) for the full state model.
+
+### Register from a file
+
+Register an agent from a YAML or JSON file when a reviewable definition is clearer than a long flag list, such as in CI. The file shape mirrors `RegisterAgentRequest`, the same schema the SDKs and Terraform provider consume, so a misspelled field fails fast instead of dropping silently. The workspace always comes from the active context. A `workspace_id` in the file is ignored.
+
+```yaml agent.yaml
+name: data-pipeline-agent
+allowed_pool_names: [openai-prod]
+allowed_tools: [github/list_repos]
+```
+
+```bash
+dome agents register --file agent.yaml
+```
+
+<Callout icon="terminal">Reference: [`dome agents register --file`](/cli/build/agents#register-from-a-file)</Callout>
+
+## Update agent
+
+Update an agent to change its metadata or [token lifetime](#token-lifetime). Only the fields you send change, and list fields replace rather than merge.
+
+<Callout icon="key">Requires `agents.register`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome agents update data-pipeline-agent \
+      --metadata environment=production \
+      --token-ttl 15m
+    ```
+
+    Passing `--token-ttl ""` resets the agent to the `10m` default.
+
+    <Callout icon="terminal">Reference: [`dome agents update`](/cli/build/agents#update-agent)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_agents_update`
+
+    ```json
+    {
+      "agent_id": "data-pipeline-agent",
+      "metadata": { "environment": "production" },
+      "token_ttl": "15m"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_agents_update`](/reference/mcp/agents#agents-update)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    PATCH /v1/agents/{{AGENT_ID}}
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "metadata": { "environment": "production" }
+    }
+    ```
+
+    <Callout icon="code">Reference: [`UpdateAgent`](/api/tag/agents/update-agent)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Update an agent"
+    Update agent "data-pipeline-agent" to add metadata environment=production.
+    ```
+  </Tab>
+</Tabs>
+
+### Change allowed resources
+
+You can change which pools, models, tools, and gateways the agent may reach. Refer to [Allowed resources](#allowed-resources) for what these grants mean. When you allow models, a pool is usually the better choice than an individual model, because a pool can [fail over and load-balance](/connect/pools).
+
+<Callout icon="key">Requires `agents.register` and `rules.deploy`, because every change regenerates the agent's rule bundle.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome agents update data-pipeline-agent \
+      --pool "gpt-4-prod" \
+      --tool "github/list-issues" \
+      --tool "github/create-comment" \
+      --gateway "{{GATEWAY_ID}}"
+    ```
+
+    Tool names take the form `<connection-name>/<tool-name>`. When a pool is not appropriate, `--model` allows a specific model connection.
+
+    <Callout icon="terminal">Reference: [`dome agents update`](/cli/build/agents#update-agent)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_agents_update`
+
+    ```json
+    {
+      "agent_id": "data-pipeline-agent",
+      "allowed_pool_names": ["gpt-4-prod"],
+      "allowed_tools": ["github/list-issues", "github/create-comment"]
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_agents_update`](/reference/mcp/agents#agents-update)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    PATCH /v1/agents/{{AGENT_ID}}
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "allowed_pool_names": ["gpt-4-prod"],
+      "allowed_direct_model_names": [],
+      "allowed_tools": ["github/list-issues", "github/create-comment"]
+    }
+    ```
+
+    <Callout icon="code">Reference: [`UpdateAgent`](/api/tag/agents/update-agent)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Change allowed resources"
+    Restrict agent "data-pipeline-agent" to pool "gpt-4-prod" and tools github/list-issues and github/create-comment.
+    ```
+  </Tab>
+</Tabs>
+
+When you change one of these fields, the value you send replaces the existing list rather than merging into it, so a partial list drops whatever it omits and an empty value clears the list. API clients may use the canonical ID forms `allowed_pool_ids`, `allowed_direct_model_ids`, and `allowed_tool_ids`; they have the same `rules.deploy` requirement as the name forms, including during registration. Supply names or IDs rather than conflicting versions of both. In the dashboard, the agent detail page hides the edit control on Delegation when the caller lacks `rules.deploy`, and the edit form shows a banner explaining the limit.
+
+The generated rules propagate through rule sync. Until an agent's generated rules match its saved access configuration, Dome withholds the affected gateway admission rather than applying a partial grant.
+
+### Change end-user identity
+
+You can also change how Dome verifies the end user an agent acts for, and which identities it may present. Refer to [Delegated identity](#delegated-identity) and [Delegated agents](/build/agents/delegated) for providers and the workspace floor.
+
+<Callout icon="key">Requires `agents.register` and `rules.deploy`.</Callout>
+
+| Setting | Flag |
+|---|---|
+| Verification method | `--actas-method` (`none`, `oidc`, `hmac`, or `bound`) |
+| Mandatory claim | `--actas-required` |
+| Workspace provider | `--actas-provider` |
+| Inline OIDC or HMAC credentials | `--actas-oidc-url`, `--actas-hmac-secret` |
+| Acceptable identities | `--actas-allowed-group`, `--actas-allowed-email`, `--actas-allowed-subject` |
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome agents update support-bot \
+      --actas-method oidc \
+      --actas-required \
+      --actas-allowed-group "support-engineers"
+    ```
+
+    <Callout icon="terminal">Reference: [`dome agents update`](/cli/build/agents#update-agent)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_agents_update`
+
+    ```json
+    {
+      "agent_id": "support-bot",
+      "actas_method": "oidc",
+      "actas_required": true,
+      "actas_allowed_groups": ["support-engineers"]
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_agents_update`](/reference/mcp/agents#agents-update)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    PATCH /v1/agents/{{AGENT_ID}}
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "actas_method": "oidc",
+      "actas_required": true,
+      "actas_allowed_groups": ["support-engineers"]
+    }
+    ```
+
+    <Callout icon="code">Reference: [`UpdateAgent`](/api/tag/agents/update-agent)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Require verified end-user identity"
+    Require OIDC-verified act-as identity on agent "support-bot" and allow only the support-engineers group.
+    ```
+  </Tab>
+</Tabs>
+
+Populating an acceptable-identity list denies any request whose verified claim is not on the list. Leaving all three empty accepts any verified identity, and workspace-level act-as enforcement still applies.
+
+## Get agent
+
+Retrieve an agent by name or UUID. Before you configure a runtime, you should retrieve an agent's information to confirm its status and the endpoint its traffic should reach.
+
+<Callout icon="key">Requires `agents.view`.</Callout>
+
+Agent credentials cannot list the workspace roster, even when the agent can
+read its own record by ID. Use a platform user or platform key with
+`agents.view` for this operation.
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome agents get data-pipeline-agent
+    ```
+
+    <Callout icon="terminal">Reference: [`dome agents get`](/cli/build/agents#get-agent)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_agents_get`
+
+    ```json
+    {
+      "agent_id": "{{AGENT_ID}}",
+      "gateway_id": "{{GATEWAY_ID}}"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_agents_get`](/reference/mcp/agents#agents-get)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    GET /v1/agents/{{AGENT_ID}}?workspace_id={{WORKSPACE_ID}}&gateway_id={{GATEWAY_ID}}
+    ```
+
+    <Callout icon="code">Reference: [`GetAgent`](/api/tag/agents/get-agent)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Get an agent"
+    Get "data-pipeline-agent" for Gateway "{{GATEWAY_ID}}" and confirm its status and connection endpoints.
+    ```
+  </Tab>
+</Tabs>
+
+When `gateway_id` is supplied, the response includes the agent record and that accessible gateway's complete protocol endpoints. Omit it for metadata only.
+
+```json Response
+{
+  "agent": {
+    "id": "a1b2c3d4-…",
+    "name": "data-pipeline-agent",
+    "status": "active"
+  },
+  "gateway_id": "{{GATEWAY_ID}}",
+  "gateway_endpoints": {
+    "gateway_id": "{{GATEWAY_ID}}",
+    "gateway_url": "https://gateway.example.dome.dev/gateways/{{GATEWAY_ID}}",
+    "mcp_url": "https://gateway.example.dome.dev/gateways/{{GATEWAY_ID}}/mcp",
+    "openai_base_url": "https://gateway.example.dome.dev/gateways/{{GATEWAY_ID}}/v1",
+    "anthropic_base_url": "https://gateway.example.dome.dev/gateways/{{GATEWAY_ID}}"
+  }
+}
+```
+
+The dashboard shows the same pair on the agent detail page's Identity card, each with a copy button.
+
+## List agents
+
+Retrieve a list of agents in a workspace. You can narrow the results by filtering on status, such as to find every suspended agent.
+
+<Callout icon="key">Requires `agents.view`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome agents list --status active
+    ```
+
+    A list returns 100 agents unless `--limit` says otherwise.
+
+    <Callout icon="terminal">Reference: [`dome agents list`](/cli/build/agents#list-agents)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_agents_list`
+
+    ```json
+    {
+      "status": "active",
+      "limit": 25
+    }
+    ```
+
+    `offset` pages through results beyond the limit.
+
+    <Callout icon="cpu">Reference: [`dome_agents_list`](/reference/mcp/agents#agents-list)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    GET /v1/agents?workspace_id={{WORKSPACE_ID}}&status=active
+    ```
+
+    <Callout icon="code">Reference: [`ListAgents`](/api/tag/agents/list-agents)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="List agents"
+    List the active agents in this workspace.
+    ```
+  </Tab>
+</Tabs>
+
+## Manage lifecycle
+
+An agent moves through four states. Provisioned and active agents can send traffic. Suspended and revoked agents are denied.
+
+| State | Traffic | How it leaves this state |
+|---|---|---|
+| `provisioned` | Allowed | Becomes `active` automatically on the first gateway request |
+| `active` | Allowed | An operator [suspends](#suspend) or [revokes](#revoke) it |
+| `suspended` | Denied | An operator [reactivates](#reactivate) or [revokes](#revoke) it |
+| `revoked` | Denied | Terminal. You can [delete](#delete) the record, but you cannot undo revocation |
+
+When agents are in a [hierarchy](#hierarchy), lifecycle operations reach descendants differently:
+
+| Operation | Reach |
+|---|---|
+| Suspend | The agent alone, or the agent plus its active descendants when you pass `--cascade` |
+| Reactivate | The agent alone. Undoing a cascaded suspension takes one call per agent |
+| Revoke | The agent and every descendant, always, depth-first, any state |
+| Delete | The agent alone, or the agent plus its descendants when you request a cascade |
+
+Parent and child must already share a tenant. Hierarchy does not grant access. Full transition detail is on the [Agent Lifecycle](/concepts/agents/agent-lifecycle) concept.
+
+### Suspend
+
+Suspend an agent to deny its requests until you reactivate it. Suspension is reversible. With cascade, it also suspends active descendants.
+
+<Callout icon="key">Requires `agents.suspend`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome agents suspend data-pipeline-agent --reason "maintenance window"
+    ```
+
+    <Callout icon="terminal">Reference: [`dome agents suspend`](/cli/build/agents#suspend-agent)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_agents_suspend`
+
+    ```json
+    {
+      "agent_id": "data-pipeline-agent",
+      "reason": "maintenance window",
+      "cascade": false
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_agents_suspend`](/reference/mcp/agents#agents-suspend)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    POST /v1/agents/{{AGENT_ID}}/suspend
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "reason": "maintenance window"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`SuspendAgent`](/api/tag/agents/suspend-agent)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Suspend an agent"
+    Suspend agent "data-pipeline-agent" for a maintenance window.
+    ```
+  </Tab>
+</Tabs>
+
+### Reactivate
+
+Reactivate a suspended agent to restore its traffic. Reactivation applies only to an agent in the `suspended` state, and it covers one agent, so a cascaded suspension takes one reactivation per agent.
+
+<Callout icon="key">Requires `agents.suspend`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome agents reactivate data-pipeline-agent
+    ```
+
+    <Callout icon="terminal">Reference: [`dome agents reactivate`](/cli/build/agents#reactivate-agent)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_agents_reactivate`
+
+    ```json
+    {
+      "agent_id": "data-pipeline-agent"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_agents_reactivate`](/reference/mcp/agents#agents-reactivate)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    POST /v1/agents/{{AGENT_ID}}/reactivate
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`ReactivateAgent`](/api/tag/agents/reactivate-agent)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Reactivate an agent"
+    Reactivate agent "data-pipeline-agent".
+    ```
+  </Tab>
+</Tabs>
+
+### Revoke
+
+Revoke an agent to decommission it permanently. Its record and audit history remain readable.
+
+<Callout icon="key">Requires `agents.revoke`.</Callout>
+
+<Callout type="warning">
+  Revocation cannot be reversed and always cascades to every descendant agent.
+</Callout>
+
+<Tabs items={["CLI","MCP","API"]}>
+  <Tab value="CLI">
+    ```bash
+    dome agents revoke data-pipeline-agent --reason "decommissioned"
+    ```
+
+    <Callout icon="terminal">Reference: [`dome agents revoke`](/cli/build/agents#revoke-agent)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_agents_revoke`
+
+    ```json
+    {
+      "agent_id": "data-pipeline-agent",
+      "reason": "decommissioned"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_agents_revoke`](/reference/mcp/agents#agents-revoke)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    POST /v1/agents/{{AGENT_ID}}/revoke
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "reason": "decommissioned"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`RevokeAgent`](/api/tag/agents/revoke-agent)</Callout>
+  </Tab>
+</Tabs>
+
+### Delete
+
+Delete a revoked agent to remove it and all of its data. Deletion works only on a revoked agent and rejects an agent in any other state.
+
+<Callout icon="key">Requires `agents.delete`.</Callout>
+
+<Callout type="warning">
+  Deletion removes the agent record and its data irreversibly, including its keys. Revoke instead when you need the record retained.
+</Callout>
+
+<Tabs items={["CLI","MCP","API"]}>
+  <Tab value="CLI">
+    ```bash
+    dome agents delete data-pipeline-agent --reason "offboarded"
+    ```
+
+    Deletion covers one agent, and it fails when that agent still has descendants. Adding `--cascade` deletes the agent and its descendants in one call, deepest first, and every descendant must already be revoked.
+
+    ```bash
+    dome agents delete data-pipeline-agent --cascade
+    ```
+
+    <Callout icon="terminal">Reference: [`dome agents delete`](/cli/build/agents#delete-agent)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_agents_delete`
+
+    ```json
+    {
+      "agent_id": "data-pipeline-agent",
+      "reason": "offboarded",
+      "cascade": false
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_agents_delete`](/reference/mcp/agents#agents-delete)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    DELETE /v1/agents/{{AGENT_ID}}?workspace_id={{WORKSPACE_ID}}&reason=offboarded
+    ```
+
+    <Callout icon="code">Reference: [`DeleteAgent`](/api/tag/agents/delete-agent)</Callout>
+  </Tab>
+</Tabs>
+
+## Manage API keys
+
+An API key is the credential the agent runtime presents to Dome. An agent can hold several keys, so you can rotate a credential or keep one key per environment. Keys scope to the agent's tenant and workspace.
+
+<Callout icon="key">Requires `agentkeys.manage` to create, rotate, or revoke a key, and `agents.view` to list them.</Callout>
+
+<Callout type="warning">
+  The token is returned once, when you create or rotate a key. Store it immediately, because it cannot be retrieved again.
+</Callout>
+
+### Create key
+
+Create a key to receive the one-time `token`, selected `gateway_id`, and complete `gateway_endpoints`. Supply a gateway when the agent can access more than one.
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome agents create-key data-pipeline-agent --name "default" --gateway "{{GATEWAY_ID}}"
+    ```
+
+    <Callout icon="terminal">Reference: [`dome agents create-key`](/cli/build/agents#create-key)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_agents_create_key`
+
+    ```json
+    {
+      "agent": "data-pipeline-agent",
+      "name": "default",
+      "gateway_id": "{{GATEWAY_ID}}"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_agents_create_key`](/reference/mcp/agents#agents-create-key)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    POST /v1/agents/{{AGENT_ID}}/keys
+    Content-Type: application/json
+
+    {
+      "name": "default",
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "gateway_id": "{{GATEWAY_ID}}"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`CreateAgentKey`](/api/tag/agents/create-agent-key)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Create an API key"
+    Create an API key named "default" for agent "data-pipeline-agent" using Gateway "{{GATEWAY_ID}}".
+    ```
+  </Tab>
+</Tabs>
+
+```json Response
+{
+  "token": "dome_…",
+  "key": { "id": "k_…", "name": "default", "createdAt": "…" },
+  "gateway_id": "{{GATEWAY_ID}}",
+  "gateway_endpoints": {
+    "gateway_id": "{{GATEWAY_ID}}",
+    "gateway_url": "https://gateway.example.dome.dev/gateways/{{GATEWAY_ID}}",
+    "mcp_url": "https://gateway.example.dome.dev/gateways/{{GATEWAY_ID}}/mcp",
+    "openai_base_url": "https://gateway.example.dome.dev/gateways/{{GATEWAY_ID}}/v1",
+    "anthropic_base_url": "https://gateway.example.dome.dev/gateways/{{GATEWAY_ID}}"
+  }
+}
+```
+
+A separate key for each runtime or environment lets you revoke one without disrupting the others.
+
+### List keys
+
+Retrieve an agent's active keys with their names and creation times. A list never returns tokens, because Dome returns a token only when you create or rotate a key.
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome agents list-keys data-pipeline-agent
+    ```
+
+    <Callout icon="terminal">Reference: [`dome agents list-keys`](/cli/build/agents#list-keys)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_agents_list_keys`
+
+    ```json
+    {
+      "agent": "data-pipeline-agent"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_agents_list_keys`](/reference/mcp/agents#agents-list-keys)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    GET /v1/agents/{{AGENT_ID}}/keys?workspace_id={{WORKSPACE_ID}}
+    ```
+
+    <Callout icon="code">Reference: [`ListAgentKeys`](/api/tag/agents/list-agent-keys)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="List an agent's API keys"
+    List the API keys for agent "data-pipeline-agent".
+    ```
+  </Tab>
+</Tabs>
+
+### Rotate key
+
+Rotate a key to revoke the old secret and issue a new one under the same name. Dome returns the new token and the gateway endpoint. The old secret stops authenticating as soon as you rotate, so deploy the new token promptly.
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome agents rotate-key data-pipeline-agent production
+    ```
+
+    <Callout icon="terminal">Reference: [`dome agents rotate-key`](/cli/build/agents#rotate-key)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_agents_rotate_key`
+
+    ```json
+    {
+      "agent": "data-pipeline-agent",
+      "key_name": "production"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_agents_rotate_key`](/reference/mcp/agents#agents-rotate-key)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    POST /v1/agents/{{AGENT_ID}}/keys/production/rotate
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`RotateAgentKey`](/api/tag/agents/rotate-agent-key)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Rotate an agent key"
+    Rotate the "production" API key for "data-pipeline-agent".
+    ```
+  </Tab>
+</Tabs>
+
+### Revoke key
+
+Revoke a key to retire it without affecting the agent's other keys. A revoked key stops authenticating immediately, so confirm the runtime holds a working key before you revoke this one.
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome agents revoke-key data-pipeline-agent production
+    ```
+
+    <Callout icon="terminal">Reference: [`dome agents revoke-key`](/cli/build/agents#revoke-key)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_agents_revoke_key`
+
+    ```json
+    {
+      "agent": "data-pipeline-agent",
+      "key_name": "production"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_agents_revoke_key`](/reference/mcp/agents#agents-revoke-key)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    DELETE /v1/agents/{{AGENT_ID}}/keys/production?workspace_id={{WORKSPACE_ID}}
+    ```
+
+    <Callout icon="code">Reference: [`RevokeAgentKey`](/api/tag/agents/revoke-agent-key)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Revoke an agent key"
+    Revoke the "production" API key for agent "data-pipeline-agent".
+    ```
+  </Tab>
+</Tabs>
+
+## Manage agent-scoped rules
+
+Agent-scope rules apply to one agent, for conditions [allowed resources](#allowed-resources) cannot express. They evaluate in addition to organization, tenant, and workspace rules, and a deny at the workspace scope overrides an allow at the agent scope. Refer to [Authorize Access](/govern/rules) for creating rules, inherited scopes, and deployment.
+
+### Assign rules
+
+Assign rule files to the agent scope, where the gateway evaluates them alongside the rules the agent inherits from higher scopes.
+
+<Callout icon="key">Requires `rules.deploy`.</Callout>
+
+<Tabs items={["CLI","MCP","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome agents assign-policy data-pipeline-agent agent-policy.cedar
+    ```
+
+    <Callout icon="terminal">Reference: [`dome agents assign-policy`](/cli/build/agents#assign-policy)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_agents_assign_policy`
+
+    ```json
+    {
+      "agent_id": "data-pipeline-agent",
+      "files": [
+        {
+          "name": "agent-policy.cedar",
+          "content": "permit(principal, action == Dome::Action::\"mcp:call\", resource == Dome::MCPTool::\"github/list-issues\");"
+        }
+      ]
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_agents_assign_policy`](/reference/mcp/rules#agents-assign-policy)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Assign agent-scoped rules"
+    Assign the rules in agent-policy.cedar to agent "data-pipeline-agent".
+    ```
+  </Tab>
+</Tabs>
+
+### View rules
+
+Retrieve the rules assigned at the agent scope. The result excludes the organization, tenant, and workspace rules the agent also inherits.
+
+<Callout icon="key">Requires `rules.view`.</Callout>
+
+<Tabs items={["CLI","MCP","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome agents get-policies data-pipeline-agent
+    ```
+
+    <Callout icon="terminal">Reference: [`dome agents get-policies`](/cli/build/agents#get-policies)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_agents_get_policies`
+
+    ```json
+    {
+      "agent_id": "data-pipeline-agent"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_agents_get_policies`](/reference/mcp/rules#agents-get-policies)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="View agent-scoped rules"
+    Show the rules currently assigned to agent "data-pipeline-agent".
+    ```
+  </Tab>
+</Tabs>
+
+## Next steps
+
+- [Delegated agents](/build/agents/delegated) when access must depend on the person
+- [Tools](/connect/tools) and [Models](/connect/models) an agent can call
+- [Gateways](/build/gateways) for membership and grants
+- [Develop](/develop#authenticate) to authenticate and route runtime traffic
+- [Agent Lifecycle](/concepts/agents/agent-lifecycle) concept for states and cascades

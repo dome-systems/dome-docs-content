@@ -1,0 +1,6 @@
+{
+  "title": "Help",
+  "root": true,
+  "icon": "LifeBuoy",
+  "pages": ["help"]
+}

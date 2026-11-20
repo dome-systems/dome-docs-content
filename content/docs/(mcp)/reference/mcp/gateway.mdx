@@ -1,0 +1,274 @@
+---
+title: Gateways
+description: Group tools and models behind gateways, grant agent access, and configure scoped runtime endpoints
+---
+
+import { gateway } from '@/snippets/glossary';
+
+<p>{gateway}</p>
+
+Refer to [Gateways](/build/gateways) for membership, access grants, and runtime endpoints. All tools require workspace context.
+
+## Gateways
+
+### dome_gateways_list
+
+List gateways in the active workspace with state, membership counts, and the canonical endpoint path (`/gateways/<id>`) — the single URL every client points at. The Dome SDK and Anthropic clients use it as-is; MCP clients append `/mcp`; OpenAI-compatible clients append `/v1`.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| — | — | — | No parameters |
+
+<Callout icon="key">Requires `gateways.view`.</Callout>
+
+### dome_gateways_get
+
+Get a gateway with its members (individual tools, tool sources, LLM pools, direct model connections).
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | gateway name |
+
+<Callout icon="key">Requires `gateways.view`.</Callout>
+
+### dome_gateways_create
+
+Create a gateway. Starts active with empty membership. Until a resource is added it is unreachable.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | gateway name (unique within workspace) |
+| `description` | string | No | Free-form description |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+```json title="Create a Gateway"
+{
+  "name": "dome_gateways_create",
+  "arguments": {
+    "name": "prod-tools",
+    "description": "Production MCP tools for the ops agent"
+  }
+}
+```
+
+### dome_gateways_update
+
+Rename or edit the description. Use `dome_gateways_set_state` to enable/disable.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Current gateway name |
+| `new_name` | string | No | New name (omit to keep) |
+| `description` | string | No | New description |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+### dome_gateways_set_state
+
+Enable or disable a gateway. A disabled gateway fails closed at its endpoint.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | gateway name |
+| `state` | string | Yes | `active` or `disabled` |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+### dome_gateways_set_default
+
+Make a gateway the workspace default — the gateway pre-checked (but overridable) in dashboard create dialogs. Enforces no membership. Setting a new default clears the previous one.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | gateway name |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+### dome_gateways_delete
+
+Delete a gateway. Membership rows cascade; the underlying tools, connections, and pools are untouched. Marked destructive.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | gateway name |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+## Interactive access
+
+### dome_gateways_interactive_enable
+
+Enable interactive MCP access for a gateway. Provide at least one exact-match email or identity-provider subject. The lists replace the gateway's existing allow-lists.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `gateway` | string | Yes | Gateway name |
+| `allowed_emails` | array of string | Conditional | People allowed by email |
+| `allowed_subjects` | array of string | Conditional | People allowed by identity-provider subject |
+
+### dome_gateways_interactive_disable
+
+Disable interactive access. Dome retains its managed interactive agent and allow-lists so a later enable can restore the configuration.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `gateway` | string | Yes | Gateway name |
+
+## Membership
+
+### dome_gateways_tool_add
+
+Add a single MCP tool. Address the tool by its `(connection, tool)` pair from the observed catalog. Run `dome_tools_for_connection` to see observed names.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `gateway` | string | Yes | gateway name |
+| `connection` | string | Yes | MCP connection name |
+| `tool` | string | Yes | tool name as observed (e.g. `create_page`) |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+### dome_gateways_tool_remove
+
+Remove an individual tool. The underlying tool is untouched.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `gateway` | string | Yes | gateway name |
+| `connection` | string | Yes | MCP connection name |
+| `tool` | string | Yes | tool name as observed |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+### dome_gateways_tool_source_add
+
+Add a tool source (an MCP server connection). The gateway includes every tool observed on the connection; newly observed tools propagate automatically.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `gateway` | string | Yes | gateway name |
+| `connection` | string | Yes | MCP connection name |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+### dome_gateways_tool_source_remove
+
+Remove a tool source. Tools that joined only through this source stop being included; the connection itself is untouched.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `gateway` | string | Yes | gateway name |
+| `connection` | string | Yes | MCP connection name |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+### dome_gateways_model_pool_add
+
+Add an LLM pool. The gateway exposes the pool's models at its `/gateways/<id>/v1` endpoint.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `gateway` | string | Yes | gateway name |
+| `pool` | string | Yes | Pool name |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+### dome_gateways_model_pool_remove
+
+Remove an LLM pool. The pool itself is untouched.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `gateway` | string | Yes | gateway name |
+| `pool` | string | Yes | Pool name |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+### dome_gateways_model_add
+
+Add a direct (un-pooled) LLM model connection. The gateway exposes the model without going through a pool.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `gateway` | string | Yes | gateway name |
+| `model` | string | Yes | model connection name |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+### dome_gateways_model_remove
+
+Remove a direct LLM model connection. The connection itself is untouched.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `gateway` | string | Yes | gateway name |
+| `model` | string | Yes | model connection name |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+## Access grants
+
+Access grants control who can *use* a gateway. An agent with no grant is rejected at the edge before Cedar evaluates.
+
+### dome_gateways_access_list
+
+List agents and their access state for a gateway. Revoked agents are excluded to match the CLI and dashboard — a revoked agent cannot exchange its API key for a JWT, so it can never reach the gateway. Suspended agents remain in the list because suspension is reversible.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `gateway` | string | Yes | gateway name |
+
+<Callout icon="key">Requires `agents.view`.</Callout>
+
+### dome_gateways_agent_grant
+
+Grant an agent access to a gateway.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `gateway` | string | Yes | gateway name |
+| `agent_id` | string | Yes | agent ID (UUID) |
+
+<Callout icon="key">Requires `agents.register` and `rules.deploy`.</Callout>
+
+### dome_gateways_agent_revoke
+
+Revoke an agent's access. Marked destructive.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `gateway` | string | Yes | gateway name |
+| `agent_id` | string | Yes | agent ID (UUID) |
+
+<Callout icon="key">Requires `agents.register` and `rules.deploy`.</Callout>
+
+### dome_gateways_all_agents_grant
+
+Grant every current and future workspace agent access to a gateway.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `gateway` | string | Yes | gateway name |
+
+<Callout icon="key">Requires `rules.deploy` and `gateways.manage`.</Callout>
+
+### dome_gateways_all_agents_revoke
+
+Clear the all-agents grant. Per-agent grants are unaffected. Marked destructive.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `gateway` | string | Yes | gateway name |
+
+<Callout icon="key">Requires `rules.deploy` and `gateways.manage`.</Callout>
+
+Cap gateway LLM spend with [`dome_quotas_set`](/reference/mcp/quotas#dome_quotas_set) (`subject=gateway`).
+
+## Next steps
+
+Membership and grants have a full how-to under Connect:
+
+- [Gateways](/build/gateways)
+- [Tools](/connect/tools)
+- [Develop](/develop)

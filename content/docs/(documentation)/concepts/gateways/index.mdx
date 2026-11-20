@@ -1,0 +1,81 @@
+---
+title: Gateways
+description: Why Dome uses named gateways to package which resources agents can reach
+---
+
+import { gateway } from '@/snippets/glossary';
+
+<p>{gateway}</p>
+
+<Callout type="info">
+Every gateway has a complete `/gateways/<id>` URL plus protocol-specific MCP, OpenAI, and Anthropic endpoints.
+</Callout>
+
+## High-level overview
+
+A gateway is a workspace entity that packages membership and grants behind one URL for both protocols. The same gateway URL serves tool traffic at `/gateways/<id>/mcp` and model traffic at `/gateways/<id>/v1/...`. The [Tools gateway](/concepts/gateways/tools-gateway) and [LLM gateway](/concepts/gateways/llm-gateway) are ingresses on the [data plane](/concepts/architecture/dataplane) that require that gateway prefix — they are protocol paths, not kinds of gateway.
+
+Each gateway carries two relationships:
+
+- **Membership** lists which tools, tool sources, pools, and model connections belong to this gateway
+- **Access grant** lists which agents may call this gateway
+
+A resource in no gateway is valid but **Unreachable**. An agent without a grant is rejected at the edge before rules run. Membership and grants package *reachability*. [Rules](/concepts/controls/rules), [Guards](/concepts/controls/guards), and [Quotas](/concepts/controls/quotas) still decide what happens after admission.
+
+Standing up and calling through a gateway looks like this:
+
+1. An operator creates a gateway (or uses the Default gateway), adds the tools and models that surface should expose, and grants an agent access.
+2. The agent points its client at `/gateways/<id>`.
+3. Tool calls and model calls use the same gateway id with different path suffixes.
+4. Dome admits the agent, checks membership, evaluates rules, then serves the call through the tools or LLM ingress.
+
+A gateway is the unit of curated reachability for both tools and models.
+
+### Why Gateways exist
+
+Without gateways, every callable resource in the workspace competes for the same front door, or operators encode reachability only in Cedar. Gateways give you a named bundle you can grant as one unit:
+
+- Attach related tools and models once, then grant the gateway to each agent that should see that bundle
+- Keep credentials and rules separate. Rotating a key does not change membership. Rewriting rules does not redefine which endpoint an agent calls.
+- Fail closed without a gateway prefix: every caller must choose a gateway (`/gateways/<id>/...`)
+
+### When to use one Gateway vs many
+
+**One gateway is enough** when a workspace has a single shared set of tools and models and every active agent should reach that set. New workspaces start with a **Default gateway** that is empty until you attach members and grants. Free and Pro plans allow one gateway per workspace. That Default gateway is usually the one you keep.
+
+**Create another gateway** when you need a second curated front in the same workspace, for example:
+
+- A coding agent may reach repo and CI tools. A support agent may reach ticket and CRM tools. Same workspace, different memberships and grants.
+- Production models stay on one gateway. Eval or shadow pools stay on another so agents cannot mix them by accident.
+- Human-operated MCP clients and automated agents should see different tool catalogs
+
+The same resource can belong to more than one gateway. An agent can hold grants to more than one gateway and pick the URL that matches the job. Prefer another gateway over duplicating connections when the split is “who may reach which set,” not “which upstream credential to store.”
+
+### How a call is authorized
+
+Every `/gateways/<id>/...` request must pass three checks. The final decision is `addressable AND admitted AND Cedar-allowed`.
+
+1. **Addressable:** The path names an active gateway in the caller's workspace.
+2. **Admitted:** The agent has a grant to that gateway (discovery such as `tools/list` and `GET /v1/models` is exempt and stays membership- and Cedar-filtered).
+3. **Cedar:** Workspace rules permit the action on the resource. Forbid wins. Admission never overrides a deny.
+
+So: gateway decides *whether this agent may use this front door and whether this resource is on it*. Rules decide *whether this action is allowed*.
+
+### Default gateway
+
+Every workspace gets one auto-provisioned **Default gateway**. It is real, editable, and deletable.
+
+- **New workspaces** start with an empty Default gateway and no grants. Attach members and grants explicitly.
+- **Migrated workspaces** may already have resources attached, but agents still need explicit per-agent or all-agents grants.
+
+## Next steps
+
+With that gateway reachability model in mind, continue with:
+
+- [Gateways](/build/gateways) to create gateways, manage membership and grants, and build client URLs
+- [Architecture](/concepts/architecture#gateways) concept for where gateways sit among components
+- [data plane](/concepts/architecture/dataplane) concept for the runtime that serves gateway URLs
+- [Tools gateway](/concepts/gateways/tools-gateway) concept for the MCP ingress under a gateway
+- [LLM gateway](/concepts/gateways/llm-gateway) concept for the model ingress under a gateway
+- [Agents](/concepts/agents) concept for identity before reachability
+- [Rules](/concepts/controls/rules) concept for what an agent may do after admission

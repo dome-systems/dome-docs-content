@@ -1,0 +1,466 @@
+---
+title: Govern an agent nobody is watching
+sidebarTitle: Scheduled agent
+description: "Run a read-only GitHub report in Python, TypeScript, or Go, governed by Dome."
+---
+
+An interactive agent trades messages with a person, the way a support bot does. A non-interactive agent has no back and forth. Nothing prompts it, nobody reads its output while it works, and there is no one to ask mid-run, so everything it may use has to be decided before it starts. The agent in this tutorial summarizes a developer's recent GitHub activity on a schedule by reading two GitHub tools and calling one model, and it cannot do anything else.
+
+<Prompt
+  description="Hand this to an AI agent. It will set up an agent in Dome that generates a report on a developer's recent GitHub activity."
+  icon="sparkles"
+  actions={["copy", "cursor"]}
+>
+Set up the GitHub activity report from `dome-systems/examples` in a workspace.
+Confirm the context, create a gitignored `.env`, add a GitHub tool and a
+claude-sonnet model to Default, register `github-activity-report` with only
+`GitHub/list_issues`, `GitHub/search_pull_requests`, and that model, mint a
+key, then run the report. Never print credentials. Simulate
+`GitHub/merge_pull_request` and show me the DENY without weakening the rules.
+</Prompt>
+
+In this tutorial, you will register that agent in Dome, allow it only the two tools and the one model it needs, and confirm that everything else on the same GitHub connection is refused. You can set up this agent with Python, TypeScript, or Go.
+
+To do this, you will:
+
+<Steps>
+  <Step title="Create a workspace">
+    Create a tutorial workspace for this tutorial alone.
+  </Step>
+  <Step title="Set up the project">
+    Clone the example, fill `.env`, and install your runtime.
+  </Step>
+  <Step title="Register in Dome">
+    Attach GitHub and a model, then register the agent.
+  </Step>
+  <Step title="Deploy access rules">
+    Limit the agent to the two reads and the summarizer.
+  </Step>
+  <Step title="Create an agent key">
+    Mint the credential the process authenticates with.
+  </Step>
+  <Step title="Run the report">
+    Point the process at the gateway and print the summary.
+  </Step>
+  <Step title="Verify agent">
+    Confirm the write tools are denied without attempting one.
+  </Step>
+  <Step title="Put it on a schedule">
+    Move the same process to cron.
+  </Step>
+</Steps>
+
+## Tutorial scenario
+
+This tutorial uses [github-activity-report](https://github.com/dome-systems/examples/tree/main/github-activity-report), an agent that lists a developer's recent issues and pull requests, then asks a model to summarize them. You do not give it a GitHub token or a model key. The agent reaches both through a [Gateway](/build/gateways), so what it can do is decided by what you register in Dome. Even though GitHub publishes its whole catalog on the connection, including tools that merge pull requests and open issues, this agent can only access the `list_issues`, `search_pull_requests` calls due to the Dome rules you set.
+
+The agent acts only as itself, which Dome calls **standing identity** and is the usual choice for work that is not a person's. Refer to [Identity patterns](/concepts/identity-patterns) for the full comparison.
+
+<Topology
+  columns={["agents", "Admitted to", "What it exposes"]}
+  nodes={[
+    {
+      id: "report",
+      kind: "agent",
+      column: 0,
+      label: "github-activity-report",
+      sublabel: "standing · exclusive",
+    },
+    {
+      id: "gateway",
+      kind: "gateway",
+      column: 1,
+      label: "Default",
+      sublabel: "GitHub catalog · 1 model",
+    },
+    {
+      id: "list-issues",
+      kind: "tool",
+      column: 2,
+      label: "list_issues",
+      sublabel: "GitHub · allowed",
+      reachableBy: ["report"],
+    },
+    {
+      id: "search-prs",
+      kind: "tool",
+      column: 2,
+      label: "search_pull_requests",
+      sublabel: "GitHub · allowed",
+      reachableBy: ["report"],
+    },
+    {
+      id: "claude",
+      kind: "model",
+      column: 2,
+      label: "claude-sonnet",
+      sublabel: "summarizer",
+      reachableBy: ["report"],
+    },
+    {
+      id: "issue-write",
+      kind: "tool",
+      column: 2,
+      label: "issue_write",
+      sublabel: "GitHub · denied",
+      unreachable: true,
+    },
+    {
+      id: "merge-pr",
+      kind: "tool",
+      column: 2,
+      label: "merge_pull_request",
+      sublabel: "GitHub · denied",
+      unreachable: true,
+    },
+    {
+      id: "create-pr",
+      kind: "tool",
+      column: 2,
+      label: "create_pull_request",
+      sublabel: "GitHub · denied",
+      unreachable: true,
+    },
+  ]}
+  edges={[
+    { from: "report", to: "gateway" },
+    { from: "gateway", to: "list-issues" },
+    { from: "gateway", to: "search-prs" },
+    { from: "gateway", to: "claude" },
+    { from: "gateway", to: "issue-write", dashed: true },
+    { from: "gateway", to: "merge-pr", dashed: true },
+    { from: "gateway", to: "create-pr", dashed: true },
+  ]}
+  caption="The gateway still publishes GitHub's write tools. Exclusive entitlements keep the agent on the two reads and one model, and the dashed cards are the proof."
+/>
+
+## Prerequisites
+
+You will need the following.
+
+- The Dome CLI. Refer to [Install](/install) for Homebrew and direct-download instructions.
+- A role that can manage gateway resources, agents, and rules. Refer to [Permissions](/concepts/platform/permissions) concept.
+- Python 3.12+, Node.js 22+, or Go 1.23+. Any one of the three is enough.
+- A [fine-grained GitHub token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#creating-a-fine-grained-personal-access-token) with read access to Contents, Issues, Pull requests, and Metadata on the repositories you want reported.
+- An Anthropic API key.
+
+## Create a workspace
+
+Create a standard [workspace](/concepts/platform/scopes) for this tutorial rather than reusing one you already work in. This tutorial registers an agent and creates the connections it reads through. Delete the workspace only when you no longer need those resources.
+
+```bash
+dome workspaces create --name studio-activity-report
+```
+
+The command creates `studio-activity-report` and selects it as the active context. Confirm it:
+
+```bash
+dome context sync
+dome context current
+```
+
+Confirm the workspace before you continue, since everything after this point creates or changes resources.
+
+```bash
+dome context current
+```
+
+The workspace should read `studio-activity-report`.
+
+## Set up the project
+
+Clone the examples repository and change into the report.
+
+```bash
+git clone https://github.com/dome-systems/examples.git
+cd examples/github-activity-report
+```
+
+### Set environment variables
+
+Create `.env` in the project root with the following values.
+
+- `GITHUB_USERNAME` — the developer the report is about. Required to start.
+- `GITHUB_REPOS` — the repositories to read, as `owner/repo`. Set this to that developer's own repos.
+
+```bash title=".env"
+export GITHUB_USERNAME=octocat
+export GITHUB_REPOS=octocat/hello-world
+```
+
+Every `.env` file is gitignored. Refer to `.env.prod.example` for every variable the project understands, including the Slack ones for later. Do not set `DOME_AGENT_API_KEY`, `DOME_GATEWAY_URL`, or `DOME_API_URL` yet — the register step writes those. Leave `OUTPUT_MODE` unset so the report prints to stdout.
+
+Hold the GitHub token and Anthropic key for the next step. They go into Dome, not into this file. `GITHUB_MCP_TOKEN` is a complete `Authorization` header (`Bearer github_pat_...`), not the token by itself.
+
+### Pick runtime
+
+Pick a runtime and install what it needs. The agent you register in Dome is the same in all three; only the process you start later changes.
+
+<Tabs items={["Python", "TypeScript", "Go"]}>
+  <Tab value="Python">
+    ```bash
+    python -m venv .venv
+    source .venv/bin/activate
+    python -m pip install -r python/requirements.txt
+    ```
+  </Tab>
+  <Tab value="TypeScript">
+    ```bash
+    npm --prefix typescript install
+    ```
+  </Tab>
+  <Tab value="Go">
+    Go uses only the standard library. Nothing to install beyond the Go toolchain from [Prerequisites](#prerequisites).
+  </Tab>
+</Tabs>
+
+## Register in Dome
+
+Everything the report touches has to exist in the workspace first: the GitHub server it reads, the model that summarizes, and the agent identity that carries both. Once you register these resources, Dome holds the secrets and the agent never sees them.
+
+### Register tool connection
+
+The report reads GitHub through its hosted MCP server, and the gateway is what calls it. Register that server as a tool on the [Default gateway](/build/gateways), passing the token you set aside.
+
+```bash
+dome tools add \
+  --name GitHub \
+  --url https://api.githubcopilot.com/mcp/ \
+  --protocol streamable-http \
+  --auth-method api-key \
+  --credential-type shared \
+  --authorization "$GITHUB_MCP_TOKEN" \
+  --gateway Default
+```
+
+Verify that the gateway published the connection's catalog. You should see `list_issues` and `search_pull_requests` in the list, alongside every other tool GitHub publishes.
+
+```bash
+dome tools catalog list GitHub
+```
+
+### Register model
+
+The report asks a model to turn what it read into prose. Register one connection and attach it to the same gateway.
+
+```bash
+dome models add claude-sonnet \
+  --provider anthropic \
+  --model claude-sonnet-4-6 \
+  --api-key "$ANTHROPIC_API_KEY" \
+  --gateway Default
+```
+
+Verify that the model is registered. You should see `claude-sonnet` in the list.
+
+```bash
+dome models list
+```
+
+### Register agent
+
+Register the agent with only the two reads and the summarizer. `--tool` and `--model` name what it may reach, and `--gateway` admits it at Default.
+
+```bash
+dome agents register \
+  --name github-activity-report \
+  --if-not-exists \
+  --gateway Default \
+  --tool GitHub/list_issues \
+  --tool GitHub/search_pull_requests \
+  --model claude-sonnet
+```
+
+## Deploy access rules
+
+The gateway still publishes GitHub's whole catalog, so tighten invocation the same way [Govern your first agent](/tutorials/get-started/govern-your-first-agent) does. These rules keep discovery open, name the two reads, and forbid every other `mcp:call` this agent could make — including on a tool GitHub adds months from now.
+
+```cedar title="github-activity-report.cedar"
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:discover",
+  resource
+);
+
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:call",
+  resource
+) when {
+  resource in [
+    Dome::MCPTool::"GitHub/list_issues",
+    Dome::MCPTool::"GitHub/search_pull_requests"
+  ]
+};
+
+forbid(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:call",
+  resource
+) unless {
+  resource in [
+    Dome::MCPTool::"GitHub/list_issues",
+    Dome::MCPTool::"GitHub/search_pull_requests"
+  ]
+};
+
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"llm:invoke",
+  resource == Dome::LLMModel::"claude-sonnet"
+);
+```
+
+Deploy the file scoped to the agent, which is what limits `principal is Dome::Agent` to this one.
+
+```bash
+dome rules apply github-activity-report.cedar \
+  --agent github-activity-report \
+  --name github-activity-report
+```
+
+## Create an agent key
+
+The process authenticates as the agent, so mint it a key. The token is shown once, and `create-key` also prints the gateway URL the report calls.
+
+```bash
+dome agents create-key github-activity-report --name local-report
+```
+
+The report also needs the control-plane URL, which is `Server` in your auth status.
+
+```bash
+dome auth status
+```
+
+Append all three values to `.env`, taking the host and ID from the `create-key` output. Do not paste the token into chat.
+
+```bash title=".env"
+export DOME_AGENT_API_KEY=dome_...
+export DOME_GATEWAY_URL=https://GATEWAY_HOST/gateways/DEFAULT_GATEWAY_ID
+export DOME_API_URL=https://app.domesystems.ai
+```
+
+`DOME_AGENT_API_KEY` is an envelope the process exchanges at `DOME_API_URL` for a short-lived gateway token. `DOME_GATEWAY_URL` is the scoped gateway the report calls.
+
+## Run the report
+
+Source `.env` and start the runtime you installed.
+
+<Tabs items={["Python", "TypeScript", "Go"]}>
+  <Tab value="Python">
+    ```bash
+    source .env
+    python python/main.py
+    ```
+  </Tab>
+  <Tab value="TypeScript">
+    ```bash
+    source .env
+    typescript/node_modules/.bin/tsx typescript/main.ts
+    ```
+  </Tab>
+  <Tab value="Go">
+    ```bash
+    source .env
+    go -C go run .
+    ```
+  </Tab>
+</Tabs>
+
+You should see the agent read both GitHub tools, call `claude-sonnet` once, and print a three-section report — what the developer finished, what is still moving, and what issues the team opened.
+
+## Verify agent
+
+The agent should read GitHub and summarize, not write. Confirm that with simulation. Do not try a write.
+
+```bash
+dome rules simulate --agent github-activity-report --action mcp:call \
+  --resource GitHub/merge_pull_request --resource-type mcp_tool
+```
+
+Expect `DENY`. Repeat for `GitHub/issue_write` and `GitHub/create_pull_request` if you want the same proof for the other writes. Those tools sit on the same GitHub connection as the reads. If any of them showed as allowed, this agent could merge code while nobody is watching.
+
+If the simulation cannot name the tool, the gateway has not published it. Inspect the catalog rather than weakening policy.
+
+```bash
+dome tools catalog list GitHub
+```
+
+Then read the decisions the run actually produced, each attributed to the agent rather than to your shell.
+
+```bash
+dome audit query --limit 20
+```
+
+## Put it on a schedule
+
+The CLI does not supervise this process. A cron entry sources the same `.env` and runs the same command you used above.
+
+```bash
+0 13 * * * cd /srv/github-activity-report && . .venv/bin/activate && set -a && . .env && set +a && python python/main.py >> /var/log/activity-report.log 2>&1
+```
+
+TypeScript and Go swap the last command for the one in [Run the report](#run-the-report).
+
+Once you are happy with what stdout shows, switch the report to Slack by setting `OUTPUT_MODE=slack` in `.env`, along with either `SLACK_WEBHOOK_URL`, or `SLACK_BOT_TOKEN` with `SLACK_CHANNEL`. Every runtime rejects `OUTPUT_MODE=slack` by name when those are missing, so a misconfigured schedule fails loudly instead of reporting into nothing.
+
+<Accordions>
+<Accordion title="Troubleshooting">
+  These are remediation steps if you get stuck.
+
+  - A tool name is missing from the catalog.
+
+    The gateway has not published that tool, usually because the connection is new or the token cannot see it.
+
+    ```bash
+    dome tools catalog list GitHub
+    ```
+
+    Tool names are case-sensitive and qualified as `connection/tool`.
+
+  - The report runs but finds no activity.
+
+    The lookback window or the repository list is too narrow, not a policy problem. Widen either in `.env`.
+
+    ```bash
+    LOOKBACK_HOURS=720
+    GITHUB_REPOS=owner/repo,owner/other-repo
+    ```
+
+  - The run fails before making any call, complaining about the credential.
+
+    `DOME_AGENT_API_KEY` is an envelope the process exchanges at `DOME_API_URL` for a short-lived token. Mint another key and rewrite the three `DOME_*` values.
+
+    ```bash
+    dome agents create-key github-activity-report --name local-report
+    dome auth status
+    ```
+
+  - `OUTPUT_MODE=slack` exits immediately.
+
+    The Slack credentials are missing. Set `SLACK_WEBHOOK_URL`, or `SLACK_BOT_TOKEN` with `SLACK_CHANNEL`, in `.env`.
+</Accordion>
+</Accordions>
+
+## Clean up
+
+Remove the cron entry first, so it does not keep firing against a workspace that no longer exists. Deleting the workspace then removes the agent, its rules, and the connections together.
+
+```bash
+dome workspaces delete studio-activity-report
+```
+
+## Next steps
+
+You fixed a scheduled agent's entire permitted surface before its first run, confirmed the write tools were refused without making a write call, and read the decisions back attributed to the agent rather than to your shell.
+
+- [Deploy an event-driven agent](/tutorials/production/deploy-your-agent/event-driven) to move this off cron and onto a managed trigger
+
+Refer to the following docs for topics covered in this lab.
+
+- [Agents](/cli/build/agents) to register identities and mint keys
+- [Identity patterns](/concepts/identity-patterns) to see where standing identity is and is not appropriate
+- [Authorize Access](/govern/rules) to write and deploy Cedar rules directly
+- [Audit and Export](/operate/audit) to stream these decisions to your own tooling
+- [Interactive app](/tutorials/examples/interactive-agent) for the same workflow with a person in the loop

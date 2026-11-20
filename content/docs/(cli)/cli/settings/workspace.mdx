@@ -1,0 +1,205 @@
+---
+title: dome workspaces
+description: Manage workspaces, members, act-as enforcement, policy freshness, and verification providers
+---
+
+`dome workspaces` manages the workspaces in your active tenant and the settings each one carries: who belongs to it, whether agents must act for a verified end user, how long a cached policy decision stays valid, and which verification providers it recognizes. A workspace is the boundary every agent, tool, model, and rule lives inside. Refer to [Scopes](/concepts/platform/scopes) for how workspaces sit under tenants and organizations.
+
+| Command | |
+|---------|---|
+| [List workspaces](#list-workspaces) | `dome workspaces list` |
+| [Create workspace](#create-workspace) | `dome workspaces create` |
+| [Get workspace](#get-workspace) | `dome workspaces get <id-or-slug>` |
+| [Delete workspace](#delete-workspace) | `dome workspaces delete <id-or-slug>` |
+| [List members](#list-members) | `dome workspaces members list` |
+| [Set member](#set-member) | `dome workspaces members set` |
+| [Remove member](#remove-member) | `dome workspaces members remove` |
+| [Get act-as config](#get-act-as-config) | `dome workspaces actas get` |
+| [Update act-as config](#update-act-as-config) | `dome workspaces actas update` |
+| [Set freshness window](#set-freshness-window) | `dome workspaces set-freshness-window <seconds>` |
+| [List providers](#list-providers) | `dome workspaces verification-providers list` |
+| [Create provider](#create-provider) | `dome workspaces verification-providers create` |
+| [Delete provider](#delete-provider) | `dome workspaces verification-providers delete <provider-id>` |
+
+## Workspaces
+
+### List workspaces
+
+```bash
+dome workspaces list
+```
+
+List workspaces in the active tenant. Aliases: `ls`.
+
+### Create workspace
+
+```bash
+dome workspaces create
+```
+
+Create a new workspace.
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--name` | string | Yes | Workspace display name |
+| `--join-policy` | string | No | How non-members join: `open`, `request`, or `invite_only`. Omit to take the server default (`invite_only`). |
+
+```bash title="Create with an explicit join policy"
+dome workspaces create --name payments-team --join-policy request
+```
+
+The success line echoes the resolved policy so you can verify what the server applied. Unknown values return `InvalidArgument`. See [Join policies](/manage/environments#join-policies) for what each value means.
+
+### Get workspace
+
+```bash
+dome workspaces get <id-or-slug>
+```
+
+Get workspace details. The output includes the configured `Freshness Window` — how long the gateway may serve cached policy for the workspace before failing closed — and the current `Join Policy`.
+
+### Delete workspace
+
+```bash
+dome workspaces delete <id-or-slug>
+```
+
+Delete a workspace permanently.
+
+## Members
+
+### List members
+
+```bash
+dome workspaces members list [workspace-id-or-slug]
+```
+
+List workspace memberships.
+
+### Set member
+
+```bash
+dome workspaces members set [workspace-id-or-slug]
+```
+
+Set a user's role in a workspace.
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--user` | string | Yes | User email |
+| `--role` | string | Yes | Role: `admin`, `operator`, `security`, `viewer` |
+
+### Remove member
+
+```bash
+dome workspaces members remove [workspace-id-or-slug]
+```
+
+Remove a user's workspace membership. If the user has active API keys, an interactive picker prompts you to select which to revoke; pass `--revoke-all-keys` or `--revoke-keys` to skip the prompt.
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--user` | string | Yes | User email |
+| `--revoke-keys` | string[] | No | Comma-separated API key IDs to revoke (skips interactive prompt). Mutually exclusive with `--revoke-all-keys`. |
+| `--revoke-all-keys` | bool | No | Revoke all API keys created by the user (skips interactive prompt). Mutually exclusive with `--revoke-keys`. |
+
+## Act-as
+
+### Get act-as config
+
+```bash
+dome workspaces actas get [workspace-id-or-slug]
+```
+
+Get the act-as enforcement policy.
+
+### Update act-as config
+
+```bash
+dome workspaces actas update [workspace-id-or-slug]
+```
+
+Update the act-as enforcement policy.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--required` | bool | Require act-as header on all requests |
+| `--allowed-methods` | string[] | Allowed verification methods (e.g., `oidc`, `hmac`) |
+| `--default-provider` | string | Default provider ID; nearest configured scope wins |
+| `--required-provider` | string | Required provider ID; broadest configured scope wins and forces Act-As |
+
+This command uses full-replace semantics. Omitted flags clear their fields.
+
+Default provider precedence is workspace, tenant, then organization. Required provider precedence is organization, tenant, then workspace. Required providers override explicit non-bound agent configuration; bound agents remain exempt.
+
+Tenant and organization scopes can also select default and required providers, but they do not set `--required` or `--allowed-methods`. Refer to [Act-As provider selection](/cli/connect/verification-providers#act-as-provider-selection) for all three scope commands and their precedence.
+
+## Freshness window
+
+Each workspace has a configurable freshness window that bounds how long the gateway may serve cached authorization policy for that workspace before failing closed. Default is 90 seconds; allowed range is 30–86400 seconds. Enforcement is per-workspace — one workspace failing closed does not affect others.
+
+### Set freshness window
+
+```bash
+dome workspaces set-freshness-window <seconds> [workspace-id-or-slug]
+```
+
+Set the freshness window (in seconds) for a workspace.
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `<seconds>` | uint | Yes | Freshness window in seconds (30–86400) |
+| `[workspace-id-or-slug]` | string | No | Target workspace (defaults to the active workspace) |
+
+<Callout type="warning">
+  Once the window elapses, the gateway denies governed requests until policy is fresh. The affected `tool.call` or `model.call` completes with `result=denied` and `denial.reason=stale_policy`; there is no separate staleness-denied event.
+</Callout>
+
+## Verification providers
+
+### List providers
+
+```bash
+dome workspaces verification-providers list [workspace-id-or-slug]
+```
+
+List verification providers.
+
+Use the scope-aware command to inspect inherited providers:
+
+```bash
+dome verification-providers list --scope workspace --include-chain
+dome verification-providers list --scope tenant
+dome verification-providers list --scope org
+```
+
+Plain workspace listing returns workspace-owned providers only. `--include-chain` also returns visible tenant- and organization-scoped providers.
+
+### Create provider
+
+```bash
+dome workspaces verification-providers create [workspace-id-or-slug]
+```
+
+Create a verification provider.
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--name` | string | Yes | Provider name |
+| `--method` | string | Yes | Verification method: `oidc` or `hmac` |
+| `--oidc-discovery-url` | string | Conditional | OIDC issuer discovery URL (required for `oidc`) |
+| `--hmac-secret` | string | Conditional | HMAC shared secret (required for `hmac`) |
+
+### Delete provider
+
+```bash
+dome workspaces verification-providers delete <provider-id> [workspace-id-or-slug]
+```
+
+Delete a verification provider.
+
+Deleting a referenced provider removes its binding. Affected agents fail closed until another provider resolves.
+
+The CLI creates, updates, and deletes workspace-scoped providers only. Manage organization providers from **Settings → Single Sign-On**. Tenant-scoped provider writes are not exposed yet.
+
+These three are a convenience subset. Refer to [`dome verification-providers`](/cli/connect/verification-providers) for the scope-aware group, which also covers `get`, `update`, and server-minted HMAC secrets.

@@ -1,0 +1,57 @@
+---
+title: Help
+description: Where to ask questions, report issues, and reach the team
+---
+
+Help runs through a few clearly separated channels. Pick the one that matches what you have so the request lands with the people who can answer it.
+
+## Where to go
+
+| Where | For | What to expect |
+| --- | --- | --- |
+| [Docs and search](/introduction) | Anything already written down | First stop |
+| [`#ask-dome`](https://discord.gg/d4m6C2SwU) | How-to questions, configuration, rule syntax | Best-effort and community-first. Staff triage daily |
+| Report an issue | Bugs, docs errors, and product feedback | Reaches the team with the page attached |
+| [Direct support](mailto:support@domesystems.ai) | Account, billing, and access | Contract SLA |
+| [Security](mailto:security@domesystems.ai) | Vulnerability disclosure | Coordinated disclosure |
+
+<Callout type="warning">
+Never paste API keys, agent credentials, or unredacted audit payloads into Discord. Send anything sensitive to [support@domesystems.ai](mailto:support@domesystems.ai).
+</Callout>
+
+## Start with the docs
+
+Search covers every page, including the CLI, MCP, and API references.
+
+## Ask in Discord
+
+[`#ask-dome`](https://discord.gg/d4m6C2SwU) is the place for how-to questions, configuration, and rule syntax. It is community-first and answered on a best-effort basis; staff read the channel daily. Post in the channel rather than in DMs so the answer helps the next person.
+
+Include:
+
+- What you are trying to do, and the surface you are on: CLI, MCP, API, or dashboard
+- The command or request, with secrets removed
+- What you expected, and what happened instead
+
+## Report an issue
+
+Use **Report an issue** on any page, including this one. It reaches the team with the page attached. Use it for reproducible bugs, docs that are wrong or incomplete, and product feedback. Describe the problem rather than the implementation — what you are blocked on tells us more than a specific API shape.
+
+<ReportIssue className="inline-flex items-center gap-2 text-fd-muted-foreground transition-colors hover:text-fd-foreground" />
+
+A good report carries:
+
+- Output of `dome version`
+- The steps to reproduce, in order
+- Your workspace and context, from `dome context current`
+- The timestamp, and the audit event ID if the call reached a gateway
+
+Denials are usually not bugs. A rule that blocks a call writes an audit event explaining why, so check [Audit events](/operate/audit) first and bring the event ID if the outcome still looks wrong.
+
+## Account, billing, and access
+
+For provisioning, seats, plan changes, invoices, or a workspace you cannot reach, email [support@domesystems.ai](mailto:support@domesystems.ai) with your workspace name. These requests follow the SLA in your contract.
+
+## Report a vulnerability
+
+Send security reports to [security@domesystems.ai](mailto:security@domesystems.ai). Do not post details in Discord until we have coordinated a disclosure.

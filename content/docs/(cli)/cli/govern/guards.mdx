@@ -1,0 +1,374 @@
+---
+title: dome guards
+description: Author content-inspection filters and validators and assign them to model and MCP server connections
+---
+
+`dome guards` manages guards — content-inspection definitions that redact, omit, or block governed traffic. Filters rewrite or withhold content in an ordered chain. Validators are pure predicates on tool connections. Text filters attach to model connections; JSON filters and validators attach to MCP server (tool) connections.
+
+| Command | |
+|---------|---|
+| [List filters](#list-filters) | `dome guards filters list` |
+| [Get filter](#get-filter) | `dome guards filters get <name-or-id>` |
+| [List filter versions](#list-filter-versions) | `dome guards filters versions <name-or-id>` |
+| [Create filter](#create-filter) | `dome guards filters create <name>` |
+| [Update filter](#update-filter) | `dome guards filters update <name-or-id>` |
+| [Rollback filter](#rollback-filter) | `dome guards filters rollback <name-or-id> --to-version <n>` |
+| [Delete filter](#delete-filter) | `dome guards filters delete <name-or-id>` |
+| [List validators](#list-validators) | `dome guards validators list` |
+| [Get validator](#get-validator) | `dome guards validators get <name-or-id>` |
+| [List validator versions](#list-validator-versions) | `dome guards validators versions <name-or-id>` |
+| [Create validator](#create-validator) | `dome guards validators create <name>` |
+| [Update validator](#update-validator) | `dome guards validators update <name-or-id>` |
+| [Rollback validator](#rollback-validator) | `dome guards validators rollback <name-or-id> --to-version <n>` |
+| [Delete validator](#delete-validator) | `dome guards validators delete <name-or-id>` |
+| [List model filters](#list-model-filters) | `dome models guards filters list <connection>` |
+| [Set model filters](#set-model-filters) | `dome models guards filters set <connection>` |
+| [List tool filters](#list-tool-filters) | `dome tools guards filters list <connection>` |
+| [Set tool filters](#set-tool-filters) | `dome tools guards filters set <connection>` |
+| [List assigned validators](#list-assigned-validators) | `dome tools guards validators list <connection>` |
+| [Add validator](#add-validator) | `dome tools guards validators add <connection>` |
+| [Remove validator](#remove-validator) | `dome tools guards validators remove <connection>` |
+
+Editing a filter deploys a new active version. Assigned connections pick it up on the next gateway sync — history is preserved and can be rolled back to.
+
+## Filter kinds
+
+A filter's kind is structural and immutable at create time.
+
+| Kind | Assignable to | Component | Actions |
+|------|---------------|-----------|---------|
+| `text` | model connections | Ordered text-content matchers (substring, SSN, credit card, phone, digits) | `redact`, `block` |
+| `json` | MCP server (tool) connections | Ordered JSON field-actions keyed by field name | `redact`, `omit`, `block` |
+
+Both kinds enforce **fail-closed**: a filter whose stored config fails to decode blocks that `(connection, direction)` until the config is fixed. The gateway never relays unfiltered traffic.
+
+## Filters
+
+### List Filters
+
+```bash
+dome guards filters list
+```
+
+List the workspace's filters, showing each one's active version and a compact config summary (e.g. `redact[substring:"foo", ssn]; block[substring:"bar"]` or `omit[ssn, dob]; redact[email]`).
+
+### Get Filter
+
+```bash
+dome guards filters get <name-or-id>
+```
+
+Show a single filter's active version and config.
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `name-or-id` | string | Yes | filter name (workspace-scoped) or UUID |
+
+### List Filter versions
+
+```bash
+dome guards filters versions <name-or-id>
+```
+
+List the filter's version history (newest first). Rollback-produced versions cite the source version id.
+
+### Create Filter
+
+```bash
+dome guards filters create <name>
+```
+
+Create a filter — its first active version.
+
+```bash
+# Text Filter: redact SSNs and a substring, then block on another substring
+dome guards filters create pii-redact \
+  --description "Redact PII in model responses" \
+  --redact-ssn \
+  --redact-substring "internal-only" \
+  --block-substring "TOP-SECRET"
+
+# JSON Filter: omit and redact fields in tool arguments/results (via --config-from)
+dome guards filters create tool-scrub --config-from ./tool-scrub.json
+```
+
+| Flag | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| `--description` | string | No | — | One-line description |
+| `--redact-substring` | string (repeatable) | Text only | — | Redact matches of this substring |
+| `--block-substring` | string (repeatable) | Text only | — | Block the response on a substring match |
+| `--redact-ssn` | bool | Text only | `false` | Redact US SSN patterns |
+| `--block-ssn` | bool | Text only | `false` | Block the response on an SSN match |
+| `--config-from` | path or `-` | For JSON, or full-fidelity text | — | Read a protojson `dome.guards.v1.FilterConfig` from a file or stdin. Overrides the convenience flags. |
+
+The convenience flags build at most two components — a `redact` component and a `block` component, redact ordered first — and only produce text filters. Use `--config-from` to author a JSON filter or a multi-component text chain.
+
+#### JSON Filter config example
+
+```json title="tool-scrub.json"
+{
+  "json": {
+    "components": [
+      {
+        "field_actions": [
+          { "matcher": { "key": "ssn" },   "action": "FILTER_ACTION_OMIT" },
+          { "matcher": { "key": "dob" },   "action": "FILTER_ACTION_OMIT" },
+          { "matcher": { "key": "email" }, "action": "FILTER_ACTION_REDACT" },
+          { "matcher": { "key": "card" },  "action": "FILTER_ACTION_BLOCK" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+`BLOCK` withholds the whole message. `OMIT` removes the key and value. `REDACT` rewrites the value with a redaction sentinel. When multiple actions target the same key, `BLOCK` > `OMIT` > `REDACT`.
+
+### Update Filter
+
+```bash
+dome guards filters update <name-or-id>
+```
+
+Edit metadata in place, or deploy a new active version by passing any config flag. The old version is preserved in history and assigned connections follow the active version on the next gateway sync.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--name` | string | New name for the logical filter |
+| `--description` | string | New description |
+| `--redact-substring` / `--block-substring` / `--redact-ssn` / `--block-ssn` / `--config-from` | — | Any config flag deploys a new active version |
+
+Pass at least one of name, description, or a config flag.
+
+### Rollback Filter
+
+```bash
+dome guards filters rollback <name-or-id> --to-version <n>
+```
+
+Roll a filter back to an earlier version. The target version's config is copied forward into a new active version — history is never mutated.
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--to-version` | int32 | Yes | Version number to roll back to |
+
+### Delete Filter
+
+```bash
+dome guards filters delete <name-or-id>
+```
+
+Hard-delete a filter and its connection assignments. Corrupt filters can still be addressed by UUID even when their config fails to render.
+
+## Model Filter assignments
+
+### List model Filters
+
+```bash
+dome models guards filters list <connection>
+```
+
+List the text filters assigned to a model connection, in chain order, grouped by direction.
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `connection` | string | Yes | model connection name |
+
+### Set model Filters
+
+```bash
+dome models guards filters set <connection>
+```
+
+Replace the entire ordered filter chain for one direction on a model connection. Only `text`-kind filters may be assigned.
+
+```bash
+# Order matters — filters run in the given order
+dome models guards filters set claude-prod \
+  --direction response \
+  --filters pii-redact,secrets-block
+
+# Clear a chain
+dome models guards filters set claude-prod --direction request --filters ""
+```
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--direction` | string | Yes | `response` (completions the agent receives) or `request` (the outbound prompt) |
+| `--filters` | comma-separated list | Yes | Ordered filter names or UUIDs; empty clears the chain |
+
+`request` runs before dispatch to the upstream provider — a match can redact the prompt or block the call. `response` runs on the streamed completion; multi-chunk patterns are inspected inside the [LLM outbound filter window](/govern/guards#configure-the-streaming-window).
+
+## Tool Filter assignments
+
+### List tool Filters
+
+```bash
+dome tools guards filters list <connection>
+```
+
+List the JSON filters assigned to an MCP server (tool) connection, in chain order, grouped by direction.
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `connection` | string | Yes | MCP server connection name |
+
+### Set tool Filters
+
+```bash
+dome tools guards filters set <connection>
+```
+
+Replace the entire ordered filter chain for one direction on a tool connection. Only `json`-kind filters may be assigned.
+
+```bash
+# Scrub PII from tool arguments before they leave, and again from results
+dome tools guards filters set github-mcp \
+  --direction request \
+  --filters tool-scrub
+
+dome tools guards filters set github-mcp \
+  --direction response \
+  --filters tool-scrub
+```
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--direction` | string | Yes | `response` (tool result returned to the agent) or `request` (tool arguments before dispatch) |
+| `--filters` | comma-separated list | Yes | Ordered filter names or UUIDs; empty clears the chain |
+
+`request` filters run over tool arguments **before** the call reaches the upstream MCP server — matched fields are redacted or omitted, or the whole call is blocked. `response` filters run over the tool result before the agent sees it.
+
+## Validators
+
+### List Validators
+
+```bash
+dome guards validators list
+```
+
+List the workspace's validators, showing each one's active version and kind.
+
+### Get Validator
+
+```bash
+dome guards validators get <name-or-id>
+```
+
+Show a single validator's active version and config.
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `name-or-id` | string | Yes | validator name (workspace-scoped) or UUID |
+
+### List Validator versions
+
+```bash
+dome guards validators versions <name-or-id>
+```
+
+List the validator's version history (newest first).
+
+### Create Validator
+
+```bash
+dome guards validators create <name>
+```
+
+Create a validator — its first active version. Config is protojson `dome.guards.v1.ValidatorConfig` only.
+
+```bash
+dome guards validators create require-user-id \
+  --description "Require user_id on tool calls" \
+  --config-from ./require-user-id.json
+```
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--config-from` | path or `-` | Yes | Protojson ValidatorConfig. Use `-` for stdin |
+| `--description` | string | No | One-line description |
+
+Kind (`tool_request` or `tool_response`) is derived from the config arm and is immutable.
+
+### Update Validator
+
+```bash
+dome guards validators update <name-or-id>
+```
+
+Edit metadata in place, or pass `--config-from` to deploy a new active version. Kind cannot change.
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--name` | string | No | Rename the validator |
+| `--description` | string | No | New description |
+| `--config-from` | path or `-` | No | Deploy a new active version |
+
+Pass at least one flag.
+
+### Rollback Validator
+
+```bash
+dome guards validators rollback <name-or-id> --to-version <n>
+```
+
+Roll a validator back to an earlier version. The target config is copied forward into a new active version.
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--to-version` | number | Yes | Version number to roll back to |
+
+### Delete Validator
+
+```bash
+dome guards validators delete <name-or-id>
+```
+
+Hard-delete a validator and its connection assignments.
+
+## Validator assignments
+
+### List assigned Validators
+
+```bash
+dome tools guards validators list <connection>
+```
+
+List validators assigned to a tool connection, grouped by direction.
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `connection` | string | Yes | MCP server connection name |
+
+### Add Validator
+
+```bash
+dome tools guards validators add <connection>
+```
+
+Attach validators to one direction on a tool connection. Attach is atomic. Response validators are MCP-only.
+
+```bash
+dome tools guards validators add github-mcp \
+  --direction request \
+  --validators require-user-id
+```
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--direction` | string | Yes | `request` or `response` |
+| `--validators` | comma-separated list | Yes | validator names or UUIDs |
+
+### Remove Validator
+
+```bash
+dome tools guards validators remove <connection>
+```
+
+Detach validators from one direction on a tool connection. Detach is idempotent.
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--direction` | string | Yes | `request` or `response` |
+| `--validators` | comma-separated list | Yes | validator names or UUIDs |
+

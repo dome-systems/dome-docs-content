@@ -1,0 +1,86 @@
+---
+title: Authorization model
+description: How Cedar rules evaluate permit and forbid against the assembled effective policy
+---
+
+import { authorizationModel } from '@/snippets/glossary';
+
+<p>{authorizationModel}</p>
+
+## How a request is decided
+
+Each request maps to one principal (`Dome::Agent`), one action (`Dome::Action`), and one resource (`Dome::MCPTool` or `Dome::LLMModel`). Conditions may also read request `context` and, when present, verified act-as claims on the principal.
+
+```cedar title="examples.cedar"
+permit(
+  principal == Dome::Agent::"data-pipeline",
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"database-query"
+);
+
+forbid(
+  principal,
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"production-deploy"
+) unless {
+  principal has metadata &&
+  principal.metadata has deploy_target &&
+  principal.metadata.deploy_target == "production"
+};
+```
+
+### Evaluation semantics
+
+1. The evaluator checks every rule in the effective policy against the request.
+2. If **any** `forbid` matches, the request is **denied**, regardless of any matching `permit`.
+3. If **no** `forbid` matches and **at least one** `permit` matches, the request is **allowed**.
+4. If **no rule matches at all**, the request is **denied** (default-deny / fail-closed).
+
+`forbid` always wins. A `forbid` at organization scope cannot be overridden by a `permit` at agent scope. Design rules accordingly: broad restrictions at higher scopes, specific allowances at lower scopes.
+
+### Escalations
+
+An `escalate` policy can route a matching authorization decision through an [escalation](/concepts/controls/escalations). A pending judgment stops the request. After a reviewer resolves it, the caller retries the request and the workflow’s terminal allow or deny outcome applies.
+
+Use an escalation for an individual request that requires review. Use `permit` and `forbid` rules when the decision should remain entirely deterministic. Configure the workflow and reviewers on [escalations](/govern/escalations).
+
+## Effective policy
+
+The effective policy is the merged set of all active rule bundles across the [scope hierarchy](/concepts/platform/scopes). Assembly works as follows:
+
+1. Fetch the active bundle at each scope: organization, tenant, workspace, agent.
+2. Merge Cedar files with scope-prefixed filenames (`org/rules.cedar`, `workspace/rules.cedar`) to prevent name collisions.
+3. Compute a composite content hash from the merged file list.
+4. Load the merged policy into the evaluator as a single PolicySet.
+
+The gateway polls for content-hash changes on a sync interval (default: 10 seconds). When a bundle is deployed or rolled back, the hash changes and the gateway picks up the new policy on the next sync.
+
+### Per-workspace vs per-agent evaluation
+
+| Deployment | Evaluator | Use case |
+|-----------|-----------|----------|
+| **Hosted gateway** | `WorkspaceRuleEvaluator` maintains separate policy sets per assigned workspace | Multi-tenant shared gateway |
+| **SDK / dedicated runtime** | `RuleEvaluator` uses a single workspace policy set | Dedicated per-service deployment |
+
+Both evaluators enforce the same Cedar semantics. The hosted gateway adds per-workspace freshness checks. If a workspace's policy has not synced within its configured freshness window, the affected `tool.call` or `model.call` completes with `result=denied` and `denial.reason=stale_policy`.
+
+## Fail-closed behavior
+
+The authorization model is fail-closed at every level:
+
+- **No matching rule:** denied by default.
+- **Evaluator error:** denied.
+- **Stale policy:** denied (hosted gateway only, per-workspace freshness window).
+- **No policy loaded:** denied.
+
+Cedar itself has no permissive or audit-only mode. Use [simulation](/govern/rules/simulate) to test rule changes before deploying.
+
+## Next steps
+
+With that Cedar evaluation model in mind, continue with:
+
+- [rules](/concepts/controls/rules) concept for bundles, scopes, and effective rules
+- [rules](/reference/controls/rules) reference for entity, action, and attribute catalogs
+- [Authorize access](/govern/rules) to write, validate, simulate, and apply rules
+- [Permissions](/concepts/platform/permissions) concept for platform RBAC (separate from Cedar)
+- [Scopes](/concepts/platform/scopes) concept for the hierarchy that feeds effective policy

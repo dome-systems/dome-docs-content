@@ -1,0 +1,19 @@
+---
+title: dome usage-caps
+description: Show free-tier monthly allowances for the active workspace
+---
+
+`dome usage-caps` shows how much of the free plan's monthly allowance the active workspace has left, and whether either cap has been reached.
+
+```bash
+dome usage-caps
+```
+
+Show the organization-level allowances that govern the active workspace on the free plan:
+
+- monthly MCP tool calls
+- monthly model tokens
+
+The output shows each allowance, included amount, current usage, reset window, and whether the cap has been reached. The two allowances are independent: reaching one does not exhaust the other.
+
+This command is read-only. Paid plans meter usage instead, so the command returns no caps for a workspace under a paid organization. Use [`dome usage`](/cli/operate/usage) for recent model-token usage and [`dome billing usage`](/cli/manage/billing#show-usage) for the current billing period.

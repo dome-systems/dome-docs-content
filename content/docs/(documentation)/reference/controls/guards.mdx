@@ -1,0 +1,208 @@
+---
+title: Guards
+sidebarTitle: Guards
+description: guard types, filter catalogs, validator conditions, path syntax, and streaming window layers
+---
+
+This page lists guard types and the catalogs that back them.
+
+- Filters rewrite or withhold content.
+- Validators are pure predicates that block tool traffic when structured checks fail.
+
+For how content inspection works, see the [Guards](/concepts/controls/guards) concept. To configure guards, see [Inspect content](/govern/guards).
+
+## Filters
+
+Filters inspect and rewrite model or tool content on a connection and direction. They run in an ordered chain. A matching `BLOCK` short-circuits the chain.
+
+### Kinds
+
+| Kind | Connection | Matchers | Actions |
+|------|------------|----------|---------|
+| `text` | model | Substring, SSN, credit card, phone, digits, IP address, email, URL | `redact`, `block` |
+| `json` | tool | JSON field path and optional content matchers | `redact`, `omit`, `block` |
+
+Filter kind is immutable after create.
+
+### Actions and precedence
+
+| Action | Effect |
+|--------|--------|
+| `redact` / `FILTER_ACTION_REDACT` | Rewrites the matched value or span with a redaction sentinel |
+| `omit` / `FILTER_ACTION_OMIT` | Removes the key and value (JSON only) |
+| `block` / `FILTER_ACTION_BLOCK` | Withholds the whole message and short-circuits the chain |
+
+When more than one JSON action targets the same path, precedence is `BLOCK` > `OMIT` > `REDACT`.
+
+### Path syntax
+
+JSON filter `matcher.path` values use a locked-down dialect. It is not JSONPath.
+
+| Form | Matches | Example |
+|------|---------|---------|
+| `key` | A top-level field | `email` |
+| `a.b` | A nested field at an exact path | `user.email` |
+| `a.b[3].c` | A specific array element by index | `contacts[0].phone` |
+| `a.b.c` against an array of objects | Every element (implicit fan-out) | `employees.ssn` redacts the field on every employee |
+| `**.key` or `**.a.b` | The trailing path at **any depth** in the response | `**.phone` redacts every `phone` field, nested at any level |
+
+Exact-path matching is the default. The `**.` prefix redacts a field by name wherever it appears.
+
+Recursive descent (`**.phone`) fits when the field name is a reliable sensitivity signal regardless of depth, when response shapes vary across tools, or when enumerating every exact path is brittle. Exact paths (`primary_contact.phone`) fit when only specific occurrences are sensitive and a same-named field elsewhere should pass through.
+
+`**` is only recognized as a leading prefix. Mid-path `**` (for example `a.**.b`) is treated as literal key characters and never matches. There is no JSONPath `..`, no wildcards, and no slice ranges.
+
+### Content matchers
+
+JSON filters can match on field values as well as key paths. Author them in `matcher.contentMatchers` on a JSON filter config.
+
+| Mode | `path` | `contentMatchers` | Behavior |
+|------|--------|-------------------|----------|
+| Key-only | Set | Empty | Matches the field at the path |
+| Content-only | Empty | Non-empty | Scans values for the matcher patterns |
+| Path and content | Set | Non-empty | Both must match (AND) |
+
+Supported content matcher arms: `substring`, `ssn`, `credit_card`, `phone`, `digits`, `ip`, `email`, and `url`.
+
+### Network-pattern matchers
+
+Text and JSON content matchers can recognize common network-facing values without maintaining a literal list. Use `ip` with one or both address families enabled; `email` recognizes email addresses; and `url` recognizes absolute URLs with a scheme and host.
+
+```json title="Redact IP addresses and email addresses"
+{
+  "text": {
+    "components": [
+      {
+        "action": "FILTER_ACTION_REDACT",
+        "matchers": [
+          { "ip": { "v4": true, "v6": true } },
+          { "email": {} },
+          { "url": {} }
+        ]
+      }
+    ]
+  }
+}
+```
+
+At least one of `ip.v4` or `ip.v6` must be enabled. These matchers identify values by their standard address or URL syntax; use a substring matcher when you need to match one specific hostname, domain, or address.
+
+For `FILTER_ACTION_REDACT`, set `redactTarget` to `REDACT_TARGET_CONTENT_MATCHES` to rewrite only the matched spans. Omit `redactTarget` to redact the whole field value. `REDACT_TARGET_CONTENT_MATCHES` requires a non-empty `contentMatchers` list.
+
+```json
+{
+  "json": {
+    "components": [
+      {
+        "field_actions": [
+          {
+            "matcher": {
+              "path": "**.note",
+              "contentMatchers": [{ "ssn": {} }]
+            },
+            "action": "FILTER_ACTION_REDACT",
+            "redactTarget": "REDACT_TARGET_CONTENT_MATCHES"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Tool payload coverage
+
+JSON filters traverse every tool-result shape the MCP server can return.
+
+| Payload | Coverage |
+|---------|----------|
+| Content body | Raw JSON object or array |
+| Content items | Top-level MCP content array |
+| Embedded JSON | JSON encoded inside `text` or `resource.text` |
+| `structuredContent` | Structured mirror attached by the MCP server |
+
+Field matchers apply at any depth. A matching `BLOCK` short-circuits the guard chain and replaces the result with a safe placeholder. The audit event identifies the blocking filter.
+
+### Guard audit events
+
+Every acting filter chain emits `guard.filter.evaluate` at `stage=completed`. The event is verdictless: its payload records what the filter did, while the enclosing `tool.call` or `model.call` carries `result=allowed` or `result=denied`.
+
+Use payload `direction` (`request` or `response`), `connectionType`, `toolName`, `model`, and `provider` to distinguish the path. A blocking action produces a denied enclosing call with `denial.reason=guard_blocked`.
+
+Filter-chain payloads carry:
+
+| Field | Description |
+|-------|-------------|
+| `actions` | Deduped set of actions the chain took |
+| `blockedByFilterIds` | filter IDs that produced a block |
+| `redactedByFilterIds` | filter IDs that rewrote content in place |
+| `omittedByFilterIds` | filter IDs that dropped fields from the payload |
+| `matchCount` | Number of matches, when available |
+
+Validator runs emit `guard.validator.evaluate`, also verdictless and completed-only. Its payload carries `direction`, `failedByValidatorIds`, `failureReasons`, `connectionId`, `toolName`, and `connectionType`. A failed validator makes the enclosing `tool.call` denied with `denial.reason=guard_blocked`.
+
+If an assigned filter cannot be decoded or compiled, the gateway fails closed for that connection and direction until you roll back or clear the chain.
+
+### Streaming window
+
+The effective window at stream time is `max(workspace floor, connection override, per-request override)`. Any layer set to `0` drops out of the max.
+
+| Layer | Where it's set | Notes |
+|-------|----------------|-------|
+| Workspace floor | **Settings → Config** in the dashboard, or `UpdateWorkspaceLLMFilterWindow` on the API | Bytes ≤ 1 MiB, tokens ≤ 4096. |
+| Per-connection | `--filter-window-bytes` / `--filter-window-tokens` on `dome models add` or `dome models update` | `0` inherits the workspace floor. On `update`, passing `0` with the flag present clears the override back to the floor. |
+| Per-request | `_dome.filter_window_bytes` / `_dome.filter_window_tokens` in the OpenAI or Anthropic request body | The `_dome` key is stripped before the request reaches the upstream provider. |
+
+Workspace floor fields are `llm_filter_window_bytes` and `llm_filter_window_tokens`. Per-connection flags live on [Models](/connect/models). Setting the layers is on [Configure the streaming window](/govern/guards#configure-the-streaming-window).
+
+## Validators
+
+Validators are a guard type for tool connections. They never rewrite content. Every assigned validator must pass (order-independent AND). A failure blocks the whole tool request or response and records which conditions failed.
+
+### Kinds
+
+| Kind | Edge | What it inspects |
+|------|------|------------------|
+| `tool_request` | Request | tool call arguments |
+| `tool_response` | Response | MCP tool results |
+
+Validator kind is immutable after create. Response validators are MCP-only. Dome rejects assigning a `tool_response` validator to a REST tool connection.
+
+### Conditions
+
+Each validator config is a protojson `dome.guards.v1.ValidatorConfig` with either a `toolRequest` or `toolResponse` arm.
+
+| Condition | Effect |
+|-----------|--------|
+| `json.requiredPaths` | Every listed path must be present |
+| `json.maximumSize` | Arguments or target payload must not exceed this byte size |
+| `by_tool` | Per-sub-tool `JSONValidator` map, AND-composed with the top-level `json` for that tool name |
+| `target` (response only) | Where response conditions run |
+| `require_structured_content` (response only) | Require MCP `structuredContent` |
+
+A validator must set at least one condition. Empty `json` objects are rejected.
+
+Response `target` values:
+
+| Target | Runs conditions against |
+|--------|-------------------------|
+| `VALIDATION_TARGET_STRUCTURED_CONTENT` | MCP `structuredContent` |
+| `VALIDATION_TARGET_ALL_JSON_CONTENT` | Every JSON-bearing content block |
+| `VALIDATION_TARGET_ANY_JSON_CONTENT` | At least one JSON-bearing content block |
+| `VALIDATION_TARGET_CONTENT_ARRAY` | The whole content array |
+
+JSON-bearing blocks are the same shapes filters unwrap: `text` blocks whose value is JSON, and `resource.text` on resource blocks. Plain prose is skipped.
+
+### Assignment
+
+Validators attach to a tool connection as an unordered set on one direction. Attach and detach are atomic. Direction must match the validator kind (`request` with `tool_request`, `response` with `tool_response`).
+
+Unlike filters, validator assignment is not an ordered chain. Every assigned validator runs, and any failure blocks.
+
+Create, assign, and inspect validators on [Inspect content](/govern/guards#validators).
+
+## Next steps
+
+- [Guards](/concepts/controls/guards) concept for filters, validators, directions, and fail-closed behavior
+- [Configure Guards](/govern/guards) to create, assign, and tune windows
+- [Models](/connect/models) for per-connection filter windows

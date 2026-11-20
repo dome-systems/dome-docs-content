@@ -1,0 +1,9 @@
+{
+  "title": "Deploy your agent",
+  "defaultOpen": true,
+  "collapsible": false,
+  "pages": [
+    "always-on",
+    "event-driven"
+  ]
+}

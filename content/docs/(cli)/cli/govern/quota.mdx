@@ -1,0 +1,141 @@
+---
+title: dome quotas
+description: Cap spend, tokens, calls, or managed-agent runs for workspace, agent, act-as, pool, model, gateway, tool, and trigger subjects
+---
+
+`dome quotas` is the single command group for every usage cap in the active workspace. Model, tool, and gateway quotas used to live on separate groups; they now share this surface.
+
+| Command | |
+|---------|---|
+| [List quotas](#list-quotas) | `dome quotas list` |
+| [Set quota](#set-quota) | `dome quotas set --subject <kind> --limit <amount>` |
+| [Update quota](#update-quota) | `dome quotas update <quota-id>` |
+| [Remove quota](#remove-quota) | `dome quotas rm <quota-id>` |
+
+Each quota has a **subject** (what it covers) and a **dimension** (which traffic it meters). Dimension is usually implied by `--subject`:
+
+| Subject | Implied dimension | Typical units |
+|---------|-------------------|----------------|
+| `workspace`, `agent` | `all` (model + tool), or `run` for managed-agent runs | `dome_usd`, `runs` |
+| `model`, `pool`, `gateway`, `act-as` | `llm` | `dome_usd`, `provider_usd`, `tokens`, `calls` |
+| `tool` | `tool` | `dome_usd`, `calls` |
+| `trigger` | `run` | `runs` |
+
+Pass `--dimension` only when a subject is valid on more than one dimension. Create is insert-only for each subject identity, dimension, and window pair. Subject and unit cannot change after create.
+
+## List quotas
+
+```bash
+dome quotas list
+dome quotas list --dimension llm
+dome quotas list --dimension run
+dome quotas list --gateway prod-tools
+```
+
+List quotas in the active workspace with subject, dimension, unit, limit, window, usage, and enforcement state. Alias: `ls`.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dimension` | string | — | Only list one dimension: `all`, `llm`, `tool`, or `run` |
+| `--gateway` | string | — | Only list caps on one gateway (name or id) |
+
+<Callout icon="key">Requires `gateways.view`.</Callout>
+
+## Set quota
+
+```bash
+dome quotas set --subject <kind> --limit <amount>
+```
+
+Create a spend, token, or call cap. The gateway either spills routing for an exhausted model budget or rejects traffic when a total cap is reached.
+
+| Flag | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| `--subject` | string | Yes | — | `workspace`, `agent`, `act-as`, `pool`, `model`, `gateway`, `tool`, `tool-connection`, or `trigger` |
+| `--dimension` | string | No | implied | `all`, `llm`, `tool`, or `run` — usually implied by `--subject` |
+| `--unit` | string | No | `dome_usd` | `dome_usd` (what you spend with Dome), `provider_usd` (an estimate of the upstream model bill), `tokens`, `calls`, or `runs` for a run quota. The two dollar units are different money. |
+| `--limit` | string | Yes | — | US dollars for a dollar unit (e.g. `500` or `12.50`); a whole count for `tokens` or `calls` |
+| `--window` | string | No | `monthly` | `daily`, `monthly`, or `per_run` (managed-agent agent quota only) |
+| `--name` | string | No | — | Human-readable label |
+| `--model` | string | Conditional | — | model connection name (`--subject model`) |
+| `--pool` | string | Conditional | — | Pool name (`--subject pool`, or to scope a model quota to one pool) |
+| `--agent` | string | Conditional | — | agent name or id (`--subject agent`) |
+| `--act-as` | string | Conditional | — | Verified end-user OIDC subject (`--subject act-as`) |
+| `--gateway` | string | Conditional | — | gateway name or id (`--subject gateway`) |
+| `--tool` | string | Conditional | — | One MCP tool as `<connection>/<tool>`, e.g. `github/create_issue` (`--subject tool`) |
+| `--connection` | string | Conditional | — | MCP server connection name (`--subject tool-connection`) |
+| `--trigger` | string | Conditional | — | Trigger name or ID (`--subject trigger`) |
+| `--per-caller` | bool | No | `false` | Apply the limit independently to each agent and verified end user (`--subject model` only) |
+| `--disabled` | bool | No | `false` | Create without enforcing until enabled |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+```bash title="Workspace monthly cap (model + tool)"
+dome quotas set --subject workspace --limit 5
+```
+
+```bash title="Agent daily cap"
+dome quotas set --subject agent --agent bot --limit 1 --window daily
+```
+
+```bash title="Model spend cap"
+dome quotas set --subject model --model gpt-4o --limit 500 --dimension llm
+```
+
+```bash title="Pool spill-over budget for one model"
+# Caps claude-sonnet spend inside the production pool at $1000/month.
+# When exhausted, the pool spills to the next member.
+dome quotas set \
+  --subject model --model claude-sonnet --pool production \
+  --limit 1000 --window monthly
+```
+
+```bash title="Gateway LLM cap"
+dome quotas set --subject gateway --gateway prod-tools --limit 500 --window monthly --name prod-monthly
+```
+
+```bash title="Tool call cap"
+dome quotas set --subject tool --tool github/create_issue --unit calls --limit 100
+```
+
+```bash title="Monthly run limit for one trigger"
+dome quotas set --subject trigger --trigger nightly-triage --limit 30 --window monthly
+```
+
+```bash title="Per-run token budget for a managed agent"
+dome quotas set --subject agent --agent nightly-triage --unit tokens --limit 2000000 --window per_run
+```
+
+Run quotas count managed-agent runs when they enter the queue. They apply to a workspace, agent, or trigger; a zero limit admits none. A per-run quota is an LLM quota on one managed agent, in `tokens` or `provider_usd`; the runner stops after it reaches the budget, with at most one model call of overage.
+
+The gateway picks up a new quota on its next configuration sync.
+
+## Update quota
+
+```bash
+dome quotas update <quota-id> --limit 750
+dome quotas update <quota-id> --enabled=false
+```
+
+Update a quota's name, limit, window, or enforcement state. Its subject and unit cannot change. `--window` has no default: an unset flag leaves the window unchanged.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--name` | string | New label |
+| `--limit` | string | New limit, interpreted in the quota's existing unit |
+| `--window` | string | `daily` or `monthly` |
+| `--enabled` | bool | Enable or disable enforcement |
+
+Pass at least one flag.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+## Remove quota
+
+```bash
+dome quotas rm <quota-id>
+```
+
+Remove a quota by id (from `dome quotas list`). Aliases: `remove`, `delete`.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>

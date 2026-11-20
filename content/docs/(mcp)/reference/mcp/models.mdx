@@ -1,0 +1,382 @@
+---
+title: Models
+description: Connect LLM providers, secure upstream credentials, publish governed model endpoints, and manage organization model rates
+---
+
+import { modelConnection } from '@/snippets/glossary';
+
+<p>{modelConnection}</p>
+
+Refer to [Models](/connect/models) for how to connect providers and publish governed endpoints. Group models into [Pools](/reference/mcp/pools) for routing and failover. Cap spend with [Quotas](/reference/mcp/quotas). Connection, OAuth, pool, and quota tools require workspace context. Rate-card tools are organization-scoped (or authenticated-only for Dome's book and suggestions).
+
+## Models
+
+### dome_models_list
+
+List LLM model connections in the active workspace.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| — | — | — | No parameters |
+
+<Callout icon="key">Requires `gateways.view`.</Callout>
+
+### dome_models_providers
+
+List the supported provider catalog and each provider's curated model ids. Use it to discover valid `provider` and `provider_config.model` values before calling `dome_models_add`.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| — | — | — | No parameters |
+
+<Callout icon="key">Requires `gateways.view`.</Callout>
+
+Each entry returns the provider id, the egress wire family, the default base URL (empty when operator-specific, for example Azure resource or Bedrock region), and a curated model list. Providers with an empty `models` array accept any model string the upstream accepts.
+
+```json title="dome_models_providers result excerpt"
+{
+  "providers": [
+    {
+      "provider": "anthropic",
+      "display_name": "Anthropic",
+      "wire": "anthropic",
+      "default_base_url": "https://api.anthropic.com",
+      "models": [
+        { "id": "claude-opus-4-8", "display_name": "Claude Opus 4.8", "default": true },
+        { "id": "claude-sonnet-4-6", "display_name": "Claude Sonnet 4.6" }
+      ]
+    }
+  ]
+}
+```
+
+### dome_models_get
+
+Get an LLM model connection by name.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | model name |
+
+<Callout icon="key">Requires `gateways.view`.</Callout>
+
+### dome_models_add
+
+Add an LLM model connection.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Connection name (unique within workspace) |
+| `provider` | string | Yes | `openai`, `anthropic`, `google`, `bedrock`, `azure_openai`, `mistral`, `groq`, `together`, `fireworks`, `deepseek`, `xai`, `perplexity`, `cohere`, `openrouter`, `cerebras`, `nvidia`, `deepinfra`, `sambanova`, `ai21`, `databricks`, `openai_compatible`, `custom`. Refer to [Supported providers](/reference/resources/models#providers) reference. |
+| `provider_config` | object | No | Provider-specific config. Common keys: `model`, `endpoint` (omit `endpoint` for hosted providers to use the registry's default base URL) |
+| `auth_method` | string | No | `none`, `api-key`, `oauth` (default: `api-key`) |
+| `credential_type` | string | No | `none`, `shared`, `per-user` (default: `shared`) |
+| `api_key` | string | No | API key for `api-key`+`shared`. Stored under the provider's managed auth header (`Authorization` for OpenAI/Bedrock, `x-api-key` for Anthropic, `api-key` for Azure, `x-goog-api-key` for Google) |
+| `secret_values` | object | No | Advanced: per-connection credential bundle for custom secret-source headers |
+| `attributes` | object | No | Cedar attributes used by authorization rules |
+| `gateways` | array | No | [Gateway](/build/gateways) names to attach the model to directly at create time. Without it the model is unreachable until attached (`dome_gateways_model_add`). |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+```json title="Add an Anthropic model"
+{
+  "name": "dome_models_add",
+  "arguments": {
+    "name": "claude-sonnet",
+    "provider": "anthropic",
+    "provider_config": { "model": "claude-3-5-sonnet-20241022" },
+    "api_key": "sk-ant-..."
+  }
+}
+```
+
+### dome_models_update
+
+Update an LLM model connection. Only provided fields change.
+
+When `new_name` renames a model, managed agents configured to run on it follow the new name.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | model name |
+| `new_name` | string | No | Rename the connection |
+| `provider_config` | object | No | Replace `provider_config` |
+| `auth_method` | string | No | New auth method |
+| `credential_type` | string | No | New credential scope |
+| `api_key` | string | No | Rotate the shared API key. Stored under the provider's managed auth header (`Authorization` for OpenAI/Bedrock, `x-api-key` for Anthropic, `api-key` for Azure, `x-goog-api-key` for Google) |
+| `attributes` | object | No | Replace Cedar attributes (pass `{}` to clear) |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+Provider is immutable after create — to switch providers, add a new connection.
+
+### dome_models_usage
+
+Show what depends on a model connection before deleting or renaming it: managed agents configured to run on it, agents granted it, gateways that expose it, and pools that contain it. The response can omit names you are not allowed to view.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Model connection name |
+
+<Callout icon="key">Requires `gateways.view`.</Callout>
+
+### dome_models_remove
+
+Remove an LLM model connection. Marked destructive.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | model name |
+| `reassign_to` | string | No | Replacement model connection or pool. Moves managed agents configured for this model and grants the replacement to agents that held it. |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+Without `reassign_to`, managed agents configured to run on the model cannot run and agents with no other model grant lose model access.
+
+## OAuth
+
+### dome_models_oauth_connect
+
+Begin the shared-OAuth admin consent flow for a model configured with `auth_method=oauth`, `credential_type=shared` (Anthropic OAuth, Azure AAD service principal, Google Workload Identity for Vertex). Returns a one-shot URL valid for ~10 minutes.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | model name |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+### dome_models_oauth_disconnect
+
+Disconnect (revoke) shared-OAuth credentials for a model. Idempotent. Marked destructive.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | model name |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+## Model rates
+
+Organization rate-card tools. They are the MCP surface of [`dome models rates`](/cli/connect/models#model-rates). Org id comes from the active context — there is no `org_id` argument.
+
+Rates are integer micro-USD per 1 million tokens (`$3.00/Mtok` = `3000000`). Every rate is a time-windowed **era**: `[valid_from, valid_until)` with `valid_until` unset meaning the open (current) era. Historical usage is priced at the era covering its own time, not at today's rate. `dome_models_rate_set` appends a new era (it closes the match's open era). `dome_models_rate_era_update` is the audited in-place correction of one existing era.
+
+**Source** is which card won: `customer` (this organization's contract or association) or `dome_default` (Dome's published book). **Provenance** (`origin`) is where those numbers came from: `seed`, `litellm`, `openrouter`, `merged`, or `customer`. Resolution never branches on provenance.
+
+<Callout type="warning">
+A provider cost is always an estimate of the organization's upstream bill, never a Dome charge. Dome's own charges meter raw usage at Dome's rates and are exact. When a provider reports no token usage, Dome derives tokens from wire bytes (`tokens = ceil((request_bytes + response_bytes) / bytes_per_token)`). Those tokens are doubly estimated: an estimated count priced at an estimated rate.
+</Callout>
+
+`dome_models_rate_defaults` and `dome_models_rate_suggest` need authentication only — they read Dome's platform-global book. The other five require organization-scoped `modelrates.manage` (owners and admins hold it by default; it does not cascade from a workspace role). Reads take the write gate: contract rates are contract terms.
+
+### dome_models_rate_defaults
+
+Show Dome's own per-model rate book (seeded families plus rates imported from the LiteLLM and OpenRouter feeds) and the byte-to-token conversion table used when a provider reports no token usage. Does **not** include the organization's contract rates — use `dome_models_rates` for those. The book is large; pass `filter`.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `filter` | string | No | Substring filter over match strings |
+
+<Callout icon="key">Authenticated only — no organization permission. Does not return org contract rates.</Callout>
+
+Returns `rate_source: "dome_defaults"`, `cost_basis` (`estimate of your upstream provider bill; never a Dome charge`), `rates` (each row `source: "dome_default"`, plus the four micro-USD-per-Mtok fields and `bytes_per_token` / `bytes_per_token_source`), and `byte_to_token_conversion` (`applies_when`, `formula`, `rules`, `default_bytes_per_token`, `derived_tokens_estimate`). Feed provenance (`origin`) is not emitted on each rate row of this view.
+
+```json title="Narrow Dome's book"
+{
+  "name": "dome_models_rate_defaults",
+  "arguments": { "filter": "claude-sonnet" }
+}
+```
+
+### dome_models_rates
+
+Show the **effective** model rate card for the active organization: its own contract rates and confirmed model associations (`org_model_prices` eras) layered over Dome's book, plus the byte-to-token divisor in force. Pass `filter` to narrow the card.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `filter` | string | No | Substring filter over match strings |
+
+<Callout icon="key">Requires organization-scoped `modelrates.manage`.</Callout>
+
+Returns `rate_source: "effective"`, `org_id`, the same `cost_basis` string, `rates` (each row labelled `source`: `customer` or `dome_default`), and `byte_to_token_conversion`. This view does not include era ids; take `price_id` from `dome_models_rate_history` (customer segments) for `dome_models_rate_era_update` / `dome_models_rate_remove`.
+
+```json title="Effective card for one family"
+{
+  "name": "dome_models_rates",
+  "arguments": { "filter": "claude" }
+}
+```
+
+### dome_models_rate_history
+
+Show the pricing timeline one **requested-model string** resolves through for the active organization: every span of time, the era that won it (org override or Dome's book), its rates, `source`, and provenance (`origin`). Answers "what did this model cost us in June".
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `model` | string | Yes | Requested-model value (for example `claude-sonnet-4-5`), not a match substring |
+
+<Callout icon="key">Requires organization-scoped `modelrates.manage`.</Callout>
+
+Returns `{ "segments": [ … ] }`. Each segment is a half-open window (`from` unset = since forever; `until` unset = current). `source` is `customer` or `dome_default`. `origin` is `seed`, `litellm`, `openrouter`, `merged`, or `customer`. `price_id` is set only when `source` is `customer`. `priced_as` is set when the winning customer era is an alias.
+
+```json title="Timeline for one model string"
+{
+  "name": "dome_models_rate_history",
+  "arguments": { "model": "claude-sonnet-4-5" }
+}
+```
+
+### dome_models_rate_suggest
+
+Suggest which Dome-owned pricing rows a **custom** model string most plausibly prices like (normalized fuzzy match over the imported book) — for models Dome cannot price directly, such as fine-tunes. Suggest only: a price is never silently bound. To bind one, confirm with `dome_models_rate_set` using `priced_as`.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `model` | string | Yes | Custom model string to find pricing candidates for |
+
+<Callout icon="key">Authenticated only — no organization permission. Binding requires `modelrates.manage` on `dome_models_rate_set`.</Callout>
+
+Returns `{ "candidates": [ … ] }`. Each candidate has `model_match` (the `priced_as` value to confirm), similarity `score` in `(0, 1]`, current rates, and `origin`.
+
+```json title="Candidates for a fine-tune"
+{
+  "name": "dome_models_rate_suggest",
+  "arguments": { "model": "ft:gpt-4o-mini:acme:support:abc123" }
+}
+```
+
+### dome_models_rate_set
+
+Set the organization's own rate for a model match — a **new era**. The match's open era is closed at `effective_from` (default now) and the new one opened; historical usage keeps pricing at the eras that covered it. Give literal micro-USD-per-Mtok rates, **or** `priced_as` to bind the match to a Dome-owned row (the custom-model association — it tracks upstream price changes). The two are mutually exclusive.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `model_match` | string | Yes | Lowercased substring matched against requested-model strings (`claude-opus-5`, or a family like `claude`) |
+| `name` | string | No | Optional label (`Anthropic EA contract, 2026 H2`) |
+| `input_micros_per_mtok` | number | Conditional | Micro-USD per 1M input tokens. Omit when using `priced_as`. Omitted literal rates are sent as `0` (that token class prices as free). |
+| `cache_read_micros_per_mtok` | number | Conditional | Micro-USD per 1M cache-read tokens. Omit when using `priced_as`. Omitted literal rates are sent as `0`. |
+| `cache_write_micros_per_mtok` | number | Conditional | Micro-USD per 1M cache-write tokens. Omit when using `priced_as`. Omitted literal rates are sent as `0`. |
+| `output_micros_per_mtok` | number | Conditional | Micro-USD per 1M output tokens. Omit when using `priced_as`. Omitted literal rates are sent as `0`. |
+| `sort_order` | number | No | Precedence hint; lower wins over longer-match (default `0`) |
+| `priced_as` | string | Conditional | Dome-owned match to price this match as. Mutually exclusive with literal rates. |
+| `effective_from` | string | No | RFC3339 time the new era takes effect (default now; backdating allowed when the contract actually changed) |
+| `effective_until` | string | No | RFC3339 end of a **closed** historical window. With `effective_from`, asserts the rate for `[from, until)` only — current pricing is left untouched. Must not overlap existing eras. |
+
+<Callout icon="key">Requires organization-scoped `modelrates.manage`.</Callout>
+
+`effective_from` and `effective_until` must be RFC3339 (for example `2026-08-01T00:00:00Z`).
+
+```json title="Open a contract era"
+{
+  "name": "dome_models_rate_set",
+  "arguments": {
+    "model_match": "claude-opus-5",
+    "name": "Anthropic EA contract, 2026 H2",
+    "input_micros_per_mtok": 3000000,
+    "cache_read_micros_per_mtok": 300000,
+    "cache_write_micros_per_mtok": 3750000,
+    "output_micros_per_mtok": 15000000,
+    "effective_from": "2026-07-01T00:00:00Z"
+  }
+}
+```
+
+```json title="Bind a custom model (after suggest)"
+{
+  "name": "dome_models_rate_set",
+  "arguments": {
+    "model_match": "ft:gpt-4o-mini:acme:support:abc123",
+    "priced_as": "gpt-4o-mini"
+  }
+}
+```
+
+```json title="Record what was paid for a closed window"
+{
+  "name": "dome_models_rate_set",
+  "arguments": {
+    "model_match": "claude-sonnet-4-5",
+    "input_micros_per_mtok": 3000000,
+    "output_micros_per_mtok": 15000000,
+    "effective_from": "2026-01-01T00:00:00Z",
+    "effective_until": "2026-07-01T00:00:00Z"
+  }
+}
+```
+
+### dome_models_rate_era_update
+
+Edit **one** existing rate era in place — rates, alias, label, or window boundaries. This is the audited correction path for recorded pricing history: every provider-cost surface re-prices the affected span at read time the moment it lands (Dome's own bill is unaffected — it meters raw usage). Get era ids (`price_id`) from customer segments of `dome_models_rate_history`. Omitted fields keep their current values. A closed era cannot be reopened here.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `price_id` | string | Yes | The era to edit (an `org_model_prices` row id) |
+| `name` | string | No | New label. Omit to keep. |
+| `input_micros_per_mtok` | number | No | Corrected micro-USD per 1M input tokens. Omit to keep. |
+| `cache_read_micros_per_mtok` | number | No | Corrected micro-USD per 1M cache-read tokens. Omit to keep. |
+| `cache_write_micros_per_mtok` | number | No | Corrected micro-USD per 1M cache-write tokens. Omit to keep. |
+| `output_micros_per_mtok` | number | No | Corrected micro-USD per 1M output tokens. Omit to keep. |
+| `priced_as` | string | No | Rebind as an alias of this Dome-owned match; empty string clears the alias (then supply all four rates). Omit to keep. |
+| `valid_from` | string | No | RFC3339 corrected era start. Omit to keep. |
+| `valid_until` | string | No | RFC3339 corrected era end. Omit to keep. |
+| `adjust_adjacent` | boolean | No | Trim/extend the neighbor era abutting a moved boundary instead of rejecting the overlap (default `false`) |
+
+<Callout icon="key">Requires organization-scoped `modelrates.manage`.</Callout>
+
+Boundary moves that collide with the abutting neighbor are rejected unless `adjust_adjacent` is `true`. A move that would erase the neighbor entirely is still rejected. Setting any literal rate on an alias era is rejected — clear `priced_as` and supply all four rates in the same call.
+
+```json title="Correct rates and slide a boundary"
+{
+  "name": "dome_models_rate_era_update",
+  "arguments": {
+    "price_id": "omp_01HZX…",
+    "output_micros_per_mtok": 15000000,
+    "valid_until": "2026-08-01T00:00:00Z",
+    "adjust_adjacent": true
+  }
+}
+```
+
+### dome_models_rate_remove
+
+Remove the organization's rate for a model match by **closing** its open era. Removal is not a delete: by default the closed era is **retained**, so the period it covered keeps pricing at the customer's rate and only the future reverts to Dome's book.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `model_match` | string | Conditional | The match whose open era to close/delete. Required unless `price_id` is set. |
+| `discard_history` | boolean | No | Delete the open era instead of retaining it (default `false` = retain). Irreversible: that period then falls back to the Dome-owned rate for the same window. |
+| `price_id` | string | Conditional | Delete one specific era by id instead of operating on the open era (admin correction). Either `model_match` or `price_id` is required. |
+
+<Callout icon="key">Requires organization-scoped `modelrates.manage`.</Callout>
+
+<Callout type="warning">
+`discard_history` is irreversible. The discarded period is re-priced using Dome's rate book. When `price_id` is set, that one era is deleted outright (the retain/discard mode does not apply).
+</Callout>
+
+```json title="Close the open era and keep its history"
+{
+  "name": "dome_models_rate_remove",
+  "arguments": { "model_match": "claude-opus-5" }
+}
+```
+
+```json title="Discard the open era (re-price that window at Dome's book)"
+{
+  "name": "dome_models_rate_remove",
+  "arguments": { "model_match": "claude-opus-5", "discard_history": true }
+}
+```
+
+```json title="Delete one historical era by id"
+{
+  "name": "dome_models_rate_remove",
+  "arguments": { "price_id": "omp_01HZX…" }
+}
+```
+
+## Next steps
+
+- [Pools](/reference/mcp/pools) to route and fail over across model connections
+- [Quotas](/reference/mcp/quotas) to cap USD spend
+- [Models](/connect/models) how-to for the full workflow
+- [`dome models rates`](/cli/connect/models#model-rates) CLI for the same rate-card surface

@@ -1,0 +1,6 @@
+{
+  "title": "Learn",
+  "root": true,
+  "icon": "BookOpen",
+  "pages": ["learn/index", "learn/agents", "learn/identity"]
+}

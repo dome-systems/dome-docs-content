@@ -1,0 +1,328 @@
+---
+title: dome agents
+description: Registers external agents, manages agent lifecycle and API keys
+---
+
+`dome agents` registers the agents a workspace governs and manages their lifecycle, the rules assigned to them, and the API keys they authenticate with. An agent must be registered before the gateway will authorize anything it calls. Refer to [Agents](/build/agents) for the concept model.
+
+| Command | |
+|---------|---|
+| [Register agent](#register-agent) | `dome agents register` |
+| [List agents](#list-agents) | `dome agents list` |
+| [Get agent](#get-agent) | `dome agents get [name-or-id]` |
+| [Update agent](#update-agent) | `dome agents update [name-or-id]` |
+| [Suspend agent](#suspend-agent) | `dome agents suspend [name-or-id]` |
+| [Reactivate agent](#reactivate-agent) | `dome agents reactivate [name-or-id]` |
+| [Revoke agent](#revoke-agent) | `dome agents revoke [name-or-id]` |
+| [Delete agent](#delete-agent) | `dome agents delete [name-or-id]` |
+| [Assign policy](#assign-policy) | `dome agents assign-policy [name-or-id] [files...]` |
+| [Get policies](#get-policies) | `dome agents get-policies [name-or-id]` |
+| [Create key](#create-key) | `dome agents create-key [name-or-id]` |
+| [List keys](#list-keys) | `dome agents list-keys [name-or-id]` |
+| [Rotate key](#rotate-key) | `dome agents rotate-key [name-or-id] [key-name]` |
+| [Revoke key](#revoke-key) | `dome agents revoke-key [name-or-id] [key-name]` |
+| [List interactive grants](#list-interactive-grants) | `dome agents interactive-grants list` |
+| [Revoke interactive grant](#revoke-interactive-grant) | `dome agents interactive-grants revoke <grant-id>` |
+
+## Register agent
+
+```bash
+dome agents register
+```
+
+Register a new agent in the current workspace. Pass fields with per-field flags or load the full definition from a JSON/YAML file with `--file`.
+
+```bash
+dome agents register --name <name> [flags]
+dome agents register --file <path>
+```
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--file`, `-f` | string | Yes\* | Path to a JSON/YAML file with the full agent definition. Use `-` for stdin. Mutually exclusive with per-field flags |
+| `--name` | string | Yes\* | agent name |
+| `--parent-id` | string | No | Parent agent ID |
+| `--metadata` | key=value | No | agent metadata (repeatable) |
+| `--token-ttl` | duration | No | Access-token lifetime for this agent, such as `15m` (`1m`–`24h`). Blank uses the `10m` default |
+| `--if-not-exists` | bool | No | Return existing agent if name is taken |
+| `--pool` | string[] | No | LLM pool the agent may route to (repeatable). Emits a `permit` against `Dome::LLMModel` matched via `resource.pool == "<name>"` in the agent's generated bundle |
+| `--model` | string[] | No | LLM model connection the agent may invoke directly (repeatable, advanced — pools are preferred). Emits a `permit` against `Dome::LLMModel` |
+| `--tool` | string[] | No | MCP tool the agent may call, as `<connection>/<tool>` (repeatable). Emits `mcp:call` and `mcp:discover` permits against `Dome::MCPTool` |
+| `--gateway` | string[] | No | [Gateway](/build/gateways) ID (UUID) the agent may reach (repeatable). Admits the agent at the gateway endpoint and generates a membership-conditioned permit. |
+| `--actas-allowed-group` | string[] | No | Group the agent's verified act-as identity may belong to (repeatable). Emits a `forbid` unless the verified group matches |
+| `--actas-allowed-email` | string[] | No | Email the agent may act on behalf of (repeatable). Emits a `forbid` unless the verified email matches |
+| `--actas-allowed-subject` | string[] | No | Subject the agent may act on behalf of (repeatable). Emits a `forbid` unless the verified subject matches |
+| `--actas-method` | string | No | Act-as verification: `none`, `oidc`, `hmac` |
+| `--actas-required` | bool | No | Require act-as header on every request |
+| `--actas-provider` | string | No | Workspace verification provider ID |
+| `--actas-oidc-url` | string | No | Inline OIDC discovery URL |
+| `--actas-hmac-secret` | string | No | Inline HMAC shared secret |
+| `--actas-config-name` | string | No | Label for agent-specific verification config |
+| `--interactive-access` | bool | No | Let authorized humans ride this agent through interactive OAuth |
+| `--pool` | string[] | No | LLM pool name the agent may route to (repeatable) |
+| `--model` | string[] | No | LLM model connection name the agent may invoke directly (advanced; repeatable) |
+| `--tool` | string[] | No | MCP tool the agent may call as `<connection>/<tool>` (repeatable) |
+| `--actas-allowed-group` | string[] | No | Group claim the agent's verified act-as identity may belong to (repeatable) |
+| `--actas-allowed-email` | string[] | No | Email the agent may act on behalf of (repeatable) |
+| `--actas-allowed-subject` | string[] | No | Subject the agent may act on behalf of (repeatable) |
+
+Populating `--pool`, `--model`, `--tool`, `--gateway`, or an act-as access field triggers generation of an agent-scope `kind='generated'` rule bundle permitting or restricting the corresponding actions. Registering with any of these fields requires `rules.deploy` in addition to `agents.register`. Leaving all three `--actas-allowed-*` lists empty means "any verified identity is acceptable"; populating any one restricts the agent via a forbid-unless rule.
+
+Identity-only registration needs `agents.register` alone.
+
+\* Provide either `--name` (per-field mode) or `--file`. The two modes cannot be combined.
+
+### Register from a file
+
+Use `--file` to register from a single JSON or YAML document. The file shape mirrors the `RegisterAgentRequest` proto — the same schema the SDKs and Terraform provider consume — so a typo in a field name fails fast rather than silently dropping. The workspace is always taken from the active context; a `workspace_id` in the file is ignored.
+
+```yaml agent.yaml
+name: claude-research
+allowed_pool_names: [openai-prod]
+allowed_tools: [github/list_repos]
+actas_config:
+  method: oidc
+  required: true
+  oidc_discovery_url: https://idp.example.com
+```
+
+```bash
+dome agents register --file agent.yaml
+
+# JSON works too
+dome agents register -f agent.json
+
+# Read from stdin
+printf '{"name":"x"}' | dome agents register -f -
+```
+
+## List agents
+
+```bash
+dome agents list
+```
+
+List agents in the current workspace.
+
+```bash
+dome agents list [flags]
+```
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--status` | string | filter by status: `active`, `provisioned`, `suspended`, `revoked` |
+| `--limit` | int | Maximum results (default: 100) |
+
+## Get agent
+
+```bash
+dome agents get [name-or-id]
+```
+
+Get details for a specific agent. Pass `--gateway <id>` to select an accessible gateway and include its complete protocol endpoints. Without the flag, the command returns agent metadata only.
+
+```text Output
+Name:    data-pipeline-agent
+ID:      a1b2c3d4-…
+Status:  active
+Gateway ID:  {{GATEWAY_ID}}
+Gateway URL: https://gateway.example.dome.dev/gateways/{{GATEWAY_ID}}
+MCP URL:     https://gateway.example.dome.dev/gateways/{{GATEWAY_ID}}/mcp
+```
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--gateway` | string | gateway ID used to resolve endpoints; required when the agent can access more than one gateway |
+
+## Update agent
+
+```bash
+dome agents update [name-or-id]
+```
+
+Update an agent's metadata, token lifetime, allowed resources, or act-as config.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--metadata` | key=value | Updated metadata |
+| `--token-ttl` | duration | Set the agent's access-token lifetime, such as `15m` (`1m`–`24h`). Empty resets to the `10m` default |
+| `--pool` | string[] | Replace the agent's allowed LLM pool list |
+| `--model` | string[] | Replace the agent's allowed direct-model list |
+| `--tool` | string[] | Replace the agent's allowed MCP tool list (`<connection>/<tool>`) |
+| `--gateway` | string[] | Replace the agent's allowed [Gateway](/build/gateways) ID list (UUIDs; repeatable) |
+| `--actas-allowed-group` | string[] | Replace the agent's act-as allowed-groups list |
+| `--actas-allowed-email` | string[] | Replace the agent's act-as allowed-emails list |
+| `--actas-allowed-subject` | string[] | Replace the agent's act-as allowed-subjects list |
+| `--actas-method` | string | Act-as verification: `none`, `oidc`, `hmac` |
+| `--actas-required` | bool | Require act-as header |
+| `--actas-provider` | string | Workspace verification provider ID |
+| `--actas-oidc-url` | string | Inline OIDC discovery URL |
+| `--actas-hmac-secret` | string | Inline HMAC shared secret |
+| `--actas-config-name` | string | Label for agent-specific verification config |
+| `--interactive-access` | bool | Enable or disable interactive OAuth for this agent |
+| `--pool` | string[] | Replace the agent's allowed LLM pool list (repeatable) |
+| `--model` | string[] | Replace the agent's allowed direct-model list (advanced; repeatable) |
+| `--tool` | string[] | Replace the agent's allowed MCP tool list (repeatable; each `<connection>/<tool>`) |
+| `--actas-allowed-group` | string[] | Replace the agent's act-as allowed-groups list (repeatable) |
+| `--actas-allowed-email` | string[] | Replace the agent's act-as allowed-emails list (repeatable) |
+| `--actas-allowed-subject` | string[] | Replace the agent's act-as allowed-subjects list (repeatable) |
+
+The `--pool`, `--model`, `--tool`, and `--actas-allowed-*` flags use **PUT semantics**: whatever you send IS the new state, including an empty value meaning "clear". To update only one field, get the agent first and pass the current values back.
+
+Changing any of these four-pillar fields (or `--actas-method` / `--actas-required`) regenerates the agent's `kind='generated'` rule bundle and therefore requires the `rules.deploy` permission in addition to `agents.register`. Identity-only updates (name, metadata, token TTL) pass through on `agents.register` alone.
+
+## Lifecycle
+
+### Suspend agent
+
+```bash
+dome agents suspend [name-or-id]
+```
+
+Suspend an agent temporarily.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--reason` | string | Suspension reason |
+| `--cascade` | bool | Also suspend child agents |
+
+### Reactivate agent
+
+```bash
+dome agents reactivate [name-or-id]
+```
+
+Reactivate a suspended agent.
+
+### Revoke agent
+
+```bash
+dome agents revoke [name-or-id]
+```
+
+Permanently revoke an agent. Always cascades to all descendants.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--reason` | string | Revocation reason |
+
+### Delete agent
+
+```bash
+dome agents delete [name-or-id]
+```
+
+Permanently hard-delete a revoked agent and all its data. Requires the agent to be in a revoked state.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--reason` | string | Deletion reason |
+| `--cascade` | bool | Also delete descendant agents |
+
+## Rules
+
+### Assign policy
+
+```bash
+dome agents assign-policy [name-or-id] [files...]
+```
+
+Deploy Cedar rules scoped to a specific agent.
+
+### Get policies
+
+```bash
+dome agents get-policies [name-or-id]
+```
+
+Get Cedar rules assigned to an agent.
+
+## API keys
+
+### Create key
+
+```bash
+dome agents create-key [name-or-id]
+```
+
+Create an agent authentication key. Prints the token and the selected gateway's complete endpoints once.
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--name` | string | Yes | Key name |
+| `--gateway` | string | No | gateway ID used to resolve endpoints; required when the agent can access more than one gateway |
+
+```text Output
+✓ API key "default" created for agent my-first-agent
+✓ Token: dome_…
+Gateway ID:  {{GATEWAY_ID}}
+Gateway URL: https://gateway.example.dome.dev/gateways/{{GATEWAY_ID}}
+MCP URL:     https://gateway.example.dome.dev/gateways/{{GATEWAY_ID}}/mcp
+ℹ Save this token — it will not be shown again.
+```
+
+Use the URL for the protocol your application speaks. JSON output returns `gatewayId` and `gatewayEndpoints`.
+
+### List keys
+
+```bash
+dome agents list-keys [name-or-id]
+```
+
+List API keys for an agent.
+
+### Rotate key
+
+```bash
+dome agents rotate-key [name-or-id] [key-name]
+```
+
+Rotate an agent's API key — revokes the old secret and issues a new one. Use `--gateway <id>` to select the gateway when the agent can access more than one. Output includes `gatewayId` and `gatewayEndpoints`.
+
+### Revoke key
+
+```bash
+dome agents revoke-key [name-or-id] [key-name]
+```
+
+Revoke an agent's API key permanently.
+
+## Interactive access
+
+Set `--interactive-access` only when human MCP clients should ride this agent. Interactive access requires at least one `--actas-allowed-email` or `--actas-allowed-subject`; matching is exact and case-sensitive.
+
+Interactive access is mutually exclusive with device binding. Group allow-lists do not match interactive logins. Human traffic spends the selected agent's quotas.
+
+### List interactive grants
+
+```bash
+dome agents interactive-grants list
+```
+
+List grants owned by the signed-in person. This self-service view requires no workspace permission.
+
+```bash
+dome agents interactive-grants list --all-users
+dome agents interactive-grants list --agent <name-or-id>
+```
+
+List all grants in the active workspace with `--all-users`. This requires `agents.view`. `--agent` filters the workspace result and implies `--all-users`.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--all-users` | bool | List every grant in the active workspace |
+| `--agent` | string | filter by agent name or ID; implies `--all-users` |
+
+A platform API key has no personal grants. Use `--all-users` with a workspace-, tenant-, or org-scoped key that grants `agents.view`.
+
+The output contains grant IDs, agent and client identity, status, creation, last use, expiration, and refresh count. It never returns tokens or secret material.
+
+### Revoke interactive grant
+
+```bash
+dome agents interactive-grants revoke <grant-id>
+```
+
+Revoke the refresh-token family immediately. The current access token remains usable only until its short expiry.
+
+Anyone can revoke their own grant. Revoking another person's grant requires `agentkeys.manage` on the grant's workspace. A platform API key always uses this administrator path.

@@ -1,0 +1,173 @@
+---
+title: Interactive MCP access
+sidebarTitle: Interactive access
+description: Let people sign in with their own Dome account from Cursor, Claude Code, or Codex instead of holding an agent API key
+---
+
+Interactive access lets people sign in with their own Dome account instead of holding an agent key. Each person authorizes once in a browser, then every call is audited under their own identity, not a shared credential.
+
+## Overview
+
+Interactive access is a setting on one [Gateway](/build/gateways). Enabling it creates one interactive agent, named `gateway-interactive-<gateway-id>`, that every allow-listed person shares as the identity their MCP client rides.
+
+The interactive agent behaves like a regular agent everywhere else. Cedar rules still authorize its calls and quotas still cap its spend. Enabling interactive access grants it access to its own gateway automatically, so the only step left is a [rule](#authorize-the-interactive-agent) permitting what it may call.
+
+Each signed-in call also carries the person's verified identity into Cedar as `principal.act_as`, the same attribute rules read for [delegated agents](/build/agents/delegated). A rule can scope by `principal.act_as.email` when different people need different access, not just one blanket permit for the interactive agent.
+
+<Callout type="info">
+Interactive access is a separate identity path from [delegated agents](/build/agents/delegated#verification-methods) with `oidc` or `hmac`. Your application never sends `X-Dome-Act-As` for an interactive client; the OAuth token supplies the identity directly.
+</Callout>
+
+## Requirements
+
+Before you begin:
+
+- Authenticate to Dome and select a workspace
+- Create or select a [Gateway](/build/gateways) with the resources people should reach
+- Collect the email addresses or IdP subjects to allow-list
+- Every person you allow-list needs their own effective `agents.view` access to the workspace; an email on the list is not enough by itself
+
+## Eligibility and consent
+
+A person can ride the interactive agent only when every check passes:
+
+1. Interactive access is enabled.
+2. The verified email or subject matches the allow-list.
+3. The person has effective `agents.view` access to the workspace.
+4. The agent is not device-bound, suspended, or revoked.
+5. The agent is admitted to the addressed gateway.
+6. The organization is writable.
+
+The consent page only shows eligible agents. Dome rechecks eligibility at consent, code redemption, and every token refresh.
+
+Approval is never remembered. The last agent may be preselected, but the person confirms each new authorization.
+
+## Token and grant behavior
+
+Interactive access tokens expire within 10 minutes and target one canonical gateway resource. They cannot call control-plane APIs or another gateway.
+
+The public MCP client uses authorization code flow with S256 PKCE. Refresh tokens rotate after one use. A replay revokes the entire grant family.
+
+Dome rechecks identity continuity, email, access, agent state, gateway admission, and organization state before renewal. Lost eligibility stops renewal; transient provider failures leave the current refresh token retryable.
+
+## Enable interactive access
+
+Enable interactive access when people should connect their own MCP clients without receiving an agent API key.
+
+<Callout icon="key">Requires `gateways.manage` and `rules.deploy`.</Callout>
+
+```bash
+dome gateways interactive enable prod-resources \
+  --email alice@example.com \
+  --subject {{IDP_SUBJECT}}
+```
+
+`--email` and `--subject` are repeatable. Enabling replaces both allow-lists, and matching is exact and case-sensitive. At least one email or subject is required; groups cannot match an interactive login.
+
+Confirm the interactive agent's name, which the next section needs to authorize it:
+
+```bash
+dome gateways get prod-resources --json
+```
+
+Read `interactive_access.managed_agent_name` (or `.managed_agent_id`) from the response. These wire-field names are retained for compatibility; they identify the interactive agent.
+
+## Authorize the interactive agent
+
+Gateway admission gets the interactive agent to the edge. It does not permit it to call anything. Deploy a rule scoped to its name, the same way you would for any agent:
+
+```cedar title="interactive-access.cedar"
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:discover",
+  resource
+);
+
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:call",
+  resource
+);
+```
+
+```bash
+dome rules apply interactive-access.cedar \
+  --agent gateway-interactive-{{GATEWAY_ID}} \
+  --name interactive-access
+```
+
+Scope the allowlist to individual tools or pools the same way you would for a registered agent. Refer to [Authorize Access](/govern/rules) for allow, deny, and per-person rules keyed on `principal.act_as.email`.
+
+## Connect an MCP client
+
+Copy the authoritative `mcp_url` from `dome gateways get prod-resources --json` or the gateway page. Add that remote URL to your client with no token or header. The first connection receives an OAuth challenge and opens a browser: sign in with your Dome account, select an eligible agent, review the client and exposed tools, then approve.
+
+Configure the client for Streamable HTTP, not SSE. The gateway does not support the legacy standalone SSE transport.
+
+<Tabs items={["Cursor","Claude Code","Codex"]}>
+  <Tab value="Cursor">
+    Add the remote server URL to `.cursor/mcp.json` or **Settings → MCP**, with no `headers` block:
+
+    ```json
+    {
+      "mcpServers": {
+        "dome-gateway": {
+          "url": "https://{{GATEWAY_HOST}}/gateways/{{GATEWAY_ID}}/mcp"
+        }
+      }
+    }
+    ```
+
+    Cursor opens the browser on the first tool call.
+  </Tab>
+  <Tab value="Claude Code">
+    ```bash
+    claude mcp add --transport http dome-gateway \
+      https://{{GATEWAY_HOST}}/gateways/{{GATEWAY_ID}}/mcp
+    ```
+
+    No `--header` flag this time. Claude Code opens the browser on the first connection.
+  </Tab>
+  <Tab value="Codex">
+    Add the server to `~/.codex/config.toml` with no `env_key`:
+
+    ```toml
+    [mcp_servers.dome-gateway]
+    url = "https://{{GATEWAY_HOST}}/gateways/{{GATEWAY_ID}}/mcp"
+    ```
+
+    Then trigger the browser sign-in explicitly:
+
+    ```bash
+    codex mcp login dome-gateway
+    ```
+  </Tab>
+</Tabs>
+
+This browser login is not a Dome Dashboard session. The OAuth callback binds the identity to this authorization transaction and returns the client to its registered redirect URI.
+
+## List and revoke grants
+
+List and revoke grants from **Settings → Interactive access** or the CLI:
+
+```bash
+dome agents interactive-grants list
+dome agents interactive-grants list --all-users
+dome agents interactive-grants revoke {{GRANT_ID}}
+```
+
+People can list and revoke their own grants. Workspace-wide listing requires `agents.view`; revoking another person's grant requires `agentkeys.manage`.
+
+## Disable interactive access
+
+```bash
+dome gateways interactive disable prod-resources
+```
+
+Disabling preserves the interactive agent and allow-lists. Existing access tokens expire within minutes and stop renewing. Re-enable with explicit email or subject flags to replace the saved allow-lists.
+
+## Next steps
+
+- [Gateways](/build/gateways) for membership, agent-key access, and runtime endpoints
+- [delegated agents](/build/agents/delegated) for `principal.act_as` and claim-aware rules
+- [Authorize Access](/govern/rules) to scope what the interactive agent, or one signed-in person, may call

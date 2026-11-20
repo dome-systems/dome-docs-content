@@ -1,0 +1,116 @@
+---
+title: dome context
+description: Manage CLI contexts (org/tenant/workspace sessions)
+---
+
+`dome context` manages the CLI's stored sessions. A context is one authenticated session scoped to a specific org, tenant, and workspace, and every other command runs against the active one.
+
+The CLI and Dome MCP server share `~/.config/dome/config.yaml`. A context switch
+through either surface is picked up by the other; MCP reloads disk changes
+before tool calls.
+
+| Command | |
+|---------|---|
+| [List contexts](#list-contexts) | `dome context list` |
+| [Show current context](#show-current-context) | `dome context current` |
+| [Use context](#use-context) | `dome context use [name]` |
+| [Sync contexts](#sync-contexts) | `dome context sync` |
+| [Rename context](#rename-context) | `dome context rename <old> <new>` |
+| [Delete context](#delete-context) | `dome context delete <name>` |
+| [Create alias](#create-alias) | `dome context alias <context-name> <alias>` |
+
+## List contexts
+
+```bash
+dome context list
+```
+
+List all contexts in org/tenant/workspace hierarchy. Aliases: `ls`.
+
+## Show current context
+
+```bash
+dome context current
+```
+
+Show the active context name.
+
+```text
+prod/acme/backend
+```
+
+With `--format json`, the response includes the context name, level, server, and available organization, tenant, and workspace names. Use `dome gateways list` or `dome gateways get` for complete gateway URLs.
+
+## Use context
+
+```bash
+dome context use [name]
+```
+
+Switch the active context by name, alias, or shorthand.
+
+```bash
+# By exact name
+dome context use "prod/acme/backend"
+
+# By alias
+dome context use backend
+
+# By shorthand (workspace name)
+dome context use backend
+
+# By shorthand (tenant/workspace)
+dome context use acme/backend
+
+# By shorthand (org/tenant/workspace)
+dome context use prod/acme/backend
+```
+
+If the shorthand is ambiguous, an error lists the matching contexts.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--interactive`, `-i` | bool | Interactively select a context |
+
+## Sync contexts
+
+```bash
+dome context sync
+```
+
+Refresh contexts from server memberships. Fetches all org/tenant memberships and creates or updates local contexts with scoped session tokens.
+
+The refreshed contexts are written to the shared config file and become
+available to the MCP server.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--server` | string | Sync only this server (default: all authenticated servers) |
+
+## Rename context
+
+```bash
+dome context rename <old> <new>
+```
+
+Rename a context.
+
+## Delete context
+
+```bash
+dome context delete <name>
+```
+
+Delete a context.
+
+## Create alias
+
+```bash
+dome context alias <context-name> <alias>
+```
+
+Set or remove an alias for a context. Pass two args (context-name and alias) to set an alias. With `--remove`, pass a single arg (the alias to remove).
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--remove` | bool | Remove the alias (pass the alias as the single argument) |

@@ -1,0 +1,181 @@
+---
+title: dome managed-agents
+description: Create, configure, and run managed agents
+---
+
+`dome managed-agents` manages managed agents, whose execution worker Dome runs. For agents whose worker you run in your own runtime, use [`dome agents`](/cli/build/agents). Refer to [Managed agents](/build/agents/managed) for the operating model and trigger configuration.
+
+| Command | |
+| --- | --- |
+| [Create managed agent](#create-managed-agent) | `dome managed-agents create` |
+| [List managed agents](#list-managed-agents) | `dome managed-agents list` |
+| [Get managed agent](#get-managed-agent) | `dome managed-agents get [name-or-id]` |
+| [Update managed agent](#update-managed-agent) | `dome managed-agents update [name-or-id]` |
+| [Rotate runner key](#rotate-runner-key) | `dome managed-agents rotate-runner-key [name-or-id]` |
+| [Delete managed agent](#delete-managed-agent) | `dome managed-agents delete [name-or-id]` |
+| [Run managed agent](#run-managed-agent) | `dome managed-agents run [name-or-id]` |
+| [Create webhook](#create-webhook) | `dome managed-agents webhook create [name-or-id]` |
+| [List webhooks](#list-webhooks) | `dome managed-agents webhook list [name-or-id]` |
+| [Revoke webhook](#revoke-webhook) | `dome managed-agents webhook revoke [name-or-id] [webhook-id]` |
+| [List runs](#list-runs) | `dome managed-agents runs list [name-or-id]` |
+| [Get run](#get-run) | `dome managed-agents runs get [run-id]` |
+
+## Create managed agent
+
+```bash
+dome managed-agents create \
+  --name nightly-triage \
+  --system-prompt "Triage issues filed since the last run." \
+  --model openai-prod \
+  --gateway production
+```
+
+Create a managed agent in the active workspace. Supply fields directly or load a JSON or YAML definition with the same fields as the [Create managed agent API request](/api/tag/managed-agents/create-managed-agent).
+
+| Flag | Type | Required | Description |
+| --- | --- | --- | --- |
+| `--name` | string | Yes* | Managed-agent name |
+| `--system-prompt` | string | No | Persistent instructions for every run |
+| `--model` | string | No | model or pool name the worker invokes |
+| `--gateway` | string | Yes* | gateway name or ID; each managed agent runs through exactly one gateway |
+| `--file`, `-f` | string | Yes* | Path to a JSON or YAML `CreateManagedAgentRequest`; use `-` for stdin |
+
+*Provide fields directly or use `--file`. The gateway can be omitted only when exactly one workspace gateway admits every agent.
+
+The gateway grant permits every tool the gateway exposes. Managed agents cannot carry separate tool grants. Creating or changing the gateway grant also requires `rules.deploy`.
+
+### Create from a file
+
+Use `--file` when you want to keep the complete managed-agent definition in source control. The `agent` object is the underlying agent registration; it contains the name and its one gateway grant.
+
+```yaml managed-agent.yaml
+agent:
+  name: nightly-triage
+  allowed_gateway_ids: [production]
+system_prompt: Triage issues filed since the last run.
+default_model: openai-prod
+```
+
+```bash
+dome managed-agents create --file managed-agent.yaml
+```
+
+For every available field, refer to [Create managed agent](/api/tag/managed-agents/create-managed-agent).
+
+## List managed agents
+
+```bash
+dome managed-agents list
+```
+
+List managed agents in the active workspace, including their status, model, and gateway. This command has no command-specific flags.
+
+## Get managed agent
+
+```bash
+dome managed-agents get [name-or-id]
+```
+
+Show a managed agent's prompt, model, gateway, status, and attached triggers. Pass either its name or ID. This command has no command-specific flags.
+
+## Update managed agent
+
+```bash
+dome managed-agents update [name-or-id] [flags]
+```
+
+Update one or more managed-agent fields. Fields you omit retain their current values.
+
+| Flag | Type | Description |
+| --- | --- | --- |
+| `--system-prompt` | string | Replace the system prompt |
+| `--model` | string | Replace the model or pool |
+| `--gateway` | string | Replace the one gateway the agent runs through |
+
+Use [`dome agents update`](/cli/build/agents#update-agent) for the agent's name, metadata, or act-as settings. Use [`dome triggers update`](/cli/build/triggers#update-trigger) to change a schedule or webhook.
+
+## Rotate runner key
+
+```bash
+dome managed-agents rotate-runner-key [name-or-id]
+```
+
+Rotate the runner key Dome holds for the managed agent. Dome stores the replacement before the prior key stops working, and never prints either key. Runs already in progress and later runs use the replacement. Requires `managedagents.manage`.
+
+Use this command rather than `dome agents rotate-key`, which does not apply to managed agents.
+
+## Delete managed agent
+
+```bash
+dome managed-agents delete [name-or-id]
+```
+
+Delete a managed agent and its underlying agent. Pass the managed agent's name or ID. This command has no command-specific flags.
+
+## Run managed agent
+
+```bash
+dome managed-agents run [name-or-id] --input "Review new issues."
+```
+
+Queue an immediate run and return its run ID.
+
+| Flag | Type | Description |
+| --- | --- | --- |
+| `--input` | string | Optional first user message for the run |
+
+Use [`dome managed-agents runs get`](#get-run) with the returned ID to inspect the run.
+
+## Create webhook
+
+```bash
+dome managed-agents webhook create [name-or-id] --description "GitHub issues"
+```
+
+Create an inbound webhook trigger for a managed agent. The response returns the endpoint URL and signing secret once. Every request must carry a Standard Webhooks v1 signature.
+
+| Flag | Type | Description |
+| --- | --- | --- |
+| `--description` | string | Optional operator label for the webhook |
+
+For a trigger that can target more than one managed agent, use [`dome triggers create`](/cli/build/triggers#create-trigger) instead.
+
+## List webhooks
+
+```bash
+dome managed-agents webhook list [name-or-id]
+```
+
+List a managed agent's webhook triggers. The list includes each endpoint URL but never its signing secret. This command has no command-specific flags.
+
+## Revoke webhook
+
+```bash
+dome managed-agents webhook revoke [name-or-id] [webhook-id]
+```
+
+Permanently revoke a webhook trigger. Its endpoint stops accepting requests. This command has no command-specific flags.
+
+## List runs
+
+```bash
+dome managed-agents runs list [name-or-id] --limit 50
+```
+
+List a managed agent's runs, newest first.
+
+| Flag | Type | Description |
+| --- | --- | --- |
+| `--limit` | int | Maximum runs to return (default: 50; maximum: 200) |
+
+## Get run
+
+```bash
+dome managed-agents runs get [run-id]
+```
+
+Show one run's status, source, attempts, timestamps, output, and error when available. This command has no command-specific flags.
+
+## Permissions
+
+`list`, `get`, and run-history commands require `managedagents.view`. Creating, updating, deleting, and configuring webhooks require `managedagents.manage`. `run` requires `managedagents.invoke`.

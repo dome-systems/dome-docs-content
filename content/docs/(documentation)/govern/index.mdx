@@ -1,0 +1,50 @@
+---
+title: Govern
+sidebarTitle: Overview
+description: Authorize actions, route selected decisions to review, filter content, and set usage limits for governed agent traffic
+---
+
+**Govern** applies the controls that decide what agents can do, which decisions need review, what content may pass, and how much spend is allowed. You authorize with rules, route selected decisions through escalations, inspect traffic with guards, and cap model spend with quotas.
+
+## The four controls
+
+<Cards>
+  <Card title="Rules" href="/govern/rules">
+    Make deterministic allow and deny decisions for an agent, action, and resource, reading request arguments and verified end-user claims.
+  </Card>
+  <Card title="Escalations" href="/govern/escalations">
+    Route selected Cedar authorization decisions through a versioned review workflow.
+  </Card>
+  <Card title="Guards" href="/govern/guards">
+    Inspect request and response content on model and tool connections. Filters are a guard type.
+  </Card>
+  <Card title="Quotas" href="/govern/quotas">
+    Cap LLM spend over a window for a workspace, agent, gateway, pool, model, or verified end user.
+  </Card>
+  <Card title="Rules assistant" href="/govern/rules/assistant">
+    Draft Cedar from natural language when you would rather describe the intent than write the policy.
+  </Card>
+  <Card title="Simulate" href="/govern/rules/simulate">
+    Check a change against real requests before it affects production behavior.
+  </Card>
+</Cards>
+
+At runtime, Dome evaluates applicable quotas, then rules and any matching escalations, then guards on the content path. Each control fails closed: exhausted limits, unavailable authorization, pending review, and blocking guards stop the request or response. Exhausted total caps reject the call, while exhausted model budgets can spill to another pool member.
+
+See [Architecture](/concepts/architecture) for where these controls sit in the request path.
+
+## Typical workflow
+
+1. [Authorize access](/govern/rules) by writing, validating, simulating, and applying Cedar rules.
+2. Add [escalations](/govern/escalations) when selected rules need an operator’s decision.
+3. Create [guards](/govern/guards) and assign filters to the connections that need inspection.
+4. [Set usage limits](/govern/quotas) at the scopes that own the budget.
+
+Afterward you can revise rules, roll workflows or filters forward or back, and adjust quotas without rewiring Build or Connect entities.
+
+## Next steps
+
+- [Build](/build) to create agents, gateways, and managed-agent triggers.
+- [Connect](/connect) to attach callers, tools, models, and pools.
+- [Operate](/operate) to investigate audit events, stream live activity, and subscribe external systems.
+- [Manage](/manage) to administer access, environments, configuration, exports, and billing.

@@ -1,0 +1,97 @@
+---
+title: Models
+sidebarTitle: Models
+description: 'Provider IDs, model-rate behavior, credential pairings, and filter-window bounds'
+---
+
+This page lists supported providers, model-rate behavior, authentication pairings, and filter-window bounds.
+
+Refer to [Models](/concepts/resources/models) concept for how connections work. Configure on [Models](/connect/models).
+
+## Providers
+
+Provider IDs fall into three groups. You cannot change the provider after adding the model.
+
+- **Native providers.** Dome translates between the gateway request and the provider's native wire format.
+
+  `openai`, `anthropic`, `google`, `azure_openai`, and `bedrock`.
+
+- **Hosted OpenAI-compatible providers.** Dome sends requests through the provider's OpenAI-compatible API.
+
+  `mistral`, `groq`, `together`, `fireworks`, `deepseek`, `xai`, `perplexity`, `cohere`, `openrouter`, `cerebras`, `nvidia`, `deepinfra`, `sambanova`, `ai21`, `moonshot`, and `databricks`.
+
+- **Bring your own endpoint.** Use `openai_compatible` for an OpenAI-shaped endpoint such as vLLM or Ollama. Use `custom` when Dome should forward provider-specific requests without translating them.
+
+Dome supplies a base URL for hosted providers that have a default. For Google, Azure OpenAI, Bedrock, Databricks, `openai_compatible`, and `custom`, you must provide an endpoint or the provider-specific details needed to locate the model. These details can include an Azure deployment, a Google project and location, or a Bedrock region.
+
+Hosted OpenAI-compatible providers share the OpenAI chat and embeddings wire shape. Native and bring-your-own adapters differ:
+
+### Provider capabilities
+
+| Provider | Embeddings | Distinct behavior |
+|----------|------------|-------------------|
+| `openai` | Yes | `provider_config.base_url` defaults to `https://api.openai.com` |
+| `anthropic` | No | Only adapter with upstream `count_tokens` |
+| `google` | Yes | Gemini `contents[]/parts[]`; Vertex `:predict` for embeddings. Workload identity on GCP |
+| `bedrock` | No | AWS Converse / ConverseStream. SigV4 via static keys or the default credential chain |
+| `azure_openai` | Yes | Auth header is `api-key`, not `Authorization`. Requires `endpoint`, `deployment`, and `api_version` |
+| `openai_compatible` | Yes | Auth is optional |
+| `custom` | N/A | Opaque passthrough. See [Custom passthrough](#custom-passthrough) |
+
+An unsupported gateway operation for the resolved provider returns HTTP `501` with a structured error.
+
+## Model rates
+
+Model rates are expressed in micro-USD per one million tokens and may differ for input, cache-read, cache-write, and output tokens. Reasoning tokens use the output rate.
+
+Rate resolution has two layers:
+
+1. The organization's rate or model association, when one covers the model and time.
+2. Dome's rate book, including its fallback when no specific row matches.
+
+Within a layer, lower sort order wins, then the longer model match. Rate windows are half-open: a row applies from its start time up to, but not including, its end time. Historical cost reads resolve the window covering the usage time. Live quota enforcement uses the rate card effective now.
+
+Provider cost is always an estimate of the organization's upstream bill, not a Dome charge. When the provider supplies token counts, Dome prices those counts. When no counts are available, Dome estimates tokens as:
+
+```text
+ceil((request bytes + response bytes) / bytes per token)
+```
+
+The active byte-per-token assumptions are shown by [`dome models rates`](/cli/connect/models#model-rates).
+
+### Custom passthrough
+
+`POST /gateways/<id>/v1/passthrough/:name` forwards the request body byte-exact to a `custom`-provider connection. Identity, tenant match, and Cedar (`llm:passthrough`) still apply. The canonical content filter is bypassed (no canonical shape to filter against).
+
+| Constraint | Behavior |
+|------------|----------|
+| Body limit | 1 MiB |
+| Caller headers | Forwarded only when the name matches `provider_config.header_passthrough_allow` (glob list on the connection) |
+| Dropped headers | `Authorization`, `Cookie`, and `Proxy-Authorization` are dropped unconditionally so a caller cannot smuggle credentials past the connection's configured auth |
+
+Configure `header_passthrough_allow` (and related `custom` keys such as `endpoint` and `request_shape_doc_url`) on the model connection. See [Create LLM model connection](/api/tag/models/create-llm-model-connection).
+
+## Credentials
+
+| Authentication method | Credential type | What Dome sends |
+|-----------------------|-----------------|-----------------|
+| `none` | `none` | No provider credential |
+| `api-key` | `shared` | One workspace-managed API key for every call |
+| `api-key` | `per-user` | An API key linked to the verified end user |
+| `oauth` | `shared` | One administrator-authorized OAuth grant for every call |
+| `oauth` | `per-user` | An OAuth grant linked to the verified end user |
+
+When the provider requires no authentication, set both to `none`. When the provider uses an API key or OAuth, the credential type must be `shared` or `per-user`. If you omit both settings, Dome uses `api-key` with `shared`. Per-user provisioning and workload identity are on [Models](/connect/models#credentials).
+
+## Filter window
+
+A model can buffer at most 1 MiB or 4,096 tokens of streamed output before outbound guards run. Dome uses the largest window configured on the workspace, model, or request. A value of `0` uses the workspace setting. Layer sources and effective-max rules are on the [Guards](/reference/controls/guards#streaming-window) reference.
+
+## Next steps
+
+Add connections, or jump to pools when you need routing:
+
+- [Models](/concepts/resources/models) concept for connections, attributes, and direct vs pool
+- [Models](/connect/models) to add models, rotate credentials, and attach gateways
+- [Pools](/reference/resources/model-pools) reference for routing across connections
+- [LLM gateway](/concepts/gateways/llm-gateway) concept for the model ingress

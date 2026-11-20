@@ -1,0 +1,43 @@
+---
+title: dome tenant
+description: Manage tenant-level Act-As provider selection
+---
+
+`dome tenant` manages governance settings for one tenant. The current command surface selects the default and required Act-As verification providers inherited by its workspaces. To list, inspect, or create tenants, use [`dome tenants`](/cli/settings/tenants).
+
+| Command | |
+|---------|---|
+| [Get Act-As selection](#get-act-as-selection) | `dome tenant actas get` |
+| [Update Act-As selection](#update-act-as-selection) | `dome tenant actas update` |
+
+## Get Act-As selection
+
+```bash
+dome tenant actas get
+```
+
+Show the tenant's default and required provider IDs.
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--tenant` | string | No | Tenant UUID. Defaults to the active context's tenant |
+
+## Update Act-As selection
+
+```bash
+dome tenant actas update \
+  --default-provider {{PROVIDER_ID}} \
+  --required-provider {{PROVIDER_ID}}
+```
+
+Set the tenant's default or required provider. The provider must be tenant- or organization-scoped.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--tenant` | string | Tenant UUID. Defaults to the active context's tenant |
+| `--default-provider` | string | Default verification provider UUID |
+| `--required-provider` | string | Required verification provider UUID |
+
+This is a full replace: omitted provider flags clear their fields. A required provider forces Act-As and pins every non-bound agent beneath the tenant to that provider.
+
+Refer to [Act-As provider selection](/cli/connect/verification-providers#act-as-provider-selection) for inheritance and precedence.

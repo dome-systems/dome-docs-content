@@ -1,0 +1,8 @@
+{
+  "title": "deploy-your-agent",
+  "defaultOpen": false,
+  "pages": [
+    "always-on",
+    "event-driven"
+  ]
+}

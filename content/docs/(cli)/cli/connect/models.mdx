@@ -1,0 +1,472 @@
+---
+title: dome models
+description: Manage LLM model connections and routing pools
+---
+
+`dome models` registers LLM upstreams the gateway proxies and groups them into routing pools that fan out across providers with priority, weighting, and failover.
+
+Supported upstreams: Anthropic, OpenAI, Azure OpenAI, Google, Bedrock, hosted OpenAI-compatible vendors (Groq, Mistral, Together, Fireworks, DeepSeek, xAI, Perplexity, Cohere, OpenRouter, Cerebras, NVIDIA, DeepInfra, SambaNova, AI21, Databricks), and self-hosted endpoints.
+
+| Command | |
+|---------|---|
+| [List connections](#list-connections) | `dome models list [workspace-id-or-slug]` |
+| [List providers](#list-providers) | `dome models providers` |
+| [model rates](#model-rates) | `dome models rates` |
+| [Get connection](#get-connection) | `dome models get <name>` |
+| [Add connection](#add-connection) | `dome models add <name>` |
+| [Update connection](#update-connection) | `dome models update <name>` |
+| [Inspect connection usage](#inspect-connection-usage) | `dome models usage <name>` |
+| [Remove connection](#remove-connection) | `dome models rm <name>` |
+| [Connect OAuth](#connect-oauth) | `dome models oauth-connect <name>` |
+| [Disconnect OAuth](#disconnect-oauth) | `dome models oauth-disconnect <name>` |
+| [Create pool](#create-pool) | `dome models pool create <name>` |
+| [List pools](#list-pools) | `dome models pool list [workspace-id-or-slug]` |
+| [Get pool](#get-pool) | `dome models pool get <name>` |
+| [Update pool](#update-pool) | `dome models pool update <name>` |
+| [Inspect pool usage](#inspect-pool-usage) | `dome models pool usage <name>` |
+| [Set default pool](#set-default-pool) | `dome models pool set-default <name>` |
+| [Move pool](#move-pool) | `dome models pool move <name> --before \| --after <anchor>` |
+| [Remove pool](#remove-pool) | `dome models pool rm <name>` |
+| [gateway membership](#gateway-membership) | `dome models pool gateways list\|add\|remove <pool> [gateway]` |
+| [Add member](#add-member) | `dome models pool member add <pool> <model>` |
+| [List members](#list-members) | `dome models pool member list <pool>` |
+| [Update member](#update-member) | `dome models pool member update <pool> <model>` |
+| [Remove member](#remove-member) | `dome models pool member rm <pool> <model>` |
+
+## Model rates
+
+```bash
+dome models rates [--model <substring>]
+```
+
+Show Dome's current model rate book and the byte-to-token conversion used when a provider returns no token usage. The default view requires authentication but no organization permission. It does not include the organization's negotiated provider rates.
+
+```bash
+dome models rates --effective
+dome models rates --effective --model claude
+```
+
+`--effective` shows the rate card resolved for the active organization: its contract rates and explicit model associations layered over Dome's book. It requires the organization-scoped `modelrates.manage` permission, held by organization owners and admins by default.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--effective` | bool | `false` | Resolve the active organization's effective rate card; requires `modelrates.manage` |
+| `--model` | string | — | filter model-match strings by substring |
+| `--org-id` | string | active organization | Organization to resolve; used only with `--effective` |
+
+Rates are micro-USD per one million tokens. Every rate is time-windowed: historical usage is priced at the era covering its own time rather than today's rate. Provider cost is an estimate of the organization's upstream bill, not a Dome charge. When token counts are unavailable, the displayed byte-to-token formula explains the additional estimate Dome applies.
+
+Organization rate-card management is also available under this command:
+
+| Command | Behavior | Permission |
+|---------|----------|------------|
+| `dome models rates set <model-match>` | Open a new rate era or associate a custom model with a Dome rate | `modelrates.manage` |
+| `dome models rates remove <model-match>` | Close the current era; history is retained unless `--discard-history` is used | `modelrates.manage` |
+| `dome models rates edit-era <era-id>` | Correct one existing era and its boundaries | `modelrates.manage` |
+| `dome models rates history <model>` | Show the winning rate across each historical time span | `modelrates.manage` |
+| `dome models rates suggest <model>` | Suggest possible Dome rate associations without binding one | Authentication only |
+
+### Set an organization rate
+
+```bash
+dome models rates set <model-match> [flags]
+```
+
+Open a new pricing era. Supply literal rates or bind the model match to a Dome-owned rate with `--priced-as`.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--input` | int64 | Micro-USD per million input tokens |
+| `--cache-read` | int64 | Micro-USD per million cache-read tokens |
+| `--cache-write` | int64 | Micro-USD per million cache-write tokens |
+| `--output` | int64 | Micro-USD per million output tokens |
+| `--priced-as` | string | Dome-owned model match whose rates this model follows |
+| `--name` | string | Rate label |
+| `--sort-order` | int32 | Precedence hint; lower values win over longer matches |
+| `--effective-from` | RFC3339 | Start of the pricing era; defaults to now |
+| `--effective-until` | RFC3339 | End of a closed historical era |
+| `--org-id` | string | Organization UUID; defaults to the active context's organization |
+
+### Remove an organization rate
+
+```bash
+dome models rates remove <model-match>
+dome models rates remove --era <era-id>
+```
+
+By default, removal closes the current era and retains it for historical pricing.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--discard-history` | bool | Delete the open era and reprice that period using Dome's rate book |
+| `--era` | string | Delete one specific historical era |
+| `--org-id` | string | Organization UUID |
+
+### Edit a rate era
+
+```bash
+dome models rates edit-era <era-id> [flags]
+```
+
+Correct an existing era's rates, association, label, or boundaries. Omitted fields remain unchanged.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--input` | int64 | Corrected input rate |
+| `--cache-read` | int64 | Corrected cache-read rate |
+| `--cache-write` | int64 | Corrected cache-write rate |
+| `--output` | int64 | Corrected output rate |
+| `--priced-as` | string | New Dome-owned rate association; pass empty to clear |
+| `--name` | string | New label |
+| `--from` | RFC3339 | Corrected era start |
+| `--until` | RFC3339 | Corrected era end |
+| `--adjust-adjacent` | bool | Adjust an adjacent era when a moved boundary would overlap it |
+| `--org-id` | string | Organization UUID |
+
+### Show rate history
+
+```bash
+dome models rates history <model> [--org-id <org-id>]
+```
+
+Show the rate that wins for each historical time span and the source of that rate.
+
+### Suggest a rate association
+
+```bash
+dome models rates suggest <model>
+```
+
+Rank Dome-owned rate matches for a custom model. This command does not create an association.
+
+<Callout type="warning">
+  `--discard-history` is irreversible. The discarded period is re-priced using Dome's rate book.
+</Callout>
+
+## Connections
+
+### List connections
+
+```bash
+dome models list [workspace-id-or-slug]
+```
+
+List LLM models in the workspace. Aliases: `ls`.
+
+### List providers
+
+```bash
+dome models providers
+```
+
+List the supported provider catalog and each provider's curated model ids. Use it to discover valid `--provider` and `--model` values for `dome models add`.
+
+The catalog is backend-owned — the same source the dashboard Provider→model picker and the MCP `dome_models_providers` tool read. Providers with stable public model ids (OpenAI, Anthropic, Google) carry a curated model list with one default. Other providers show an empty list and accept any model string the upstream accepts. The catalog is a convenience, not authoritative — a model your upstream supports but the catalog does not list is still valid.
+
+```bash title="List providers and known models"
+dome models providers
+```
+
+```bash title="Pick the curated default and pipe into add"
+dome models add claude-prod \
+  --provider anthropic \
+  --model "$(dome models providers --format json | jq -r '.providers[] | select(.provider=="anthropic") | .models[] | select(.default) | .id')" \
+  --api-key "$ANTHROPIC_API_KEY"
+```
+
+### Get connection
+
+```bash
+dome models get <name>
+```
+
+Show details for one model, including provider config and Cedar attributes.
+
+### Add connection
+
+```bash
+dome models add <name>
+```
+
+Register an LLM model upstream. The shared API key, when supplied, is stored under the provider's managed auth header — `Authorization: Bearer …` for OpenAI, Bedrock, and OpenAI-compatible hosted vendors; `x-api-key` for Anthropic; `api-key` for Azure OpenAI; `x-goog-api-key` for Google. When `--endpoint` is omitted, the CLI prefills the vendor's default base URL from the provider registry.
+
+| Flag | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| `--provider` | string | Yes | — | `openai`, `anthropic`, `google`, `bedrock`, `azure_openai`, `mistral`, `groq`, `together`, `fireworks`, `deepseek`, `xai`, `perplexity`, `cohere`, `openrouter`, `cerebras`, `nvidia`, `deepinfra`, `sambanova`, `ai21`, `databricks`, `openai_compatible`, `custom`. Refer to [Supported providers](/reference/resources/models#providers) reference. |
+| `--model` | string | No | — | model id (e.g. `gpt-4o-mini`, `claude-3-5-sonnet-20241022`) |
+| `--endpoint` | string | No | registry default | Provider endpoint URL. Required for `azure_openai`, `bedrock`, `databricks`, `openai_compatible`, and `custom`. |
+| `--auth-method` | string | No | `api-key` | `none`, `api-key`, `oauth` |
+| `--credential-type` | string | No | `shared` | `none`, `shared`, `per-user` |
+| `--api-key` | string | No | — | API key (use with `--auth-method=api-key --credential-type=shared`) |
+| `--provider-config` | JSON | No | — | Full `provider_config` as JSON; merges with `--model`/`--endpoint` |
+| `--attributes` | JSON | No | — | Cedar attributes as JSON object |
+| `--filter-window-bytes` | uint32 | No | `0` | Outbound filter window in bytes for this connection. `0` inherits the workspace floor; the engine takes the max of workspace, connection, and per-request. |
+| `--filter-window-tokens` | uint32 | No | `0` | Outbound filter window in tokens for this connection. `0` inherits the workspace floor. |
+| `--gateway` | string (repeatable) | No | — | Attach directly to the named [Gateway](/build/gateways) (name or ID). Without it the model is unreachable until attached. |
+
+```bash title="Anthropic shared API key"
+dome models add claude-sonnet \
+  --provider anthropic \
+  --model claude-3-5-sonnet-20241022 \
+  --api-key "$ANTHROPIC_API_KEY"
+```
+
+```bash title="Groq (endpoint prefilled from registry)"
+dome models add fast-groq \
+  --provider groq \
+  --model llama-3.3-70b-versatile \
+  --api-key "$GROQ_API_KEY"
+```
+
+```bash title="Azure OpenAI"
+dome models add gpt-4o \
+  --provider azure_openai \
+  --model gpt-4o \
+  --endpoint https://my-resource.openai.azure.com \
+  --api-key "$AZURE_OPENAI_KEY" \
+  --provider-config '{"api_version":"2024-08-01-preview","deployment":"gpt-4o-prod"}'
+```
+
+### Update connection
+
+```bash
+dome models update <name>
+```
+
+Update a model. Only provided flags change. Provider is immutable post-create — switch by adding a new connection.
+
+When `--name` renames a model, managed agents configured to run on it follow the new name.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--name` | string | New connection name |
+| `--model` | string | New model id |
+| `--endpoint` | string | New endpoint URL |
+| `--auth-method` | string | New auth method |
+| `--credential-type` | string | New credential scope |
+| `--api-key` | string | Replace the shared API key |
+| `--provider-config` | JSON | Replace `provider_config` wholesale |
+| `--attributes` | JSON | Replace Cedar attributes (pass `'{}'` to clear) |
+| `--filter-window-bytes` | uint32 | Per-connection outbound filter window in bytes. `0` clears back to the workspace floor. |
+| `--filter-window-tokens` | uint32 | Per-connection outbound filter window in tokens. `0` clears back to the workspace floor. |
+
+### Inspect connection usage
+
+```bash
+dome models usage <name>
+```
+
+Show managed agents configured to run on the model, agents granted it, gateways that expose it, and pools that contain it. The command requires `gateways.view`; agent names can be omitted when you cannot view that type of agent. Run it before deleting or renaming a model.
+
+### Remove connection
+
+```bash
+dome models rm <name>
+```
+
+Remove an LLM model. Aliases: `remove`, `delete`. When dependents exist, the CLI displays their impact and asks for confirmation in an interactive terminal.
+
+| Flag | Type | Description |
+|---|---|---|
+| `--reassign-to` | string | Replacement model connection or pool. Moves managed agents configured for the deleted model and grants the replacement to agents that held it. |
+| `--yes` | bool | Skip the interactive confirmation. |
+
+Without `--reassign-to`, managed agents configured to run on the model cannot run and agents with no other model grant lose model access.
+
+## OAuth
+
+### Connect OAuth
+
+```bash
+dome models oauth-connect <name>
+```
+
+Begin the shared-OAuth admin consent flow for a model configured with `--auth-method=oauth --credential-type=shared`: Anthropic OAuth, Azure AAD/Entra service principal, Google Workload Identity for Vertex. Prints a one-shot URL valid for ~10 minutes. Open it in a browser to complete consent — Dome stores the tokens on the callback.
+
+Per-user OAuth models do not use this command; consent is gateway-triggered on each end user's first call.
+
+### Disconnect OAuth
+
+```bash
+dome models oauth-disconnect <name>
+```
+
+Revoke shared OAuth credentials. The OAuth client configuration is preserved, so a subsequent `oauth-connect` reuses the same client. Idempotent.
+
+## Pools
+
+### Create pool
+
+```bash
+dome models pool create <name>
+```
+
+Create a logical pool that fans out across one or more model connections.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--description` | string | — | Pool description |
+| `--match-when` | JSON | — | Predicate selecting this pool by request shape (e.g. `'{"prompt_tokens":{"gt":100000}}'`). Refer to [match_when predicates](/reference/resources/model-pools#pool-resolution) reference. |
+| `--default` | bool | `false` | Mark as workspace default (or use [`set-default`](#set-default-pool) later) |
+| `--cache-ttl-secs` | int32 | `0` | Exact-match cache TTL (`0` disables) |
+| `--cache-scope` | string | `workspace` | `workspace` or `caller` |
+| `--routing-strategy` | string | `priority_weighted` | `priority_weighted`, `round_robin`, `least_loaded`, `most_quota_remaining`. Refer to [Routing strategies](/reference/resources/model-pools#routing-strategies) reference. |
+| `--strategy-scope` | string | `workspace` | Scope of stateful routing counters: `workspace` or `caller`. Ignored by `priority_weighted`. Scopes only the tiebreak for `most_quota_remaining`. |
+| `--failover-max` | string | `all` | Failover ceiling. `all` walks every member; integer `N` gives primary + N retries (`0` disables failover). |
+| `--gateway` | string (repeatable) | — | Attach to the named [Gateway](/build/gateways) (name or ID). Without it the pool is unreachable until attached. |
+
+```bash title="Pool with two providers and weighted distribution"
+dome models pool create default --failover-max 2
+dome models pool member add default claude-sonnet --priority 0 --weight 3
+dome models pool member add default gpt-4o --priority 0 --weight 1
+dome models pool member add default claude-haiku --priority 1
+dome models pool set-default default
+
+# Drain the highest-headroom member first when members carry different spend caps
+dome models pool create budget-aware \
+  --routing-strategy most_quota_remaining
+```
+
+### List pools
+
+```bash
+dome models pool list [workspace-id-or-slug]
+```
+
+List pools. Aliases: `ls`.
+
+### Get pool
+
+```bash
+dome models pool get <name>
+```
+
+Show pool config and its members.
+
+### Update pool
+
+```bash
+dome models pool update <name>
+```
+
+Update a pool. Only provided flags change. Pass `--match-when '{}'` to clear the match predicate.
+
+When `--name` renames a pool, managed agents configured to run on it follow the new name.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--name` | string | Rename the pool |
+| `--description` | string | New description |
+| `--match-when` | JSON | Replace match predicate (pass `'{}'` to clear) |
+| `--cache-ttl-secs` | int32 | New cache TTL (`0` disables) |
+| `--cache-scope` | string | New cache scope |
+| `--routing-strategy` | string | `priority_weighted`, `round_robin`, `least_loaded`, or `most_quota_remaining` |
+| `--strategy-scope` | string | `workspace` or `caller` |
+| `--failover-max` | string | `all` (walk every member) or non-negative integer `N`. Omit to leave unchanged. |
+
+### Set default pool
+
+```bash
+dome models pool set-default <name>
+```
+
+Mark this pool as the workspace default. Replaces any prior default.
+
+### Move pool
+
+```bash
+dome models pool move <name> --before <anchor>
+# or --after <anchor>
+```
+
+Reposition a pool in its workspace's `match_when` evaluation order. Pools with non-empty predicates evaluate in ascending `sort_key`; the first match wins. Refer to [Pool order](/reference/resources/model-pools#pool-resolution) reference.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--before` | string | Anchor pool name; the moved pool lands immediately before it |
+| `--after` | string | Anchor pool name; the moved pool lands immediately after it |
+
+Exactly one of `--before` or `--after` is required.
+
+### Inspect pool usage
+
+```bash
+dome models pool usage <name>
+```
+
+Show managed agents configured to run on the pool, agents granted it, and gateways that expose it. The command requires `gateways.view`; agent names can be omitted when you cannot view that type of agent. Run it before deleting or renaming a pool.
+
+### Remove pool
+
+```bash
+dome models pool rm <name>
+```
+
+Remove a pool. Aliases: `remove`, `delete`. When dependents exist, the CLI displays their impact and asks for confirmation in an interactive terminal.
+
+| Flag | Type | Description |
+|---|---|---|
+| `--reassign-to` | string | Replacement model connection or pool. Moves managed agents configured for the deleted pool and grants the replacement to agents that held it. |
+| `--yes` | bool | Skip the interactive confirmation. |
+
+Without `--reassign-to`, managed agents configured to run on the pool cannot run and agents with no other model grant lose model access.
+
+### Gateway membership
+
+```bash
+dome models pool gateways <list|add|remove> <pool-name-or-id> [gateway-name-or-id]
+```
+
+Manage the pool's membership in [Gateways](/build/gateways) from the pool side. Mirrors [`dome gateways model-pools`](/cli/build/gateway#add-model-pool).
+
+- `list <pool>` — gateways this pool belongs to. Alias: `ls`.
+- `add <pool> <gateway>` — expose the pool's models at the gateway's `/gateways/<id>/v1` endpoint.
+- `remove <pool> <gateway>` — detach. Alias: `rm`.
+
+## Pool members
+
+### Add member
+
+```bash
+dome models pool member add <pool> <model>
+```
+
+Add a model to a pool. Failover walks ascending priority; within a bucket, requests distribute by weight.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--priority` | int32 | `0` | Priority (`0` = primary; failover walks ascending) |
+| `--weight` | int32 | `1` | Weight within the priority bucket |
+| `--enabled` | bool | `true` | Whether the member is included in routing |
+
+### List members
+
+```bash
+dome models pool member list <pool>
+```
+
+List members of a pool with priority, weight, and enabled state. Aliases: `ls`.
+
+### Update member
+
+```bash
+dome models pool member update <pool> <model>
+```
+
+Update a member's priority, weight, or enabled flag.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--priority` | int32 | New priority |
+| `--weight` | int32 | New weight |
+| `--enabled` | bool | New enabled flag |
+
+### Remove member
+
+```bash
+dome models pool member rm <pool> <model>
+```
+
+Remove a member from a pool. Aliases: `remove`, `delete`.
+
+Cap model spend, tokens, or calls with [`dome quotas`](/cli/govern/quota). Use `--subject model`, `--subject pool`, `--subject workspace`, or `--subject gateway` as needed.

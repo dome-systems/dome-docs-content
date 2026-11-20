@@ -1,0 +1,174 @@
+---
+hidden: true
+title: Knowledge Base Agent
+description: "Governing an agent that reads from personal and shared knowledge bases"
+---
+
+A knowledge base agent answers questions from a mix of sources — each end user's own documents (Notion, Google Drive, personal Confluence) and shared company-wide content (internal wikis, public runbooks). The same agent identity serves many users, and every read against a personal source must be scoped to the calling user's data while shared sources stay pooled.
+
+Governance binds every call to a verified end-user identity, then splits backend authentication by source type. Per-user OAuth backends route each call with the calling user's own upstream token, so per-user authorization is delegated to the upstream service. Shared backends use a single workspace credential for content the whole workspace should see. Cedar rules stay coarse-grained at the agent and backend level, field classifications redact sensitive document metadata before it reaches the model, and the audit trail captures both agent and end-user identity on every call.
+
+## Threat Model
+
+| Threat | Description |
+|--------|-------------|
+| **Cross-user data leakage** | The agent uses one user's credentials — or workspace-pooled credentials — to fetch another user's documents |
+| **Sensitive content surfacing through model context** | Documents returned to the agent contain PII, secrets, or financial data that bleed into the model's context window or outputs |
+| **Unauthorized backend access** | The agent reaches knowledge bases it should not query, or attempts write operations on a read-only role |
+| **Missing user attribution in audit** | Audit captures the agent identity but not which end user triggered the read, breaking compliance review |
+
+## Governance Approach
+
+| Threat | Dome Capability | How It Helps |
+|--------|----------------|--------------|
+| Cross-user data leakage | [Authenticate Identities](/develop#authenticate), [Attach Backends](/connect/tools#add-tool) | `--actas-required` on the agent forces every call to carry verified user identity; per-user OAuth backends route each call with that user's upstream token, so the upstream enforces per-user data access |
+| Sensitive content surfacing | [Guards](/govern/guards) | Field classifications on document metadata redact PII and SECRET fields before the response reaches the agent |
+| Unauthorized backend access | [Authorize](/govern/rules) | Cedar rules pin the agent to specific knowledge backends and forbid write operations |
+| Missing user attribution | [Stream Live Events](/operate/observe), [Audit and Export](/operate/audit) | Every audit event captures both agent and act-as identities; per-user backend events (`connection.credentiallink.issue`, `connection.credentiallink.consume`, and `connection.consent.grant`) trace provisioning history per user |
+
+## Implementation
+
+<Steps>
+  <Step title="Register the agent with required act-as identity">
+    Register the agent so every request must carry a verified end-user identity. The `access_scope` label is metadata the rules in step 4 read:
+
+    ```bash
+    dome agents register \
+      --name "knowledge-agent" \
+      --metadata access_scope=knowledge-read \
+      --actas-method oidc \
+      --actas-provider vp_workspace_oidc \
+      --actas-required
+    ```
+
+    With `--actas-required`, the gateway rejects any tool call without a verified act-as token. The per-user OAuth flow in step 2 keys credentials off this same act-as `sub`. Once the backends exist, allow them on the agent with `dome agents update knowledge-agent --tool notion-personal/search --tool company-wiki/search`.
+
+    <Callout type="info">
+      `vp_workspace_oidc` is a placeholder ID for a [workspace verification provider](/build/agents/delegated#create-a-verification-provider). Create one for your IdP and pass its returned ID, or skip the provider step and inline the discovery URL on the agent with `--actas-oidc-url <discovery-url>`.
+    </Callout>
+  </Step>
+  <Step title="Configure a per-user OAuth backend for personal knowledge bases">
+    Add the personal knowledge base as a per-user OAuth backend. Each end user provisions their own upstream credential through a magic-link flow on first use — the gateway never holds a single shared credential that could span users:
+
+    ```bash
+    dome tools add \
+      --name "notion-personal" \
+      --url "https://api.notion.com" \
+      --protocol streamable-http \
+      --auth-method oauth \
+      --credential-type per-user \
+      --oauth-authorize-url "https://api.notion.com/v1/oauth/authorize" \
+      --oauth-token-url "https://api.notion.com/v1/oauth/token" \
+      --oauth-client-id "$NOTION_CLIENT_ID" \
+      --oauth-client-secret "$NOTION_CLIENT_SECRET" \
+      --oauth-default-scope "read_content" \
+      --field-classification author_email=PII,owner_email=PII,page_content=SENSITIVE
+    ```
+
+    On the first call from a new user, the gateway returns a `401` with a magic-link `provision_url`. The user opens it, completes Notion's OAuth consent against their own account, and the next `tools/list` reflects their newly provisioned backend.
+  </Step>
+  <Step title="Configure a shared backend for company-wide knowledge">
+    Add the shared internal wiki as a shared OAuth backend. One operator-supplied credential serves every caller — appropriate for content the whole workspace should see:
+
+    ```bash
+    dome tools add \
+      --name "company-wiki" \
+      --url "https://wiki.internal:8443" \
+      --protocol streamable-http \
+      --auth-method api-key \
+      --credential-type shared \
+      --authorization "Bearer $WIKI_TOKEN" \
+      --field-classification author_email=PII \
+      --gateway Default
+    ```
+  </Step>
+  <Step title="Define agent-level Cedar rules">
+    Write authorization rules that key off the agent identity and act-as presence — not per-user identity. Per-user authorization is delegated to the upstream service via the per-user OAuth credential:
+
+    ```bash
+    dome rules validate knowledge-agent-rules.cedar
+    dome rules apply knowledge-agent-rules.cedar --name "knowledge-agent-policy"
+    ```
+
+    See the [Policy Example](#policy-example) below for the Cedar rule content.
+  </Step>
+  <Step title="Simulate the rules">
+    Test rules against historical events before deploying:
+
+    ```bash
+    dome rules simulate knowledge-agent-rules.cedar
+    ```
+
+    Verify that requests without an act-as token are denied for the personal backend and that write operations are universally forbidden.
+  </Step>
+  <Step title="Monitor provisioning and access patterns">
+    Stream audit events to watch both per-user provisioning health and read activity:
+
+    ```bash
+    dome audit stream --agent knowledge-agent
+    ```
+
+    Look for `connection.credentiallink.issue` (a user hit the magic-link flow), `connection.consent.grant` (a user successfully provisioned), `connection.credential.refresh` with an `error` (a user's token needs re-consent), and `tool.call` events to see read patterns per user.
+  </Step>
+</Steps>
+
+## Policy Example
+
+```cedar title="knowledge-agent-rules.cedar"
+// Permit reads from personal knowledge bases only when act-as identity is present.
+// Per-user authorization is enforced upstream via the per-user OAuth credential.
+permit(
+  principal == Dome::Agent::"knowledge-agent",
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"notion-personal"
+) when {
+  principal has act_as
+};
+
+// Permit reads from the shared company wiki for any authenticated request.
+permit(
+  principal == Dome::Agent::"knowledge-agent",
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"company-wiki"
+);
+
+// Forbid any tool with SENSITIVE classifications when act-as identity is missing.
+forbid(
+  principal == Dome::Agent::"knowledge-agent",
+  action == Dome::Action::"mcp:call",
+  resource
+) when {
+  resource.field_classifications.contains("SENSITIVE") &&
+  !(principal has act_as)
+};
+
+// Forbid write and delete for every read-only agent, this one included.
+forbid(
+  principal,
+  action == Dome::Action::"mcp:call",
+  resource
+) when {
+  principal has metadata &&
+  principal.metadata has access_scope &&
+  principal.metadata.access_scope == "knowledge-read" &&
+  (context.method == "write" || context.method == "delete")
+};
+
+// Permit tool discovery so the agent sees its provisioned backends.
+permit(
+  principal == Dome::Agent::"knowledge-agent",
+  action == Dome::Action::"mcp:discover",
+  resource
+);
+```
+
+<Callout type="info">
+  Per-user OAuth keeps Cedar rules coarse-grained. The upstream service decides which documents the calling user can see, because the gateway forwards the user's own access token. Cedar's job is to gate which backends the agent can reach and to block reads when the user identity is missing — not to enumerate per-user document permissions.
+</Callout>
+
+## Next steps
+
+- [Authorize Access](/govern/rules) to write and deploy Cedar
+- [Tools](/connect/tools) to attach retrieval backends
+- [Code Execution Agent](/tutorials/examples/use-cases/code-agent) for workspace execution
+- [Audit events](/operate/audit) to verify retrieval and denials

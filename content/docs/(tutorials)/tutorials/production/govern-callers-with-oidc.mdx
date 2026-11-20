@@ -1,0 +1,636 @@
+---
+title: Govern callers with OIDC
+sidebarTitle: Govern callers with OIDC
+description: "Authorize a shared internal assistant from each signed-in employee's verified identity provider token, then inspect every caller"
+---
+
+An internal assistant is shared infrastructure used by people with different entitlements. A finance analyst may open a department budget. An account executive may open customer contact details. Neither should inherit the other's reach because they happen to use the same assistant.
+
+Dome resolves that by governing the **caller**: the verified end user your application represents on each request. Your application forwards the signed identity token it already holds from workforce sign-in, Dome verifies it against your identity provider, authorizes from its claims, and records the person alongside the agent.
+
+<Prompt>
+  description="Hand this to an AI agent. It provisions a workspace, wires your identity provider as the source of caller identity, and proves different outcomes for three real signed-in people."
+  icon="sparkles"
+  actions={["copy", "cursor"]}
+>
+Build a governed internal desk assistant where authorization comes from each signed-in employee's OIDC identity, then show me every caller Dome recorded.
+
+First, show me this plan and ask me to confirm before running anything:
+
+1. Create a tutorial workspace and confirm I am in it
+2. Register the public demo tool server as `internal-desk` on the Default gateway
+3. Ask me for my OIDC issuer base URL and confirm its discovery document is reachable
+4. Create a workspace verification provider from that issuer
+5. Register `desk-copilot` bound to that provider with act-as required, mint its key, and grant gateway access
+6. Deploy Cedar that reads `principal.act_as` groups and subject
+7. Simulate an individual contributor, an account executive, and a finance analyst before any live call
+8. Ask me for one development token per test user, then call the gateway as each of them
+9. Show me the Callers registry and the audit evidence for each person
+10. Require OIDC for the whole workspace and prove an unverified call fails
+
+Follow the commands at https://developer.domesystems.ai/agent/tutorials/production/govern-callers-with-oidc.md exactly.
+
+Non-negotiable rules:
+
+- Narrate as you go. Before each step, tell me in one or two sentences what you are about to do and why it matters.
+- Confirm the active context. Run `dome context current` and confirm the workspace name starts with `studio-`. If it does not, stop and ask me.
+- Never print the `dome_...` agent token or any end-user token in chat. Write them into a gitignored env file and confirm it is ignored.
+- Use tokens issued by my identity provider. Do not mint, forge, or hand-assemble identity claims, and do not fall back to HMAC or a persona map.
+- Do not put my agent token or an end-user token in browser code, client env, or a URL query string.
+- Do not widen Cedar to make a denied call succeed. The differing outcomes are the result I am asking for.
+- Use `dome rules simulate` with act-as flags before any live call.
+- Read the demo directory first and use employee IDs it actually returns, rather than assuming which IDs exist.
+- After each create step, give me a markdown link into the Dome console for that resource. Derive the base URL from `dome auth status` → `Server`.
+- Never report a step as done without showing the command output.
+
+Show me clearly that the runs differ only in the verified identity, not in the request path or the rules.
+
+Then offer to delete the workspace.
+</Prompt>
+
+In this tutorial, you will govern a desk assistant that three employees share. All three reach the same agent, the same tools, and the same rules. Their answers differ because Dome verifies who is asking.
+
+To do this, you will:
+
+<Steps>
+  <Step title="Prepare a workspace and a tool">
+    Create a workspace and attach the demo backend.
+  </Step>
+  <Step title="Define the identity contract">
+    Pick the issuer and claims that policy will depend on.
+  </Step>
+  <Step title="Register the identity provider">
+    Create a verification provider Dome can verify tokens against.
+  </Step>
+  <Step title="Create the delegated agent">
+    Bind the agent to that provider and require verified identity.
+  </Step>
+  <Step title="Write rules about the person">
+    Authorize from groups and subject rather than from the agent.
+  </Step>
+  <Step title="Call as three employees">
+    Forward each signed-in user's token and compare outcomes.
+  </Step>
+  <Step title="Inspect callers">
+    Read the registry and the audit evidence behind it.
+  </Step>
+  <Step title="Require verified identity">
+    Raise the workspace floor and confirm it holds.
+  </Step>
+</Steps>
+
+## Prerequisites
+
+For this tutorial, you will need:
+
+- The Dome CLI. Refer to [Install](/install) for Homebrew and direct-download instructions
+- A tenant `admin` role (or an org `owner` / `admin` via cascade) to create the workspace, plus permission to create providers and deploy rules.
+- An OIDC identity provider you administer, reachable from the internet, with a published discovery document and JWKS.
+- The ability to obtain a **development** ID or access token, in JWT form, for three test users in that provider.
+
+The three test users need different claims, because that difference is what the rules read:
+
+| Test user | `groups` | Represents |
+|---|---|---|
+| First | `["engineering"]` | An individual contributor |
+| Second | `["sales"]` | An account executive |
+| Third | `["finance"]` | A finance analyst |
+
+One rule in this tutorial compares the caller's `sub` to an employee record in the demo backend, so the first user's `sub` should match an employee ID that backend returns. You will read the directory in the first live call and can adjust then.
+
+<Callout type="warning">
+Use test users in a development or staging tenant of your identity provider. Do not use a real employee's token, and do not paste any token into a ticket, a commit, or a chat transcript.
+</Callout>
+
+## Prepare a workspace and a tool
+
+Create a dedicated workspace so nothing here touches a real environment:
+
+```bash
+dome workspaces create --name studio-callers
+dome context sync
+dome context current
+```
+
+Confirm the workspace reads `studio-callers` before continuing.
+
+Attach the public demo backend as `internal-desk` on the Default [gateway](/build/gateways). The connection name prefixes every tool it exposes:
+
+```bash
+dome tools add \
+  --name internal-desk \
+  --url https://demo-mcp.domesystems.ai/mcp \
+  --protocol streamable-http \
+  --auth-method none \
+  --gateway Default
+```
+
+Four of its tools carry this tutorial's scenario:
+
+| tool | Holds | Who should reach it |
+|---|---|---|
+| `internal-desk/hr/list_employees` | Employee directory | Anyone signed in |
+| `internal-desk/finance/expense_report` | One employee's expenses | Finance, or that employee |
+| `internal-desk/sales/get_customer` | Customer contact details | Sales |
+| `internal-desk/finance/department_budget` | Department spend | Finance |
+
+Only the second row depends on who is asking rather than on which team they belong to. That row is the reason act-as exists: no static grant on a shared agent can express "their own record."
+
+## Define the identity contract
+
+Three systems have to agree before any of this works. Your identity provider issues claims, Dome verifies them, and Cedar reads them. Write the contract down first:
+
+| Contract field | Choice for this tutorial | Why it matters |
+|---|---|---|
+| Issuer | One exact OIDC issuer base URL | Dome fetches discovery and JWKS from it |
+| Subject | Stable directory identifier in `sub` | Identifies the caller and enables self-access |
+| Email | Informational | Search and investigation |
+| Groups | String array in `groups` | Team-level authorization |
+| Forwarded value | The exact signed JWT | Dome verifies the signature itself |
+
+Export the issuer base URL and confirm Dome will be able to read it. Dome appends the well-known path, so pass the issuer, not the discovery document:
+
+```bash
+export OIDC_ISSUER="https://login.example.com"
+curl --fail --silent "$OIDC_ISSUER/.well-known/openid-configuration"
+```
+
+The response must contain `jwks_uri`. Prefer an immutable directory identifier for `sub`. Email addresses get changed and reassigned, and a self-access rule keyed on email inherits that problem.
+
+<Callout type="info">
+If your corporate login starts with SAML, use the OIDC issuer that signs the token your application will actually forward. A SAML assertion is not a valid `X-Dome-Act-As` value.
+</Callout>
+
+Check that a development token matches the contract. Decode the payload locally and print only claim shapes, never values you would not want in a transcript:
+
+```bash
+export IC_TOKEN="<individual-contributor-jwt>"
+
+node -e '
+const claims = JSON.parse(Buffer.from(process.env.IC_TOKEN.split(".")[1], "base64url"));
+console.log({
+  iss: claims.iss,
+  sub_present: Boolean(claims.sub),
+  groups_type: Array.isArray(claims.groups) ? "array" : typeof claims.groups,
+  expires_in_s: claims.exp - Math.floor(Date.now() / 1000),
+});
+'
+```
+
+`iss` must match the issuer you exported, `groups` must be an array, and the token must not be expired. Decoding proves nothing about the signature; Dome verifies that independently against the JWKS.
+
+<Callout type="info">
+Many providers omit `groups` until you add a claim mapping or request the right scope. Fix that in the provider now. A rule that reads a claim your tokens never carry denies every call and looks like a Dome problem.
+</Callout>
+
+## Register the identity provider
+
+A verification provider is named identity configuration the workspace owns. Agents reference it, so the issuer lives in one place and caller records get a stable provider boundary:
+
+```bash
+dome verification-providers create \
+  --name workforce-oidc \
+  --method oidc \
+  --oidc-url "$OIDC_ISSUER"
+```
+
+List providers and keep the ID:
+
+```bash
+dome verification-providers list --scope workspace --include-chain
+export OIDC_PROVIDER_ID="<provider-uuid>"
+```
+
+Providers are also visible to workspaces below their scope, which is how one platform team publishes the corporate issuer once for many product workspaces. In this workspace you own the only one.
+
+## Create the delegated agent
+
+Register the assistant so that identity is mandatory and can only come from that provider:
+
+```bash
+dome agents register --name desk-copilot \
+  --actas-method oidc \
+  --actas-provider "$OIDC_PROVIDER_ID" \
+  --actas-required \
+  --if-not-exists
+```
+
+Two settings carry the meaning:
+
+- `--actas-method oidc` with `--actas-provider` makes your identity provider the authority on who the caller is. Your application never asserts identity on its own behalf.
+- `--actas-required` rejects a request that arrives with no identity, instead of quietly falling back to the agent's own standing permissions.
+
+Mint the credential the application will hold, and grant the agent access to the gateway:
+
+```bash
+dome agents create-key desk-copilot --name desk-service
+dome gateways access grant Default desk-copilot
+```
+
+Save the `Token: dome_…` value into a gitignored env file. It is shown once, and it is a live gateway credential.
+
+```bash
+export DOME_TOKEN="<agent-token>"
+export DOME_GATEWAY_URL="https://<gateway-host>/gateways/<DEFAULT_GATEWAY_ID>"
+```
+
+Retrieve the host and gateway ID if you do not have them:
+
+```bash
+dome context current
+dome gateways list
+```
+
+<Callout type="warning">
+The agent token authenticates the workload; the forwarded JWT identifies the person. Both belong on your server. A browser holding either one can impersonate the workload, the person, or both.
+</Callout>
+
+## Write rules about the person
+
+Cedar sees the verified end user as `principal.act_as`, carrying `sub`, `email`, `roles`, `groups`, and any custom `claims`. Rules read those like any other attribute.
+
+This policy does four things:
+
+- Anyone with a verified identity can read the directory
+- Finance can open any expense report, and anyone can open their own
+- Sales can open customer contact details
+- Everything else is denied, including unverified calls
+
+Create `desk-copilot.cedar`:
+
+```cedar title="desk-copilot.cedar"
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:discover",
+  resource
+);
+
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"internal-desk/hr/list_employees"
+) when {
+  principal has act_as
+};
+
+// Finance sees every expense report; everyone else sees only their own.
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"internal-desk/finance/expense_report"
+) when {
+  principal has act_as &&
+  (
+    principal.act_as.groups.contains("finance") ||
+    (
+      resource has arguments &&
+      resource.arguments has employee_id &&
+      resource.arguments.employee_id == principal.act_as.sub
+    )
+  )
+};
+
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"internal-desk/sales/get_customer"
+) when {
+  principal has act_as && principal.act_as.groups.contains("sales")
+};
+
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"internal-desk/finance/department_budget"
+) when {
+  principal has act_as && principal.act_as.groups.contains("finance")
+};
+
+// Overrides the generated permit that opens every Default gateway tool.
+forbid(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"internal-desk/finance/expense_report"
+) unless {
+  principal has act_as &&
+  (
+    principal.act_as.groups.contains("finance") ||
+    (
+      resource has arguments &&
+      resource.arguments has employee_id &&
+      resource.arguments.employee_id == principal.act_as.sub
+    )
+  )
+};
+
+forbid(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"internal-desk/sales/get_customer"
+) unless {
+  principal has act_as && principal.act_as.groups.contains("sales")
+};
+
+forbid(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"internal-desk/finance/department_budget"
+) unless {
+  principal has act_as && principal.act_as.groups.contains("finance")
+};
+
+forbid(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:call",
+  resource
+) unless {
+  resource in [
+    Dome::MCPTool::"internal-desk/hr/list_employees",
+    Dome::MCPTool::"internal-desk/finance/expense_report",
+    Dome::MCPTool::"internal-desk/sales/get_customer",
+    Dome::MCPTool::"internal-desk/finance/department_budget"
+  ]
+};
+```
+
+Deploy it scoped to this agent:
+
+```bash
+dome rules apply desk-copilot.cedar --agent desk-copilot --name desk-copilot
+```
+
+The `principal has act_as` guard matters. When no identity was verified, the attribute is absent from the entity, and reading an absent attribute is an evaluation error rather than a false. Guarding it turns an unverified call into a clean deny.
+
+Nothing in these rules names an employee. They name claims. Adding a person to the finance group in your directory changes what the assistant will do for them, with no deploy here.
+
+## Call as three employees
+
+Export a development token per test user:
+
+```bash
+export IC_TOKEN="<engineering-user-jwt>"
+export AE_TOKEN="<sales-user-jwt>"
+export FIN_TOKEN="<finance-user-jwt>"
+```
+
+The header is the same on MCP, OpenAI-compatible, and Anthropic-compatible ingress. Only its value changes between users:
+
+```bash
+call_as() {
+  curl -sS -X POST "$DOME_GATEWAY_URL/mcp" \
+    -H "Authorization: Bearer $DOME_TOKEN" \
+    -H "X-Dome-Act-As: $1" \
+    -H "Content-Type: application/json" \
+    -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"$2\",\"arguments\":$3}}"
+}
+```
+
+Read the directory first. It is open to every verified caller, and it tells you which employee IDs the backend actually has:
+
+```bash
+call_as "$IC_TOKEN" internal-desk/hr/list_employees '{}'
+```
+
+Pick one ID from that response for the individual contributor, and a different one for the expense report they should not reach:
+
+```bash
+export OWN_ID="<employee-id matching the engineering user's sub>"
+export OTHER_ID="<a different employee id>"
+```
+
+If the engineering test user's `sub` does not match any employee ID, change `sub` at your identity provider, or point the self-access comparison at a claim that does line up with your own systems. That mapping is the part every real deployment has to decide.
+
+Simulate the branches before you spend live calls on them. Simulation runs the same evaluator as the gateway with no side effects, no token, and no network call to your identity provider, and `--eval-arguments` supplies the arguments a rule compares:
+
+```bash
+# The engineering user opening their own expenses.
+dome rules simulate --agent desk-copilot --action mcp:call \
+  --resource internal-desk/finance/expense_report --resource-type mcp_tool \
+  --eval-arguments "{\"employee_id\":\"$OWN_ID\"}" \
+  --actas-sub "$OWN_ID" --actas-groups engineering
+
+# The same person opening someone else's expenses.
+dome rules simulate --agent desk-copilot --action mcp:call \
+  --resource internal-desk/finance/expense_report --resource-type mcp_tool \
+  --eval-arguments "{\"employee_id\":\"$OTHER_ID\"}" \
+  --actas-sub "$OWN_ID" --actas-groups engineering
+
+# Sales opening customer contact details.
+dome rules simulate --agent desk-copilot --action mcp:call \
+  --resource internal-desk/sales/get_customer --resource-type mcp_tool \
+  --actas-sub sales-user --actas-groups sales
+
+# Finance opening a department budget.
+dome rules simulate --agent desk-copilot --action mcp:call \
+  --resource internal-desk/finance/department_budget --resource-type mcp_tool \
+  --actas-sub finance-user --actas-groups finance
+```
+
+Expect `ALLOW`, `DENY`, `ALLOW`, `ALLOW`. A rule that reads identity claims has more branches than a rule that reads a tool name, so this is the loop to keep.
+
+Now run the same requests as different people:
+
+```bash
+# Own expenses: allowed by self-access. Someone else's: denied.
+call_as "$IC_TOKEN" internal-desk/finance/expense_report "{\"employee_id\":\"$OWN_ID\"}"
+call_as "$IC_TOKEN" internal-desk/finance/expense_report "{\"employee_id\":\"$OTHER_ID\"}"
+
+# Customer contact details: denied for engineering, allowed for sales.
+call_as "$IC_TOKEN" internal-desk/sales/get_customer '{"customer_id":"C001"}'
+call_as "$AE_TOKEN" internal-desk/sales/get_customer '{"customer_id":"C001"}'
+
+# Department budget: finance only.
+call_as "$AE_TOKEN" internal-desk/finance/department_budget '{"department":"Engineering"}'
+call_as "$FIN_TOKEN" internal-desk/finance/department_budget '{"department":"Engineering"}'
+
+# No identity at all: rejected before authorization.
+curl -sS -X POST "$DOME_GATEWAY_URL/mcp" \
+  -H "Authorization: Bearer $DOME_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"internal-desk/hr/list_employees","arguments":{}}}'
+```
+
+| Caller | Directory | Own expenses | Others' expenses | Customer details | Department budget |
+|---|---|---|---|---|---|
+| Engineering | Allowed | Allowed | Denied | Denied | Denied |
+| Sales | Allowed | Allowed | Denied | Allowed | Denied |
+| Finance | Allowed | Allowed | Allowed | Denied | Allowed |
+| No identity | Rejected | Rejected | Rejected | Rejected | Rejected |
+
+One agent, one credential, one rule bundle, four outcomes.
+
+### How a real application sends this
+
+Curl stands in for your backend here. In an application, the token comes from the authenticated server-side session, per request:
+
+```ts title="server/dome.ts"
+export async function callToolForUser(
+  session: { subject: string; oidcJwt: string },
+  name: string,
+  args: unknown,
+) {
+  if (!session.oidcJwt) {
+    throw new Error("session has no forwardable OIDC token");
+  }
+
+  return fetch(`${process.env.DOME_GATEWAY_URL}/mcp`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.DOME_TOKEN}`,
+      "Content-Type": "application/json",
+      "X-Dome-Act-As": session.oidcJwt,
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name, arguments: args },
+    }),
+  });
+}
+```
+
+Two boundaries keep this honest. Take the identity only from trusted session middleware, never from the request body, and build headers per request rather than attaching a user's token to a client shared across users.
+
+## Inspect callers
+
+Dome now knows three people. List them:
+
+```bash
+dome callers list
+dome callers list --group finance
+dome callers list --search "$OWN_ID"
+```
+
+Inspect one:
+
+```bash
+dome callers get "$OWN_ID"
+```
+
+The record shows the verified claims, the verification provider and methods observed, first-seen and last-seen timestamps, the agents and tools attributed to that person, and lifetime and current-month activity.
+
+Callers are a projection of verified traffic, not a directory you maintain. You never created these records; they appeared because requests carried tokens that verified. Two issuers can use the same `sub` without merging, since records are keyed by provider and subject. When the same subject appears under more than one provider, address it by the record UUID from `dome callers list --json`.
+
+Correlate the projection with the evidence underneath it:
+
+```bash
+dome audit query --limit 20
+dome audit query --act-as-sub "$OWN_ID" --limit 10
+dome audit query --results denied --limit 10
+```
+
+Every governed call names both actors: the agent that made the request and the person it represented. That is the property worth having during an investigation, because a denial belongs to a person rather than to a shared service account.
+
+The denials are not all the same kind. A `denial.reason` of `act_as_rejected` means the identity itself failed verification, so the application or the provider configuration is wrong. A policy denial means the identity verified and the rules refused the action, which is the boundary working.
+
+```bash
+dome audit query --deny-reasons act_as_rejected --limit 10
+```
+
+Erasing a caller with `dome callers delete` removes the projection and its activity rows, not the audit evidence, and later verified traffic recreates it. That is the shape a data-subject request takes here.
+
+## Require verified identity
+
+`--actas-required` protects this one agent. A workspace dedicated to user-facing applications can require verified identity from every agent in it, so a new agent cannot be registered around the boundary.
+
+Read the current floor, then raise it:
+
+```bash
+dome workspaces actas get
+
+dome workspaces actas update \
+  --required \
+  --allowed-methods oidc \
+  --required-provider "$OIDC_PROVIDER_ID"
+
+dome workspaces actas get
+```
+
+Confirm nothing changed for a verified caller and that an unverified call still fails:
+
+```bash
+call_as "$FIN_TOKEN" internal-desk/hr/list_employees '{}'
+```
+
+The floor is a minimum. An agent may be stricter, for example by narrowing which verified subjects, emails, or groups it will accept, but it cannot opt out. An agent configured with `actas_method=none` is rejected outright once the workspace requires identity.
+
+<Callout type="warning">
+Workspace Act-As updates are a full replace: omitted flags clear their fields, and omitting `--required` sets it back to false. Pass the complete intended state every time.
+</Callout>
+
+Before doing this in a real workspace, inventory what it would strand. Any standing agent, and any delegated agent that cannot present a token from the required provider, starts failing at the gateway:
+
+```bash
+dome agents list
+```
+
+The order that holds up in production is: publish the provider, cut one agent over and compare its caller records against your application's own authenticated subject, move the rest, then raise the workspace floor in a change window with a rollback for the agent and workspace selections.
+
+<Accordions>
+<Accordion title="Troubleshooting">
+  These are remediation steps if you get stuck:
+
+  - `400` with `act-as header required`.
+
+    The request carried no identity. Confirm your caller sets `X-Dome-Act-As`, and that the route runs behind authenticated middleware. Do not make identity optional to get past this.
+
+  - `403` with `act-as verification failed`.
+
+    The token did not verify. Check the issuer, the key ID against the published JWKS, and expiry. Development tokens are usually short-lived, so re-mint before assuming a configuration problem.
+
+  - `unknown signing key`.
+
+    The token came from a different issuer than the provider you configured, or the provider is pointed at the wrong discovery URL. Confirm with `dome verification-providers get "$OIDC_PROVIDER_ID"`.
+
+  - The token has no dots, or verification fails on a token that looks fine.
+
+    An opaque access token cannot be verified from discovery metadata. Forward a signed JWT from the same issuer.
+
+  - Self-access is denied for the person's own record.
+
+    The caller's `sub` and the `employee_id` argument are not the same string. Compare the directory listing with `dome callers get`, then simulate with the claims you actually observed.
+
+  - Every caller gets the same answer.
+
+    The rule is not reading the claim you expect. Confirm `groups` is a string array in the token rather than a space-delimited string.
+
+  - `403 agent act-as method does not meet workspace policy`.
+
+    The workspace floor requires a method or provider the agent does not use. Compare `dome workspaces actas get` with `dome agents get desk-copilot` before weakening either.
+
+  - Nobody appears in `dome callers list`.
+
+    The registry needs at least one successfully verified request. Query audit for `act_as_rejected`, and confirm you are reading the same workspace that received the calls.
+
+  - Tools appear but calls time out.
+
+    The demo backend is public and unauthenticated, so a timeout usually points at network egress. Confirm you can reach `https://demo-mcp.domesystems.ai/mcp` directly.
+</Accordion>
+</Accordions>
+
+## Clean up
+
+Delete the workspace to remove the agent, provider, rules, grants, and caller projections together:
+
+```bash
+dome workspaces delete studio-callers
+```
+
+To keep the workspace and retire only the application credential:
+
+```bash
+dome agents revoke-key desk-copilot desk-service
+```
+
+Clear the exported tokens from your shell, and revoke the development tokens at your identity provider if it allows it.
+
+## Next steps
+
+You made a shared assistant answer to each person using it: identity verified by your provider, authorization decided by Cedar on verified claims, and every decision attributable to a named caller.
+
+- [Callers](/connect/callers) for provider hierarchy, scope selection, registry filters, and erasure
+- [Delegated agents](/build/agents/delegated) for the full verification model, including allow-lists
+- [Pass identity for delegated agents](/develop#pass-identity-for-delegated-agents) for MCP and model client examples
+- [Quotas](/govern/quotas) to cap spend for one caller rather than for the whole agent
+- [Observe](/operate/observe) to attribute a rejection to the gate that produced it

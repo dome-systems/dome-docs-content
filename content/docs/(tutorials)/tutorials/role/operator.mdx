@@ -1,0 +1,222 @@
+---
+title: Operator
+sidebarTitle: Operator
+description: "Attach tools, expose a gateway, grant access, and watch audit."
+---
+
+On Dome, an operator owns the shared substrate: workspaces, tool and model connections, gateways, grants, and the live signals that show the platform is healthy. You make backends reachable under Dome, group them behind named endpoints, grant the right agents access at the edge, and watch traffic. Developers integrate agents into that substrate. Security tightens what those agents may do once they are on it.
+
+<Prompt
+  description="Hand this to an AI agent. It provisions an operator workspace, attaches demo-hr, and proves the substrate with one smoke call."
+  icon="sparkles"
+  actions={["copy", "cursor"]}
+>
+Run the Dome Operator role tutorial in a tutorial workspace: attach demo-hr to Default, register a tutorial agent for a smoke grant, deploy a tiny Cedar permit for list_employees, then hand me one curl or Python call that proves the substrate works, plus audit.
+
+First, show me this plan and ask me to confirm before running anything:
+
+1. Confirm CLI auth, create studio-role-operator, switch into it
+2. Attach demo-hr to Default
+3. Register role-ops-agent (scaffolding only), mint a key (do not print it), grant Default
+4. Deploy a minimal Cedar permit for discover + list_employees
+5. Hand me one Verify call (curl and Python) for list_employees
+6. Show audit query (and mention audit stream), then offer clean up
+
+Follow the commands at https://developer.domesystems.ai/agent/tutorials/role/operator.md exactly.
+
+Non-negotiable rules:
+
+- Narrate as you go. Emphasize substrate (backends, gateway, grants) — not a full developer or security walkthrough.
+- Confirm the active context. Confirm `dome context current` starts with `studio-`.
+- Never print the agent token. Write it to a gitignored `.env`.
+- Do not call governed tools yourself to demo. Hand me the verify commands.
+- Link the console after create/grant/deploy. Derive base URL from `dome auth status` → `Server`.
+- Never report a step as done without command output.
+</Prompt>
+
+In this tutorial, you will create a workspace, attach `demo-hr` to Default, grant a tutorial agent at the edge, and prove the substrate with one allowed call — then see it in audit.
+
+To do this, you will:
+
+<Steps>
+  <Step title="Create a workspace">
+    Create the dedicated workspace you will operate in.
+  </Step>
+  <Step title="Attach a tool to Default">
+    Make `demo-hr` a governed target on the gateway.
+  </Step>
+  <Step title="Grant a smoke-test agent">
+    Admit a tutorial agent so you can prove the edge path.
+  </Step>
+  <Step title="Deploy a minimal allow">
+    Permit discovery and one directory tool so the smoke call succeeds.
+  </Step>
+  <Step title="Smoke-test the substrate">
+    Call once with curl or Python, then check audit.
+  </Step>
+</Steps>
+
+## Prerequisites
+
+For this tutorial, you will need:
+
+- The [Dome CLI](/install) installed and authenticated
+- A tenant `admin` role (or an org `owner` / `admin` via cascade) to create the workspace, plus permission to attach tools. Refer to [Permissions](/concepts/platform/permissions).
+
+> This tutorial runs entirely in a workspace. The tutorial agent and tiny Cedar rule exist only so you can prove backends and grants work — not to replace the [Developer](/tutorials/role/developer) or [Security](/tutorials/role/security) tutorials.
+
+## Create a workspace
+
+```bash
+dome workspaces create --name studio-role-operator
+dome context sync
+dome context current
+```
+
+Confirm the workspace reads `studio-role-operator`.
+
+## Attach a tool to Default
+
+A tool is unreachable until it belongs to a [Gateway](/build/gateways). Register the public demo HR server on Default:
+
+```bash
+dome tools add \
+  --name demo-hr \
+  --url https://demo-mcp.domesystems.ai/mcp \
+  --protocol streamable-http \
+  --auth-method none \
+  --gateway Default
+```
+
+Confirm Default lists the connection:
+
+```bash
+dome gateways get Default
+```
+
+## Grant a smoke-test agent
+
+Without an agent grant, nothing can call through the edge — even with a healthy backend. Register a dedicated agent and admit it:
+
+```bash
+dome agents register --name role-ops-agent --if-not-exists
+dome agents create-key role-ops-agent --name smoke
+dome gateways access grant Default role-ops-agent
+```
+
+Save the token to a gitignored `.env`. Treat this agent as scaffolding for the smoke test, not a production workload identity.
+
+## Deploy a minimal allow
+
+Gateway grants admit the agent; Cedar still decides each call. Deploy the smallest permit that lets one directory tool succeed:
+
+```cedar title="role-ops-agent.cedar"
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:discover",
+  resource
+);
+
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"demo-hr/hr/list_employees"
+);
+```
+
+```bash
+dome rules apply role-ops-agent.cedar --agent role-ops-agent --name role-ops-agent
+```
+
+## Smoke-test the substrate
+
+```bash
+dome context current
+dome gateways list
+```
+
+```bash
+export DOME_GATEWAY_URL="https://GATEWAY_HOST/gateways/DEFAULT_GATEWAY_ID"
+export DOME_TOKEN="dome_..."
+```
+
+One allowed call proves backend membership, the grant, and Cedar together.
+
+<Tabs items={["API via curl","Python"]}>
+  <Tab value="API via curl">
+    ```bash
+    curl -sS -X POST "$DOME_GATEWAY_URL/mcp" \
+      -H "Authorization: Bearer $DOME_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+          "name": "demo-hr/hr/list_employees",
+          "arguments": {}
+        }
+      }'
+    ```
+
+    Expect demo employees in `result`.
+  </Tab>
+  <Tab value="Python">
+    Requires `httpx` (`pip install httpx`):
+
+    ```python title="smoke_ops.py"
+    import json
+    import os
+
+    import httpx
+
+    url = os.environ["DOME_GATEWAY_URL"].rstrip("/") + "/mcp"
+    token = os.environ["DOME_TOKEN"]
+
+    response = httpx.post(
+        url,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "demo-hr/hr/list_employees",
+                "arguments": {},
+            },
+        },
+        timeout=30.0,
+    )
+    print(json.dumps(response.json(), indent=2))
+    ```
+
+    ```bash
+    python smoke_ops.py
+    ```
+  </Tab>
+</Tabs>
+
+Confirm the call landed in audit. Tail live events in a second terminal if you want the operator view:
+
+```bash
+dome audit query --limit 10
+# Optional live tail:
+# dome audit stream
+```
+
+## Clean up
+
+```bash
+dome workspaces delete studio-role-operator
+```
+
+## Next steps
+
+You learned how to attach tools to a gateway, grant access at the edge, and prove the substrate with a smoke call. Continue with:
+
+- [Developer](/tutorials/role/developer) to register real agent workloads and verify allow/deny
+- [Security](/tutorials/role/security) to tighten rules, filters, and evidence export
+- [Stream Live Events](/operate/observe) for day-to-day triage

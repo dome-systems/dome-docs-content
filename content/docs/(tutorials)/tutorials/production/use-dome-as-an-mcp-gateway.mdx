@@ -1,0 +1,273 @@
+---
+title: Use Dome as an MCP gateway
+sidebarTitle: MCP gateway
+description: "Let Cursor, Claude Code, or Codex sign in with your own Dome account and call MCP tools through a gateway, individually audited."
+---
+
+Your assistant already calls MCP tools on your behalf: databases, ticket queues, internal APIs, whatever you've connected. Called directly, that access carries its own problems: one shared credential for every call, no record of which call did what, and no way to cut off this assistant without breaking every other caller too.
+
+<Prompt
+  description="Hand this to an AI agent. It enables interactive sign-in on a gateway, puts a demo tool behind it, and rewrites its own MCP config to go through Dome with no static token."
+  icon="sparkles"
+  actions={["copy", "cursor"]}
+>
+Set yourself up to reach an MCP tool through a Dome gateway, signing in as me instead of holding a static agent key.
+
+First, show me this plan and ask me to confirm before running anything:
+
+1. Install the Dome CLI if missing, sign in (opens a browser), then sync contexts
+2. Create a tutorial workspace
+3. Register the public demo tool server as `demo-hr`, attached to the Default gateway
+4. Enable interactive access on the Default gateway, allow-listing my email
+5. Deploy a Cedar bundle that permits the interactive agent to discover and call tools
+6. Rewrite your own MCP config to point at the gateway's `/mcp` endpoint with no token
+7. Tell me to reload and complete the browser sign-in yourself, then verify a tool call and show me the audit event
+
+Follow the commands at https://developer.domesystems.ai/agent/tutorials/production/use-dome-as-an-mcp-gateway.md exactly.
+
+Non-negotiable rules:
+
+- Narrate as you go. Before each step, tell me in one or two sentences what you are about to do and why it matters.
+- Confirm the active context. After switching context, confirm the workspace name starts with `studio-`. If it does not, stop and ask me.
+- Ask me for the email I want to allow-list before you need it. Default to the email I used for `dome auth login` if I don't have another in mind.
+- You cannot complete a browser sign-in on my behalf. After writing the MCP config, stop, tell me to reload and approve the sign-in prompt myself, and wait for my confirmation before calling any tool through it.
+- Never report a step as done without showing the command output.
+
+Write the config for whichever client you are running in: `.cursor/mcp.json` for Cursor, `claude mcp add --transport http` for Claude Code, `~/.codex/config.toml` plus `codex mcp login` for Codex.
+
+Once I confirm sign-in succeeded, call a `demo-hr` tool once to prove the path, then run `dome audit query --limit 5` and show me the resulting event, including whose identity it carries.
+</Prompt>
+
+In this tutorial, you will put a public demo MCP server behind the Default gateway, then rewrite your assistant's MCP config to reach it by signing in with your own Dome account instead of pasting in a static key. The rule you deploy is intentionally broad: allow everything for now. [Govern your first agent](/tutorials/get-started/govern-your-first-agent) covers narrowing it with allow, redact, and deny.
+
+<Steps>
+  <Step title="Prepare your environment">
+    Sign in and create a dedicated workspace.
+  </Step>
+  <Step title="Add a tool">
+    Register the demo server and attach it to the Default gateway.
+  </Step>
+  <Step title="Enable interactive access">
+    Allow-list your own email on the Default gateway.
+  </Step>
+  <Step title="Allow it through">
+    Deploy a permissive Cedar bundle scoped to the interactive agent.
+  </Step>
+  <Step title="Connect your client">
+    Point Cursor, Claude Code, or Codex at the gateway, no token.
+  </Step>
+  <Step title="Verify the results">
+    Call a tool from your assistant and confirm the audit event.
+  </Step>
+</Steps>
+
+## Prerequisites
+
+For this tutorial, you will need:
+
+- The Dome CLI. Refer to [Install](/install) for Homebrew and direct-download instructions.
+- A tenant `admin` role (or an org `owner` / `admin` via cascade) to create the workspace, plus permission to deploy rules.
+- Cursor, Claude Code, or Codex, each pointed at your Dome account rather than a shared agent key.
+
+<Callout type="info">
+This tutorial uses [interactive access](/build/gateways/interactive-mcp-access): a real person signs in and rides an interactive agent. For a headless agent, a CI job, or anything without a browser, mint a static agent key instead. [Govern your first agent](/tutorials/get-started/govern-your-first-agent) covers that path.
+</Callout>
+
+## Prepare your environment
+
+Sign in and create a tutorial workspace:
+
+```bash
+dome auth login
+dome workspaces create --name studio-connect-assistant
+dome context sync
+dome context current
+```
+
+Confirm the workspace before continuing. Everything after this point creates resources:
+
+```bash
+dome context current
+```
+
+## Add a tool
+
+A [tool](/connect/tools) is a backend the gateway calls on your assistant's behalf. By connecting it to a [Gateway](/build/gateways), you decide which tools your assistant can discover and call, without your assistant ever seeing the tool's URL or credentials.
+
+Register the public demo server and attach it to the Default gateway:
+
+```bash
+dome tools add \
+  --name demo-hr \
+  --url https://demo-mcp.domesystems.ai/mcp \
+  --protocol streamable-http \
+  --auth-method none \
+  --gateway Default
+```
+
+The connection name prefixes every tool it exposes, so this server's tools become `demo-hr/hr/list_employees`, `demo-hr/it/get_incidents`, and so on. A tool with no gateway membership is registered but unreachable.
+
+## Enable interactive access
+
+Every call through a gateway is authorized and audited against an agent identity, not against a person or a product name. [interactive access](/build/gateways/interactive-mcp-access) gives you that identity without registering one by hand: enabling it creates an interactive agent that you, and anyone else you allow-list, sign in as through a browser.
+
+Enable it on Default, allow-listing the email you used for `dome auth login`:
+
+```bash
+dome gateways interactive enable Default --email you@example.com
+```
+
+The command prints the interactive agent's name, `gateway-interactive-<gateway-id>`. Confirm it, since the next step needs it:
+
+```bash
+dome gateways get Default --json
+```
+
+Read `interactive_access.managed_agent_name` from the response.
+
+## Allow it through
+
+Enabling interactive access already admitted the interactive agent to Default. Cedar rules still decide what it may call, the same as any agent.
+
+Deploy a bundle that stays deliberately open, since this tutorial is about the connection, not the policy. Create `interactive-access.cedar`:
+
+```cedar title="interactive-access.cedar"
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:discover",
+  resource
+);
+
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:call",
+  resource
+);
+```
+
+The `--agent` flag takes the interactive agent's name from the previous step, not a name you chose.
+
+Deploy it scoped to that agent:
+
+```bash
+dome rules apply interactive-access.cedar \
+  --agent gateway-interactive-GATEWAY_ID \
+  --name interactive-access
+```
+
+<Callout type="info">
+This bundle allows every tool behind every gateway this agent can reach. [Govern your first agent](/tutorials/get-started/govern-your-first-agent) shows narrowing it to a named allowlist and redacting fields on the way back. [Interactive MCP access](/build/gateways/interactive-mcp-access#authorize-the-interactive-agent) shows scoping a rule to `principal.act_as.email`, useful once more than one person shares this agent.
+</Callout>
+
+## Connect your client
+
+Point your MCP client at the Default gateway's [tools ingress](/concepts/gateways/tools-gateway). One call resolves the whole URL, so there is nothing to assemble by hand.
+
+Run it:
+
+```bash
+dome gateways get Default --json
+```
+
+Copy `endpoints.mcp_url` from the response. That value is `MCP_URL` below, with no token or header this time. The first connection triggers a browser sign-in instead.
+
+<Tabs items={["Cursor","Claude Code","Codex"]}>
+  <Tab value="Cursor">
+    Use project `.cursor/mcp.json` or **Settings → MCP**, with no `headers` block:
+
+    ```json
+    {
+      "mcpServers": {
+        "dome-tools": {
+          "url": "MCP_URL"
+        }
+      }
+    }
+    ```
+
+    There is no credential in this file to gitignore. Cursor opens the browser on the first tool call.
+  </Tab>
+  <Tab value="Claude Code">
+    Run this in your terminal, not inside a `claude` session:
+
+    ```bash
+    claude mcp add --transport http dome-tools MCP_URL
+    ```
+
+    Keep `--transport http`. The gateway speaks Streamable HTTP, not the legacy `sse` transport Claude Code also supports. No `--header` flag this time. Confirm the result with `claude mcp list`, then Claude Code opens the browser on the first connection.
+  </Tab>
+  <Tab value="Codex">
+    Add the server to `~/.codex/config.toml` with no `env_key`:
+
+    ```toml
+    [mcp_servers.dome-tools]
+    url = "MCP_URL"
+    ```
+
+    Then trigger the browser sign-in explicitly:
+
+    ```bash
+    codex mcp login dome-tools
+    ```
+  </Tab>
+</Tabs>
+
+Reload MCP. The first connection opens your browser: sign in with the email you allow-listed, review the client and the tools it can reach, and approve. Your client stores the resulting grant and refreshes it silently after that, until it expires or you revoke it.
+
+## Verify the results
+
+Ask your assistant a question that needs the demo tool, for example **"Who works here?"** You should get back the demo employee directory, including ids such as `E001`.
+
+Confirm the call is attributed to the interactive agent, and to you specifically:
+
+```bash
+dome audit query --limit 5
+```
+
+Expect a `tool.call` event naming `demo-hr/hr/list_employees` (or whichever tool your assistant chose), attempted and completed, with `gateway-interactive-<gateway-id>` as the agent and your email under `act_as`. That is the difference from a shared agent key: if a teammate signs in later, their calls land under the same agent but their own `act_as` identity, and you can revoke just their grant without touching yours.
+
+<Accordions>
+<Accordion title="Troubleshooting">
+  - No tools appear after reloading.
+
+    Confirm you pasted `endpoints.mcp_url`, not `gateway_url` or another field. Then confirm the bundle landed:
+
+    ```bash
+    dome rules simulate --agent gateway-interactive-GATEWAY_ID --action mcp:discover \
+      --resource demo-hr/hr/list_employees --resource-type mcp_tool
+    ```
+
+  - The browser never opens, or the client just fails silently.
+
+    Send the assistant a message that needs the tool first; some clients only start the OAuth handshake on first use, not on save. For Codex, run `codex mcp login dome-tools` directly instead of waiting for it.
+
+  - The consent page shows no eligible agent.
+
+    Your signed-in email does not exactly match the allow-list, or your account lacks `agents.view` on this workspace. Compare against the allow-list:
+
+    ```bash
+    dome gateways get Default --json
+    ```
+
+  - Every call returns an authorization error.
+
+    Cedar denied the call. Reproduce it without spending anything, using the interactive agent's name:
+
+    ```bash
+    dome rules simulate --agent gateway-interactive-GATEWAY_ID --action mcp:call \
+      --resource demo-hr/hr/list_employees --resource-type mcp_tool
+    ```
+
+  - Calls succeed but time out.
+
+    The demo server is public and unauthenticated, so a timeout usually means egress restrictions on your network. Confirm you can reach `https://demo-mcp.domesystems.ai/mcp` directly.
+</Accordion>
+</Accordions>
+
+## Next steps
+
+You pointed a real MCP client at a Dome gateway, signed in as yourself, and watched a governed call land in audit under your own identity. Continue with:
+
+- [Use Dome as a model broker](/tutorials/production/use-dome-as-a-model-broker) to route your assistant's own inference through Dome the same way
+- [Interactive MCP access](/build/gateways/interactive-mcp-access) to allow-list teammates, scope rules per person, and manage grants
+- [Govern your first agent](/tutorials/get-started/govern-your-first-agent) to narrow this broad rule to an allowlist and redact fields on the way back

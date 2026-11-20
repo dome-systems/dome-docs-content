@@ -1,0 +1,77 @@
+---
+title: Callers
+description: Inspect verified end-user identities observed behind agent traffic
+---
+
+Callers are Act-As identities projected from audit evidence in the active workspace. Tools expose identity, verification, and attributed activity without returning credentials.
+
+Interactive MCP users are not added to this registry. Their session identity
+and revocable grants belong to the interactive OAuth flow; Callers tracks
+customer end users carried through delegated Act-As.
+
+## dome_callers_list
+
+List callers. Requires `audit.view`.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `search` | string | No | Substring match on subject or email |
+| `group` | string | No | Exact group membership |
+| `attribute_key` | string | No | Exact claim key filter |
+| `attribute_value` | string | No | Exact claim value; use with `attribute_key` |
+| `provider_id` | string | No | Verification provider ID |
+| `page` | number | No | Zero-based page number |
+| `page_size` | number | No | Page size; default 50, maximum 200 |
+
+The response includes observed verification methods and lifetime LLM calls, tool calls, and LLM tokens.
+
+```json title="Example tool call"
+{
+  "name": "dome_callers_list",
+  "arguments": {
+    "group": "support",
+    "attribute_key": "region",
+    "attribute_value": "us"
+  }
+}
+```
+
+## dome_callers_get
+
+Get one caller with attributed agents, models, tools, and activity. Requires `audit.view`.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `caller` | string | Yes | Caller record UUID or exact subject |
+
+Use the record UUID when two verification providers assert the same subject. Retrieve IDs with `dome_callers_list`.
+
+Current-month blocks appear only when activity belongs to the current UTC calendar month. Lifetime totals remain available separately.
+
+```json title="Example tool call"
+{
+  "name": "dome_callers_get",
+  "arguments": {
+    "caller": "{{CALLER_ID}}"
+  }
+}
+```
+
+## dome_callers_delete
+
+Erase a projected caller record and its per-agent activity rows. Requires `config.manage`.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `caller` | string | Yes | Caller record UUID or exact subject |
+
+The operation leaves underlying audit evidence intact. Later traffic for the same identity recreates the caller record.
+
+```json title="Example tool call"
+{
+  "name": "dome_callers_delete",
+  "arguments": {
+    "caller": "{{CALLER_ID}}"
+  }
+}
+```

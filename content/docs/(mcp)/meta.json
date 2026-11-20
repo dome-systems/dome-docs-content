@@ -1,0 +1,8 @@
+{
+  "title": "MCP",
+  "root": true,
+  "icon": "Plug",
+  "pages": [
+    "...reference/mcp"
+  ]
+}

@@ -1,0 +1,111 @@
+---
+title: Agents
+sidebarTitle: Agents
+description: agent identity, lifecycle states, grants, delegated identity, and credentials
+---
+
+This page lists the fields and state transitions of an agent record. An agent is the durable identity Dome authorizes, audits, and attaches credentials and grants to.
+
+An agent can be:
+
+- An **external agent**, whose worker you run in your own runtime.
+- A **managed agent**, whose worker Dome runs.
+- An **interactive agent**, a system-provisioned record for signed-in human gateway traffic.
+
+All three types share this identity record, lifecycle, grants, rules, and audit behavior.
+
+Refer to [Agents](/concepts/agents) for the identity model. Register and manage agents on [Connect agents](/build/agents).
+
+## Identity
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | UUID | Stable agent identifier and the identifier used by `Dome::Agent` in rules |
+| `name` | string | Display name, unique within the workspace |
+| `tenant_id` | UUID | Tenant that owns the agent |
+| `workspace_id` | UUID | Workspace that owns the agent and its generated rules |
+| `parent_id` | UUID | Optional parent agent; fixed after registration |
+| `metadata` | map of strings | Customer-defined attributes exposed to rules as `principal.metadata` |
+| `created_at` | timestamp | Registration time |
+| `updated_at` | timestamp | Last record update |
+| `last_seen_at` | timestamp | Most recent authenticated activity |
+
+An agent hierarchy may be at most 10 levels deep. Parent and child must belong to the same tenant. Hierarchy does not grant access: each agent keeps its own credentials, grants, and effective rules.
+
+## Lifecycle
+
+| Status | Meaning | Allowed transition |
+|--------|---------|--------------------|
+| `provisioned` | Identity exists but has not yet authenticated | Becomes `active` after successful use |
+| `active` | May authenticate and make governed calls | Suspend or revoke |
+| `suspended` | Temporarily blocked from authenticating | Reactivate or revoke |
+| `revoked` | Permanently blocked | Delete |
+
+Suspension can cascade to descendants. Revocation always cascades. Deletion is a hard delete and requires the agent to be revoked first.
+
+## Resource grants
+
+The agent record exposes grants in two forms:
+
+| View | Fields | Behavior |
+|------|--------|----------|
+| Name view | `allowed_pool_names`, `allowed_direct_model_names`, `allowed_tools` | Authoring input and display projection; reflects current resource names |
+| Canonical view | `allowed_pool_ids`, `allowed_direct_model_ids`, `allowed_tool_ids` | Rename-safe identifiers Dome stores and enforces |
+| gateway access | `allowed_gateway_ids` | gateway UUIDs whose endpoints the agent may use |
+
+Tool entries take the form `<connection>/<tool>`. Canonical tool entries keep the leaf tool name but replace the connection name with its UUID.
+
+Writing these fields generates an agent-scoped rule bundle. Pool and model grants permit model actions; tool grants permit `mcp:call` and `mcp:discover`; gateway grants permit the actions reachable through that gateway. Workspace rules and explicit forbids still apply.
+
+## Managed agents
+
+A managed agent is an agent that Dome executes. An external agent runs in your own runtime instead. A managed agent keeps the identity, lifecycle, gateway grant, rules, and audit behavior on this page, then adds a system prompt, model or pool, and one gateway for its execution worker.
+
+Managed agents cannot carry separate tool grants: their one gateway grant permits the tools that gateway exposes. A [trigger](/build/agents/managed#schedule-runs) decides when the agent runs; it can start work manually, on a schedule, or from a signed webhook.
+
+Refer to [Managed agents](/build/agents/managed) for configuration and run operations.
+
+## Interactive agents
+
+An interactive agent is a system-provisioned agent record for signed-in human MCP traffic on one gateway. It does not run a worker. Refer to [Interactive access](/build/gateways/interactive-mcp-access) for configuration.
+
+## Delegated identity
+
+The `actas_*` fields define how Dome verifies the person an agent acts for and which verified people it may represent.
+
+| Field | Description |
+|-------|-------------|
+| `actas_method` | Verification method: `none`, `oidc`, `hmac`, or `bound` |
+| `actas_required` | Whether every request must include verified Act-As identity |
+| `actas_verification_provider_id` | Shared verification provider used by this agent |
+| `actas_oidc_discovery_url` | Inline OIDC issuer material |
+| `actas_config_name` | Label for inline agent-specific configuration |
+| `actas_allowed_groups` | Verified groups the agent may represent |
+| `actas_allowed_emails` | Verified email addresses the agent may represent |
+| `actas_allowed_subjects` | Verified subjects the agent may represent |
+
+When every allow-list is empty, any identity accepted by the effective workspace Act-As policy may be represented. Populating any list generates a forbid-unless rule against the verified claims.
+
+`interactive_access` permits authorized humans to ride the agent through Dome's OAuth flow. It requires at least one allowed email or subject. Groups cannot qualify an interactive login.
+
+Device-bound agents expose `pop_required`, `actas_bound_identity`, and `device` as read-only fields set by enrollment. They cannot also use interactive access.
+
+## Credentials
+
+Credentials are separate records from the agent identity. Creating an agent does not issue a key.
+
+| Property | Behavior |
+|----------|----------|
+| agent API key | Long-lived secret exchanged for short-lived agent access tokens |
+| `token_ttl` | Lifetime of those access tokens; defaults to `10m`, accepted range `1m`–`24h` |
+| Rotation | Revokes the old key and returns a new secret |
+| Revocation | Permanently invalidates one key without changing the agent's grants |
+
+Key secrets are returned once. Dome stores their verification material, not a retrievable plaintext value.
+
+## Related references
+
+- [`dome agents`](/cli/build/agents) CLI commands
+- [Agents MCP tools](/reference/mcp/agents)
+- [Agents API](/api/tag/agents/register-agent)
+- [Rules entity types](/reference/controls/rules#entity-types)

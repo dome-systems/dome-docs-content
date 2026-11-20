@@ -1,0 +1,16 @@
+{
+  "title": "Entities",
+  "defaultOpen": true,
+  "pages": [
+    "agents",
+    "managed-agents",
+    "triggers",
+    "callers",
+    "[Tools](/reference/resources/tools)",
+    "[Models](/reference/resources/models)",
+    "[Pools](/reference/resources/model-pools)",
+    "[Rules](/reference/controls/rules)",
+    "[Guards](/reference/controls/guards)",
+    "[Quotas](/reference/controls/quotas)"
+  ]
+}

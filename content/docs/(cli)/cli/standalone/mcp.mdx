@@ -1,0 +1,27 @@
+---
+title: dome mcp
+description: MCP server for AI agents
+---
+
+`dome mcp` serves the Dome Platform as MCP tools, so an AI assistant can run the same operations this CLI exposes. It authenticates as the active CLI context, which means the assistant is limited to what that session may already do.
+
+## Serve
+
+```bash
+dome mcp serve
+```
+
+Start an MCP server on stdio. Exposes Dome Platform operations as tools for MCP clients.
+
+Authentication is read from the active CLI context.
+
+### Setup
+
+```bash
+dome auth login
+dome mcp serve
+```
+
+Client registration is on the [MCP Server Reference](/reference/mcp#connect-a-client): Claude Code, Claude Desktop, Cursor, Codex, and any stdio MCP client.
+
+See the [MCP Server Reference](/reference/mcp) for the complete tool list organized by group.

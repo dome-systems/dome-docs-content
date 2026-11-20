@@ -1,0 +1,689 @@
+---
+title: Managed agents
+sidebarTitle: Managed agents
+description: Create managed agents, start runs, and schedule governed work on Dome
+---
+
+<PreviewBadge />
+
+Run managed agents in Dome without operating a worker. Configure their prompt, model, gateway, and triggers, then start runs manually, on a schedule, or through signed webhooks.
+
+## Overview
+
+A managed agent is one of Dome's three agent types. Dome runs its execution worker; an external agent runs in your own runtime, and an interactive agent represents signed-in human gateway traffic. A managed agent's configuration has four parts:
+
+| You configure | Dome uses it for |
+| --- | --- |
+| System prompt | Persistent instructions for each run |
+| model or pool | The model the worker invokes |
+| gateway | The models and tools the worker can reach |
+| [Triggers](/build/triggers) | When Dome starts a run |
+
+The managed agent keeps its ordinary identity, gateway grant, rules, lifecycle, and audit behavior. Dome holds the runner credential; it is never returned to you.
+
+The typical workflow is:
+
+1. [Register the agent](#register-agent) with its prompt, model, and gateway.
+2. Choose how to start work:
+   - [Run the agent directly](#run-managed-agent) for an ad hoc task, test, or debugging session.
+   - Create a [schedule](/build/triggers#create-schedule) or [signed webhook](/build/triggers#create-signed-webhook) when work should start automatically. [Fire a trigger](/build/triggers#fire-a-trigger) on demand.
+3. [Inspect runs](#inspect-managed-agent-run) and adjust the configuration when needed.
+4. [Manage the lifecycle](#manage-lifecycle) when the worker must stop everywhere.
+
+## Requirements
+
+Before you begin:
+
+- Ask an organization owner or administrator to [enable public preview](/manage/public-preview) for the organization.
+- Authenticate the Dome CLI and select a workspace.
+- Create a [gateway](/build/gateways) that admits the managed agent and contains its model and tools.
+- Select a model or pool available through that gateway.
+
+### Permissions
+
+Managed agent and trigger operations require platform permissions. Each operation states its required permission inline.
+
+| Permission | Grants |
+| --- | --- |
+| `managedagents.view` | List managed agents and inspect run history |
+| `managedagents.manage` | Create, update, delete, and configure managed agents and triggers |
+| `managedagents.invoke` | Start manual runs and fire triggers |
+| `agents.register` | Create the underlying agent and update its shared settings |
+| `agents.suspend` | Suspend or reactivate the underlying agent |
+| `agents.revoke` | Revoke the underlying agent |
+| `rules.deploy` | Change the managed agent's gateway grant |
+
+## Register agent
+
+Create a managed agent with a name, system prompt, model or pool, and gateway. Dome keeps the runner key and never exposes it.
+
+<Callout icon="key">Requires `managedagents.manage`, `agents.register`, and `rules.deploy`.</Callout>
+
+<Tabs items={["CLI", "MCP", "API", "Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome managed-agents create \
+      --name nightly-triage \
+      --system-prompt "Triage issues filed since the last run." \
+      --model openai-prod \
+      --gateway production
+    ```
+
+    Each managed agent runs through exactly one gateway. The gateway grant permits every tool the gateway exposes, so Dome rejects separate tool grants on the managed agent.
+
+    <Callout icon="terminal">Reference: [`dome managed-agents create`](/cli/build/managed-agents#create-managed-agent)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_managed_agents_create`
+
+    ```json
+    {
+      "name": "nightly-triage",
+      "system_prompt": "Triage issues filed since the last run.",
+      "model": "openai-prod",
+      "gateway": "production"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_managed_agents_create`](/reference/mcp/managed-agents)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    POST /v1/managed-agents
+    Content-Type: application/json
+
+    {
+      "agent": {
+        "workspace_id": "{{WORKSPACE_ID}}",
+        "name": "nightly-triage",
+        "allowed_gateway_ids": ["production"]
+      },
+      "system_prompt": "Triage issues filed since the last run.",
+      "default_model": "openai-prod"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`CreateManagedAgent`](/api/tag/managed-agents/create-managed-agent)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Create a managed agent"
+    Create a managed agent named "nightly-triage". Use the "openai-prod" model through the "production" gateway, with the system prompt: "Triage issues filed since the last run."
+    ```
+  </Tab>
+</Tabs>
+
+Use `dome managed-agents get nightly-triage` to inspect the system prompt, model, gateway, and attached triggers. Use `dome managed-agents update nightly-triage` with `--system-prompt`, `--model`, or `--gateway` to change the managed agent configuration.
+
+### Create from a file
+
+Use a JSON or YAML definition when you want a reviewable managed agent configuration, such as in CI. The file has the same fields as the [Create managed agent API request](/api/tag/managed-agents/create-managed-agent). The `agent` object is the underlying agent registration; it contains the name and its one gateway grant.
+
+```yaml managed-agent.yaml
+agent:
+  name: nightly-triage
+  allowed_gateway_ids: [production]
+system_prompt: Triage issues filed since the last run.
+default_model: openai-prod
+```
+
+```bash
+dome managed-agents create --file managed-agent.yaml
+```
+
+<Callout icon="terminal">Reference: [`dome managed-agents create --file`](/cli/build/managed-agents#create-managed-agent)</Callout>
+
+## Update managed agent
+
+Change the system prompt, model or pool, or gateway. Fields you omit keep their current values.
+
+<Tabs items={["CLI", "MCP", "API", "Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome managed-agents update nightly-triage \
+      --system-prompt "Triage new issues and assign a priority." \
+      --model openai-prod \
+      --gateway production
+    ```
+
+    <Callout icon="terminal">Reference: [`dome managed-agents update`](/cli/build/managed-agents#update-managed-agent)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_managed_agents_update`
+
+    ```json
+    {
+      "agent_id": "{{AGENT_ID}}",
+      "system_prompt": "Triage new issues and assign a priority.",
+      "model": "openai-prod",
+      "gateway": "production"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_managed_agents_update`](/reference/mcp/managed-agents)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    PATCH /v1/managed-agents/{{AGENT_ID}}
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "system_prompt": "Triage new issues and assign a priority.",
+      "default_model": "openai-prod"
+    }
+    ```
+
+    Update the gateway with the regular [Update agent](/api/tag/agents/update-agent) operation.
+
+    <Callout icon="code">Reference: [`UpdateManagedAgent`](/api/tag/managed-agents/update-managed-agent)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Update a managed agent"
+    Update the "nightly-triage" managed agent with this system prompt: "Triage new issues and assign a priority." Use the "openai-prod" model through the "production" gateway.
+    ```
+  </Tab>
+</Tabs>
+
+Use [`dome agents update`](/build/agents/external#update-agent) for the managed agent's name, metadata, or delegated identity settings. Use [triggers](/build/triggers) to change when it runs.
+
+## Rotate runner key
+
+Rotate the credential Dome holds for a managed agent when you suspect compromise or follow a credential-rotation schedule. Dome stores the replacement before the prior key stops working; the key is never returned. Runs already in progress and later runs use the replacement.
+
+<Callout icon="key">Requires `managedagents.manage`.</Callout>
+
+<Tabs items={["CLI", "MCP", "API", "Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome managed-agents rotate-runner-key nightly-triage
+    ```
+
+    <Callout icon="terminal">Reference: [`dome managed-agents rotate-runner-key`](/cli/build/managed-agents#rotate-runner-key)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_managed_agents_rotate_runner_key`
+
+    ```json
+    {
+      "agent_id": "{{AGENT_ID}}"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_managed_agents_rotate_runner_key`](/reference/mcp/managed-agents#dome_managed_agents_rotate_runner_key)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    POST /v1/managed-agents/{{AGENT_ID}}/runner-key/rotate
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`RotateManagedAgentRunnerKey`](/api/tag/managed-agents/rotate-managed-agent-runner-key)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Rotate a managed agent runner key"
+    Rotate the runner key for the "nightly-triage" managed agent.
+    ```
+  </Tab>
+</Tabs>
+
+Do not use `dome agents rotate-key` for a managed agent. Its runner key rotates only through the managed-agent operation.
+
+### Control run behavior
+
+Manual runs are enabled by default. Turn them off when an agent should start only from its schedules and webhooks:
+
+```bash
+dome managed-agents update nightly-triage --manual-runs=false
+```
+
+This refuses **Run now** and `dome managed-agents run`, but does not pause a schedule or webhook. To stop every new run, [suspend the underlying agent](#suspend).
+
+Bound each run with `--turn-timeout`, `--on-turn-timeout`, `--max-turns`, and `--max-run-duration`:
+
+```bash
+dome managed-agents update nightly-triage \
+  --turn-timeout 5m \
+  --on-turn-timeout retry \
+  --max-turns 100 \
+  --max-run-duration 1h
+```
+
+The platform defaults are a 5-minute turn timeout, 50 turns, and a 1-hour run duration. Use a [per-run quota](/govern/quotas#limit-one-managed-agents-run) to limit token use or estimated provider spend. Run limits do not set a token or cost budget. On update, set a numeric limit to `0`, or use `--on-turn-timeout default`, to return that setting to the platform default.
+
+## Get managed agent
+
+Inspect one managed agent's prompt, model, gateway, status, and attached triggers.
+
+<Tabs items={["CLI", "MCP", "API", "Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome managed-agents get nightly-triage
+    ```
+
+    <Callout icon="terminal">Reference: [`dome managed-agents get`](/cli/build/managed-agents#get-managed-agent)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_managed_agents_get`
+
+    ```json
+    {
+      "agent_id": "{{AGENT_ID}}"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_managed_agents_get`](/reference/mcp/managed-agents)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    GET /v1/managed-agents/{{AGENT_ID}}?workspaceId={{WORKSPACE_ID}}
+    ```
+
+    <Callout icon="code">Reference: [`GetManagedAgent`](/api/tag/managed-agents/get-managed-agent)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Get a managed agent"
+    Show the configuration and status for the "nightly-triage" managed agent.
+    ```
+  </Tab>
+</Tabs>
+
+## List managed agents
+
+List managed agents in the active workspace to review their status, model, and gateway.
+
+<Tabs items={["CLI", "MCP", "API", "Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome managed-agents list
+    ```
+
+    <Callout icon="terminal">Reference: [`dome managed-agents list`](/cli/build/managed-agents#list-managed-agents)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_managed_agents_list`
+
+    ```json
+    {}
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_managed_agents_list`](/reference/mcp/managed-agents)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    GET /v1/managed-agents?workspaceId={{WORKSPACE_ID}}
+    ```
+
+    <Callout icon="code">Reference: [`ListManagedAgents`](/api/tag/managed-agents/list-managed-agents)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="List managed agents"
+    List the managed agents in this workspace.
+    ```
+  </Tab>
+</Tabs>
+
+## Manage lifecycle
+
+Managed agents use the standard agent lifecycle.
+
+### Suspend
+
+Suspend a managed agent to stop all new runs for it. Requires `agents.suspend`.
+
+<Tabs items={["CLI", "MCP", "API", "Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome agents suspend nightly-triage \
+      --reason "maintenance window"
+    ```
+
+    <Callout icon="terminal">Reference: [`dome agents suspend`](/cli/build/agents#suspend-agent)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_agents_suspend`
+
+    ```json
+    {
+      "agent_id": "nightly-triage",
+      "reason": "maintenance window"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_agents_suspend`](/reference/mcp/agents#agents-suspend)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    POST /v1/agents/{{AGENT_ID}}/suspend
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "reason": "maintenance window"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`SuspendAgent`](/api/tag/agents/suspend-agent)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Suspend a managed agent"
+    Suspend the "nightly-triage" managed agent for a maintenance window.
+    ```
+  </Tab>
+</Tabs>
+
+### Reactivate
+
+Reactivate a suspended managed agent to let new runs start again. Requires `agents.suspend`.
+
+<Tabs items={["CLI", "MCP", "API", "Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome agents reactivate nightly-triage
+    ```
+
+    <Callout icon="terminal">Reference: [`dome agents reactivate`](/cli/build/agents#reactivate-agent)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_agents_reactivate`
+
+    ```json
+    {
+      "agent_id": "nightly-triage"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_agents_reactivate`](/reference/mcp/agents#agents-reactivate)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    POST /v1/agents/{{AGENT_ID}}/reactivate
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`ReactivateAgent`](/api/tag/agents/reactivate-agent)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Reactivate a managed agent"
+    Reactivate the "nightly-triage" managed agent.
+    ```
+  </Tab>
+</Tabs>
+
+### Revoke
+
+Revoke a managed agent to permanently disable it while preserving its audit record. Requires `agents.revoke`.
+
+<Tabs items={["CLI", "MCP", "API", "Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome agents revoke nightly-triage \
+      --reason "decommissioned"
+    ```
+
+    <Callout icon="terminal">Reference: [`dome agents revoke`](/cli/build/agents#revoke-agent)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_agents_revoke`
+
+    ```json
+    {
+      "agent_id": "nightly-triage",
+      "reason": "decommissioned"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_agents_revoke`](/reference/mcp/agents#agents-revoke)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    POST /v1/agents/{{AGENT_ID}}/revoke
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "reason": "decommissioned"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`RevokeAgent`](/api/tag/agents/revoke-agent)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Revoke a managed agent"
+    Revoke the "nightly-triage" managed agent because it is decommissioned.
+    ```
+  </Tab>
+</Tabs>
+
+### Delete
+
+Delete a managed agent and its underlying agent when you no longer need either record.
+
+<Tabs items={["CLI", "MCP", "API", "Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome managed-agents delete nightly-triage
+    ```
+
+    <Callout icon="terminal">Reference: [`dome managed-agents delete`](/cli/build/managed-agents#delete-managed-agent)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_managed_agents_delete`
+
+    ```json
+    {
+      "agent_id": "{{AGENT_ID}}"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_managed_agents_delete`](/reference/mcp/managed-agents)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    DELETE /v1/managed-agents/{{AGENT_ID}}?workspaceId={{WORKSPACE_ID}}
+    ```
+
+    <Callout icon="code">Reference: [`DeleteManagedAgent`](/api/tag/managed-agents/delete-managed-agent)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Delete a managed agent"
+    Delete the "nightly-triage" managed agent and its underlying agent.
+    ```
+  </Tab>
+</Tabs>
+
+## Runs
+
+Use runs to test a managed agent, monitor work that starts manually or from a trigger, and inspect its output. Each run uses the managed agent's configured prompt, model, and gateway.
+
+### Run managed agent
+
+Start one run immediately when you want to test the prompt and access configuration before scheduling work.
+
+<Callout icon="key">Requires `managedagents.invoke`.</Callout>
+
+<Tabs items={["CLI", "MCP", "API", "Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome managed-agents run nightly-triage \
+      --input "Review newly filed issues and return a prioritized summary."
+    ```
+
+    <Callout icon="terminal">Reference: [`dome managed-agents run`](/cli/build/managed-agents#run-managed-agent)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_managed_agents_run`
+
+    ```json
+    {
+      "agent": "nightly-triage",
+      "input": "Review newly filed issues and return a prioritized summary."
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_managed_agents_run`](/reference/mcp/managed-agents)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    POST /v1/managed-agents/{{AGENT_ID}}/runs
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "input": "Review newly filed issues and return a prioritized summary."
+    }
+    ```
+
+    <Callout icon="code">Reference: [`RunManagedAgent`](/api/tag/managed-agents/run-managed-agent)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Run a managed agent"
+    Start a run of the "nightly-triage" managed agent with this input: "Review newly filed issues and return a prioritized summary."
+    ```
+  </Tab>
+</Tabs>
+
+A run moves from `pending` to `running`, then ends as `succeeded`, `failed`, or `cancelled`. Dome can retry an infrastructure failure, but it does not retry a run that reached the model.
+
+### Use run variables
+
+In an agent's system prompt, a manual-run input, or a trigger's configured input, reference values that Dome fills when the run starts:
+
+| Variable | Value |
+| --- | --- |
+| `{{dome.now}}` | Run start time in UTC |
+| `{{dome.today}}` | Run date in the trigger's time zone |
+| `{{dome.timezone}}` | Schedule trigger time zone, or `UTC` otherwise |
+| `{{dome.scheduled_for}}` | When the run was due or queued, in UTC |
+| `{{dome.last_successful_run}}` | Start of the agent's last successful run, or `none` |
+| `{{dome.run_id}}` | Current run ID |
+| `{{dome.agent.name}}` | Managed agent name |
+| `{{dome.trigger.name}}` | Trigger name, or `none` for a manual run |
+| `{{dome.source}}` | `schedule`, `webhook`, or `manual` |
+
+For example, `Review changes since {{dome.last_successful_run}}.` is filled in at the start of each run. Dome leaves an unknown `{{dome.*}}` reference unchanged. A webhook request body is passed to the run as sent, so run variables in the body are not substituted.
+
+### List managed agent runs
+
+List recent runs to see their status, source, and completion time.
+
+<Tabs items={["CLI", "MCP", "API", "Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome managed-agents runs list nightly-triage --limit 50
+    ```
+
+    <Callout icon="terminal">Reference: [`dome managed-agents runs list`](/cli/build/managed-agents#list-runs)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_managed_agents_runs_list`
+
+    ```json
+    {
+      "agent_id": "{{AGENT_ID}}",
+      "limit": 50
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_managed_agents_runs_list`](/reference/mcp/managed-agents)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    GET /v1/managed-agents/{{AGENT_ID}}/runs?workspaceId={{WORKSPACE_ID}}&limit=50
+    ```
+
+    <Callout icon="code">Reference: [`ListManagedAgentRuns`](/api/tag/managed-agents/list-managed-agent-runs)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="List managed agent runs"
+    List the 50 most recent runs for the "nightly-triage" managed agent.
+    ```
+  </Tab>
+</Tabs>
+
+### Inspect a managed agent run
+
+Use the run ID returned by a manual run or shown in run history to inspect its timing, attempts, output, and error details.
+
+<Tabs items={["CLI", "MCP", "API", "Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome managed-agents runs get {{RUN_ID}}
+    ```
+
+    <Callout icon="terminal">Reference: [`dome managed-agents runs get`](/cli/build/managed-agents#get-run)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_managed_agents_runs_get`
+
+    ```json
+    {
+      "run_id": "{{RUN_ID}}"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_managed_agents_runs_get`](/reference/mcp/managed-agents)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    GET /v1/managed-agent-runs/{{RUN_ID}}?workspaceId={{WORKSPACE_ID}}
+    ```
+
+    <Callout icon="code">Reference: [`GetManagedAgentRun`](/api/tag/managed-agents/get-managed-agent-run)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Inspect a managed agent run"
+    Show the details for managed agent run "{{RUN_ID}}".
+    ```
+  </Tab>
+</Tabs>
+
+## Next steps
+
+- [Configure Agents](/build/agents) to manage identity, access, lifecycle, and delegated identity.
+- [Configure Gateways](/build/gateways) to control the model and tools each managed agent can reach.
+- [Configure triggers](/build/triggers) to start managed agents manually, on a schedule, or from signed webhooks.
+- [Inspect audit events](/operate/audit) to investigate managed agent activity.

@@ -1,0 +1,236 @@
+---
+title: Workspaces
+description: Create workspaces, manage members, and configure act-as enforcement and policy freshness
+---
+
+import { workspace } from '@/snippets/glossary';
+
+<p>{workspace}</p>
+
+Refer to [Environments](/manage/environments) for workspace setup. Refer to [Access](/manage/access) for members.
+
+These tools span three permission tiers: list and get are visible to any caller with an active context; member, act-as, freshness, and delete require workspace `workspaces.manage` or `config.manage`; creation requires tenant-level `tenants.manage`.
+
+## Workspaces
+
+### dome_workspaces_list
+
+List all workspaces in the current tenant.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| — | — | — | No parameters |
+
+<Callout icon="key">Authenticated only — visible to any caller with an active context. The server returns only the workspaces the caller actually has access to.</Callout>
+
+```json title="Example tool call"
+{
+  "name": "dome_workspaces_list"
+}
+```
+
+### dome_workspaces_create
+
+Create a new workspace in the current tenant. The server auto-generates a URL-safe slug from the display name.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Workspace display name |
+| `join_policy` | string | No | How non-members join: `open`, `request`, or `invite_only`. Omit to take the server default (`invite_only`). |
+
+<Callout icon="key">Requires tenant-level `tenants.manage` (held by tenant `admin`, or by org `owner` / `admin` via cascade). Workspace-only roles cannot create workspaces.</Callout>
+
+```json title="Example tool call"
+{
+  "name": "dome_workspaces_create",
+  "arguments": {
+    "name": "staging",
+    "join_policy": "request"
+  }
+}
+```
+
+Unknown `join_policy` values return `InvalidArgument`. See [Join policies](/manage/environments#join-policies).
+
+### dome_workspaces_get
+
+Get a single workspace in the current tenant. Accepts a UUID or a slug; defaults to the active workspace when omitted.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `workspace` | string | No | Workspace ID (UUID) or slug. Defaults to the active workspace. |
+
+<Callout icon="key">Authenticated only — visible to any caller with an active context. The server enforces that the caller can read the requested workspace.</Callout>
+
+### dome_workspaces_delete
+
+Delete a workspace from the current tenant. Accepts a UUID or a slug. Marked destructive.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `workspace` | string | Yes | Workspace ID (UUID) or slug |
+
+<Callout icon="key">Requires `workspaces.manage`.</Callout>
+
+### dome_workspaces_rename
+
+Rename a workspace display name. Its slug does not change.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `workspace` | string | Yes | Workspace UUID or slug |
+| `name` | string | Yes | New display name |
+
+<Callout type="warning">
+  Workspace deletion is permanent and cannot be undone.
+</Callout>
+
+## Act-as
+
+Act-as enforcement controls whether agents must present verified end-user identity on every request.
+
+### dome_workspaces_actas_get
+
+Get the current act-as enforcement policy for the active workspace.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| — | — | — | No parameters |
+
+<Callout icon="key">Requires `config.manage`.</Callout>
+
+Returns whether act-as is required and which verification methods are allowed.
+
+### dome_workspaces_actas_update
+
+Update the act-as enforcement policy for the active workspace.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `actas_required` | bool | No | Require act-as header on all requests |
+| `actas_allowed_methods` | array | No | Allowed verification methods (e.g., `["oidc", "hmac"]`). Empty = any method. |
+
+<Callout icon="key">Requires `config.manage`.</Callout>
+
+```json title="Example tool call"
+{
+  "name": "dome_workspaces_actas_update",
+  "arguments": {
+    "actas_required": true,
+    "actas_allowed_methods": ["oidc"]
+  }
+}
+```
+
+<Callout type="warning">
+  Enabling act-as enforcement affects all agents in the workspace. Agents without a configured act-as method are rejected.
+</Callout>
+
+## Freshness
+
+Each workspace has a configurable freshness window that bounds how long the gateway may serve cached authorization policy before failing closed. Default is 90 seconds; range is 30–86400 seconds. Enforcement is per-workspace — one workspace failing closed does not affect others.
+
+### dome_workspaces_set_freshness_window
+
+Set the freshness window for the active workspace.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `seconds` | number | Yes | Freshness window in seconds (30–86400) |
+
+<Callout icon="key">Requires `config.manage`.</Callout>
+
+```json title="Example tool call"
+{
+  "name": "dome_workspaces_set_freshness_window",
+  "arguments": {
+    "seconds": 120
+  }
+}
+```
+
+<Callout type="warning">
+  Once the window elapses, the gateway denies governed requests until policy is fresh. The affected `tool.call` or `model.call` completes with `result=denied` and `denial.reason=stale_policy`; there is no separate staleness-denied event.
+</Callout>
+
+## Members
+
+### dome_workspaces_members_list
+
+List all members of the active workspace with their roles.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| — | — | — | No parameters |
+
+<Callout icon="key">Requires `workspaces.manage`.</Callout>
+
+Returns each member with their email, role, and join date.
+
+### dome_workspaces_members_set
+
+Grant or update a user's role in the active workspace.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `user_email` | string | Yes | User email address |
+| `role` | string | Yes | Role: `admin`, `operator`, `security`, `viewer` |
+
+<Callout icon="key">Requires `workspaces.manage`.</Callout>
+
+```json title="Example tool call"
+{
+  "name": "dome_workspaces_members_set",
+  "arguments": {
+    "user_email": "alice@example.com",
+    "role": "operator"
+  }
+}
+```
+
+### dome_workspaces_members_remove
+
+Remove a user from the active workspace. Optionally revoke their API keys at the same time by passing `revoke_key_ids` (specific IDs) or `revoke_all_keys=true`. If neither is passed and the user has active keys, the response lists them so the caller can decide which to revoke. Marked destructive.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `user_email` | string | Yes | User email address |
+| `revoke_key_ids` | array | No | API key IDs to revoke alongside the removal. Mutually exclusive with `revoke_all_keys`. |
+| `revoke_all_keys` | bool | No | Revoke all API keys created by the user. Mutually exclusive with `revoke_key_ids`. |
+
+<Callout icon="key">Requires `workspaces.manage`.</Callout>
+
+### dome_members_removal_preview
+
+Preview the memberships, API keys, and possible orphaned workspaces affected by removing people at an organization, tenant, or workspace scope. Use this before a removal that can cascade.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `user_emails` | array of string | Yes | People to remove |
+| `scope_kind` | string | No | `org`, `tenant`, or `workspace` (default) |
+| `scope_id` | string | No | Scope ID; defaults to the active workspace |
+
+## Verification providers
+
+### dome_verification_providers_generate_secret
+
+Create an HMAC secret for a new workspace-scoped verification provider. The plaintext secret is returned once; retain the returned `secret_ref` for `dome_verification_providers_create`.
+
+### dome_verification_providers_update
+
+Update a workspace-scoped verification provider. You can change its name, OIDC configuration, required claims, claim mappings, or HMAC secret. Replacing an HMAC secret invalidates assertions signed by the old one immediately.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `provider_id` | string | Yes | Provider UUID |
+| `name`, `oidc_discovery_url`, `oidc_expected_audience` | string | No | Updated provider fields |
+| `oidc_required_claims`, `oidc_claim_mappings` | object, array | No | Replacement OIDC configuration |
+| `hmac_secret` | string | No | Replacement write-only HMAC secret |
+
+## Next steps
+
+Tenancy and membership how-tos live under Manage:
+
+- [Prepare Environments](/manage/environments)
+- [Manage Access](/manage/access)
+- [Scopes](/concepts/platform/scopes) concept

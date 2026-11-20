@@ -1,0 +1,30 @@
+{
+  "pages": [
+    "index",
+    "---Build---",
+    "...build",
+    "---Connect---",
+    "...connect",
+    "---Govern---",
+    "...govern",
+    "---Operate---",
+    "...operate",
+    "---Manage---",
+    "settings/config",
+    "manage/import",
+    "manage/export",
+    "settings/platform-keys",
+    "settings/tenants",
+    "settings/tenant",
+    "settings/org",
+    "settings/workspace",
+    "settings/roles",
+    "manage/billing",
+    "---Developer---",
+    "...developer",
+    "---Session---",
+    "...session",
+    "---Standalone---",
+    "...standalone"
+  ]
+}

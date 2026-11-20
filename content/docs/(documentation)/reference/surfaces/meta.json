@@ -1,0 +1,10 @@
+{
+  "title": "Surfaces",
+  "defaultOpen": true,
+  "pages": [
+    "cli",
+    "api",
+    "mcp",
+    "sdk"
+  ]
+}

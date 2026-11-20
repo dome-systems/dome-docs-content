@@ -1,0 +1,95 @@
+---
+title: Agent identity
+description: "How agents authenticate: API keys, token exchange, session tokens, and act-as claims"
+---
+
+import { agentIdentity } from '@/snippets/glossary';
+
+<p>{agentIdentity}</p>
+
+## High-level overview
+
+Dome authenticates agents in layers. An API key is the long-lived secret. The Identity service exchanges it for a short-lived session token. Every API call, MCP invocation, and gateway request carries that token. Services verify it locally. When the agent acts for a person, an act-as claim on `X-Dome-Act-As` can carry verified end-user identity beside the agent.
+
+Issuing credentials and authenticating looks like this:
+
+1. An operator registers an agent and creates an API key.
+2. The runtime calls `ExchangeToken` with that key, receives a JWT, and sends the JWT on each request.
+3. Dome confirms the agent is active, reads claims from the token, and proceeds to gateway and rule checks.
+4. If the call also carries a verified act-as header, rules can test `principal.act_as` and audit records the end user next to the agent.
+
+Every request authenticates the agent with a self-contained session token. End-user claims are optional verified context beside that agent.
+
+![Identity flow: API Key → Token Exchange → Session Token → Authenticated Request](/images/diagrams/identity-flow.svg)
+
+The gateway uses separate credentials for outbound backend calls. Follow the complete request path in [Architecture](/concepts/architecture).
+
+<Callout type="info">
+  The CLI handles token exchange automatically. Run `dome auth login` and the CLI manages key exchange, token refresh, and header injection.
+</Callout>
+
+### How authentication works
+
+1. **API key issuance.** Register an external agent and [create an API key](/build/agents/external#create-key). The key is returned once. Store it immediately.
+2. **Token exchange.** The agent sends the API key to the Identity service (`ExchangeToken` with `grant_type: api_key`). The service validates the key, confirms the agent is active, and returns a short-lived JWT. Each external agent carries its own lifetime, set with `--token-ttl` or `token_ttl` when you [register or update the agent](/build/agents/external#token-lifetime) (default `10m`, range `1m`–`24h`).
+3. **Session token.** The JWT carries the agent's identity for all subsequent requests. There is no round-trip to the Identity service on every call. The token is self-contained and verified locally.
+4. **Authenticated requests.** Every API call, MCP invocation, and gateway request carries the session token. Services extract identity without additional lookups.
+
+### Session token
+
+The session token is a JWT (HMAC-SHA256) carrying:
+
+| Claim | Description |
+|-------|-------------|
+| `sub` | agent UUID |
+| `jti` | Unique token ID |
+| `iss` | `dome` |
+| `aud` | `["dome"]` |
+| `iat` / `exp` | Issued-at and expiration timestamps |
+| `agent_id` | agent UUID |
+| `tenant_id` | Tenant UUID. Scopes all operations to this tenant. |
+| `workspace_id` | Workspace UUID (when workspace context is set) |
+| `api_key_id` | The specific API key that minted this token |
+
+The token is self-contained: any service can verify it locally using the signing key without calling the Identity service. Expiration is enforced on every request.
+
+### Act-as identity
+
+Act-as identity identifies the end user represented by a [delegated agent](/concepts/identity-patterns#delegated-identity). Attach that user's claims with the `X-Dome-Act-As` header. Configure providers and the workspace floor on [Delegated agents](/build/agents/delegated).
+
+#### What it carries
+
+Verified claims land on `principal.act_as` (`sub`, `email`, `roles`, `groups`, and custom `claims`). Claim list for setup: [Delegated agents](/build/agents/delegated#identity-claims). Attribute types for policy: [Rules](/reference/controls/rules#principal-attributes).
+
+#### How it's verified
+
+Act-as claims are untrusted by default. Verification (`oidc`, `hmac`, `bound`, or `none` for development only) ensures the agent is not fabricating user identities. Method catalog: [Delegated agents](/build/agents/delegated#verification-methods).
+
+Configure verification at the [workspace level](/build/agents/delegated#require-verified-identity) as a baseline, or per-agent for tighter control. Workspace enforcement is a floor. Agents can add stricter verification but cannot weaken it.
+
+#### Act-as in authorization rules
+
+Once verified, act-as claims are available in Cedar rules:
+
+```cedar title="rules.cedar"
+// Allow tool access only when the end-user has the analyst role
+permit(
+  principal,
+  action == Dome::Action::"mcp:call",
+  resource
+) when {
+  principal.act_as.roles.contains("analyst")
+};
+```
+
+Full `principal.act_as` attribute notes are on the [Rules](/reference/controls/rules) reference.
+
+## Next steps
+
+With that authentication and act-as model in mind, continue with:
+
+- [Agents](/concepts/agents) concept for how agents are identified and authenticated
+- [Identity Patterns](/concepts/identity-patterns) concept for standing vs delegated design
+- [External agents](/build/agents/external) to create keys and manage agents
+- [Delegated agents](/build/agents/delegated) for act-as providers, methods, claims, and enforcement
+- [Architecture](/concepts/architecture) concept for where identity sits on the request path

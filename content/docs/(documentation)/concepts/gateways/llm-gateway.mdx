@@ -1,0 +1,75 @@
+---
+title: LLM gateway
+description: "Route agent LLM calls through Dome to enforce authorization, redact content, and audit every prompt and completion"
+---
+
+import { llmGateway } from '@/snippets/glossary';
+
+<p>{llmGateway}</p>
+
+## High-level overview
+
+Every model call targets a [Gateway](/concepts/gateways). Bare `/v1/...` fails closed with a `"select a gateway"` 400. The gateway, not the LLM ingress, is what you create and grant in Connect.
+
+A model call through the LLM gateway looks like this:
+
+1. An operator adds a model connection (and often a pool), puts it on a gateway, and grants an agent access.
+2. The agent points an OpenAI or Anthropic client at `https://<host>/gateways/<id>/v1` with a Dome agent token.
+3. Each call runs admission, pool resolution, rules, request guards, provider dispatch with injected credentials, response guards, and audit.
+
+The agent never sees the provider credential.
+
+The LLM gateway never exposes provider credentials to the agent.
+
+### Endpoints
+
+The LLM gateway exposes provider-native shapes so existing SDKs work without modification. Use the gateway's returned OpenAI or Anthropic base URL as-is.
+
+| Method | Path (relative to `/gateways/<id>`) | Shape |
+|--------|------|-------|
+| `POST` | `/v1/chat/completions` | OpenAI chat |
+| `POST` | `/v1/messages` | Anthropic messages |
+| `POST` | `/v1/embeddings` | OpenAI embeddings |
+| `POST` | `/v1/moderations` | OpenAI moderations |
+| `POST` | `/v1/responses` | OpenAI responses |
+| `POST` | `/v1/passthrough/:name` | Opaque per-provider passthrough |
+| `GET` | `/v1/models` | Cedar-filtered model listing |
+
+Streaming and non-streaming are both supported. SSE chunks are filtered in flight. For embeddings, `encoding_format` (`float` or `base64`) controls the response wire shape only. Refer to [Develop](/develop#route-traffic). Passthrough limits for `custom` connections are on the [Models](/reference/resources/models#custom-passthrough) reference.
+
+### Pipeline
+
+Model calls share these stages, with pool resolution and failover specific to this ingress:
+
+1. **Ingress:** Resolve the gateway from the path, validate the bearer credential, extract agent identity, check kill switches, and translate the native request into Dome's canonical shape.
+2. **Pool resolution:** Resolve the request's `model` value to a pool or direct connection. Order and `match_when` are on the [Pools](/reference/resources/model-pools#pool-resolution) reference.
+3. **Authorize:** Evaluate Cedar against the upstream that will be dispatched. Stale policy fails closed. Refer to [Authorization](#authorization).
+4. **Dispatch:** Call the provider through the connection's adapter. Dome injects credentials at request time. When the caller's wire shape matches the upstream's, the dispatcher forwards the original request body byte-for-byte, overlaying only the resolved model id and stripping the internal `_dome` envelope — caller-supplied params such as `cache_control`, `top_k`, and other provider-specific options reach the upstream unchanged. Cross-dialect calls (OpenAI client → Anthropic upstream, or vice versa) fall back to the canonical rebuild and lose provider-specific extensions in translation. Providers and credential pairings are on the [Models](/reference/resources/models) reference.
+5. **Filter:** Apply [Guards](/concepts/controls/guards) over streamed and non-streamed content before the agent sees it.
+6. **Failover:** On a transient upstream error, try further eligible pool members up to the failover limit. Each candidate is re-authorized first. Limits and streaming rules are on the [Pools](/reference/resources/model-pools#failover) reference.
+7. **Audit:** Emit `model.call` events with token counts, matched rule, pool, and final upstream. Event types are on the [Event catalog](/reference/events/catalog) reference.
+
+Shared credential models and deployment topology live on the [Data plane](/concepts/architecture/dataplane) concept. Denial and credential wire shapes live on [Develop](/develop#errors-and-denials).
+
+### Authorization
+
+LLM calls authorize against the same Cedar policy as tool calls, with resource type `Dome::LLMModel`. Policy evaluates the upstream that is **actually dispatched**: the primary member up front, and each failover candidate immediately before its own attempt. A `forbid` on a model or connection attribute holds for every upstream the call could reach, not just the primary.
+
+Use `resource.name` for the caller-facing alias, `resource.resolved_model` for the upstream that will run, and `resource.pool` when the request was routed through a pool. Injected attributes and evaluation notes are on the [Rules](/reference/controls/rules#llm-injected-attributes) reference. Pool grants and listing behavior for `GET /v1/models` follow the same rules. Refer to [Rules](/concepts/controls/rules) concept and [Authorize Access](/govern/rules).
+
+**Non-streaming.** A deny on the primary is terminal. A policy-refused failover candidate is skipped (the `model.call` completes with `result=denied`) rather than treated as a successful route-around. **Streaming.** Failover applies only before the first response byte reaches the caller. After that, a later upstream failure terminates the stream.
+
+Verified [act-as identity](/concepts/agents/identity#act-as-identity) concept is forwarded into evaluation on every LLM endpoint. Configure verification on [Delegated agents](/build/agents/delegated). Runtime errors and denial shapes are on [Develop](/develop#errors-and-denials).
+
+## Next steps
+
+With the LLM gateway model in mind, continue with:
+
+- [Gateways](/concepts/gateways) concept for membership, grants, and URL shape
+- [Tools gateway](/concepts/gateways/tools-gateway) concept for the sibling MCP ingress
+- [Data plane](/concepts/architecture/dataplane) concept for the shared enforcement pipeline
+- [Models](/concepts/resources/models) concept and [Pools](/concepts/resources/model-pools) concept for connections and routing
+- [Models](/reference/resources/models) reference and [Pools](/reference/resources/model-pools) reference for providers, credentials, and routing catalogs
+- [Rules](/reference/controls/rules#llm-injected-attributes) reference for LLM resource attributes
+- [Models](/connect/models) and [Pools](/connect/pools) to configure connections
+- [Develop](/develop) to point SDKs at a gateway and handle denials

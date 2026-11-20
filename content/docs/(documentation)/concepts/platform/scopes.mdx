@@ -1,0 +1,113 @@
+---
+title: Scope hierarchy
+description: 'How organization, tenant, workspace, and agent scopes nest, inherit, and isolate'
+---
+
+import { scope } from '@/snippets/glossary';
+
+<p>{scope}</p>
+
+## The four levels
+
+Every governed object sits in exactly one of these levels. They nest top-down from the company account to an individual agent:
+
+![Scope hierarchy: Organization → Tenant → Workspace → Agent](/images/diagrams/scope-tree.svg)
+
+| Level | Purpose | Example |
+|-------|---------|---------|
+| **Organization** | Administrative and ownership boundary containing tenants | `acme-corp` |
+| **Tenant** | Hard isolation boundary for data and resources | `commerce` |
+| **Workspace** | Operational scope for agents, rules, backends, and audit | `ml-platform-prod` |
+| **agent** | Individual AI agent identity in one workspace | `data-pipeline-agent` |
+
+Every rule bundle, agent record, backend, and audit event belongs to exactly one scope. There is no floating agent or rule bundle.
+
+A few rules hold everywhere in the tree:
+
+- Tenants are hard isolation boundaries. Agents and data in one tenant cannot reach another.
+- Workspaces separate day-to-day work inside a tenant (for example production vs staging).
+- A `forbid` at any scope overrides matching `permit`s below it.
+- Being a member of a workspace lets you administer it. It does not mean you own that workspace's resources.
+
+A typical scope hierarchy looks like this:
+
+1. Acme Corp is the organization.
+2. It holds a `Commerce` tenant and a `Support` tenant so those product lines never share agents, backends, or audit.
+3. Inside `Commerce`, `ml-platform-prod` and `ml-platform-staging` are separate workspaces so a staging rule deploy cannot change production enforcement.
+4. Each workspace holds its own agents.
+
+### Organization
+
+An **organization** is the company's top-level account. It covers billing, ownership, and the container for tenants. It answers who owns the Dome estate, not which agents may call which tools.
+
+Baselines that must apply everywhere in the company belong here or at tenant scope. Day-to-day agents, backends, and audit do not live at organization scope. If you try to run operations from the org layer, you lose the isolation and operational boundaries the levels below exist to provide.
+
+### Tenant
+
+A **tenant** is a hard isolation boundary, usually drawn around a business unit or product line. For example, keep `commerce` separate from `cloud-services`. Agents in one tenant cannot access resources in another.
+
+Choose a tenant boundary when a leak across that line is unacceptable. If two units that must not share data sit in one tenant, application checks and database row-level security treat them as one world. Audit, agents, backends, and rule bundles mix. Splitting later means migrating identities and history, not flipping a flag.
+
+### Workspace
+
+A **workspace** is the operational scope inside a tenant and the primary unit of day-to-day work. Agents, rules, escalations, backends, gateways, guards, quotas, and audit events live here.
+
+Use separate workspaces when blast radius should differ: production vs staging, or two teams that share a tenant but not backends and audit. If prod and staging share one workspace, they share rule deploys, reachable backends, and one audit trail. A staging experiment and a production deny investigation compete in the same record.
+
+Users can belong to multiple workspaces inside a tenant. Workspace membership controls who may administer that workspace. It does not move resource ownership across workspace lines.
+
+### Agent
+
+An **agent** is an individual AI identity inside exactly one workspace. Agent-scoped rule bundles tighten what that one agent may do.
+
+Agent scope is the wrong place for a company-wide security baseline. A `forbid` that exists only on today's agents does not apply to the agent you register tomorrow. Broad restrictions belong higher. Agent scope narrows further.
+
+## Policy inheritance
+
+Deploy authorization bundles at any hierarchy level. At evaluation time, Dome pulls the active bundles that cover the request and merges them into one effective policy:
+
+![Rule merge: org, tenant, workspace, and agent rules merge into an effective policy](/images/diagrams/rule-merge.svg)
+
+1. Fetch the active bundle from each applicable scope.
+2. Prefix Cedar filenames by scope to prevent collisions.
+3. Merge the files and compute a composite content hash.
+4. Load the effective policy into the evaluator.
+
+The gateway polls for content-hash changes. New policy normally reaches enforcement within one sync interval (default: 10 seconds) without restarting the gateway. The effective policy hash changes when any contributing bundle changes. The gateway detects and re-syncs automatically.
+
+### Forbid wins
+
+Cedar combines `permit` and `forbid` across every contributing scope:
+
+- A `forbid` at any scope overrides every matching `permit`.
+- Lower scopes can narrow access but cannot override a higher-scope `forbid`.
+- An org- or tenant-level `forbid` cannot be reopened by a workspace- or agent-level `permit`.
+- Agent-level rules can restrict access further but cannot expand access granted only by removing a higher-scope deny.
+
+Place broad security baselines high and specific allowances near the agent. If the baseline lives only at agent scope, every new agent starts without it until someone copies the forbid. If a wide `permit` lives at organization scope with no matching `forbid`, every workspace inherits that width.
+
+## Isolation boundaries
+
+Tenants separate data at the application and database layers. Row-level security rejects missing or incorrect tenant context by returning no rows silently, rather than raising an error, so a wrong or missing tenant scope fails closed as empty results. Cross-tenant access requires an explicit system bypass, used only when no tenant identity can be set on the connection (for example, the scheduled-job runner that processes jobs across all tenants).
+
+Workspaces separate teams, environments, agents, rules, backends, and audit inside a tenant. The same RLS model applies: wrong or missing workspace scope returns zero rows. Cross-workspace access uses the same explicit system bypass only when no workspace identity can be set on the connection.
+
+Assign users to multiple workspaces without weakening tenant isolation. RLS is the backstop. Even misconfigured application code cannot leak data across scopes when the database context is set correctly.
+
+## Roles and scopes
+
+Assign platform RBAC roles at organization, tenant, or workspace scope. Higher-scope roles cascade permissions into lower scopes. That layer decides which people and API clients may administer the platform.
+
+Agent authorization rules use the same hierarchy but govern runtime requests: what a registered agent may do to a tool or model. Confusing the two layers produces the wrong fix. Granting a user `operator` does not authorize an agent to call a tool. A Cedar `permit` does not grant that user platform administration.
+
+Refer to [Permissions](/concepts/platform/permissions) concept before assigning roles or writing Cedar.
+
+## Next steps
+
+With that scope hierarchy in mind, continue with:
+
+- [Permissions](/concepts/platform/permissions) concept for platform RBAC versus runtime agent authorization
+- [Import and export configuration](/manage/import-export) to move reviewed configuration between compatible scopes
+- [Architecture](/concepts/architecture) concept for where scopes sit among components, controls, and audit
+- [rules](/govern/rules) to author and deploy Cedar bundles at each scope
+- [Authorization Model](/concepts/architecture/authorization-model) concept for permit, forbid, and effective policy assembly

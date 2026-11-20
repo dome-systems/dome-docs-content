@@ -1,0 +1,59 @@
+---
+title: Manage
+sidebarTitle: Overview
+description: Configure platform defaults, access, environments, import and export, data exports, and billing
+---
+
+**Manage** administers the Dome platform: workspace defaults, who can administer Dome, tenants and workspaces, configuration import and export, audit export, and billing.
+
+If you are standing up a new boundary, start with [Environments](/manage/environments). The other pages assume a workspace already exists.
+
+## What you administer
+
+<Cards>
+  <Card title="Environments" href="/manage/environments">
+    Create tenants and workspaces, then select a CLI context.
+  </Card>
+  <Card title="Settings" href="/manage/settings">
+    Set workspace defaults such as audit retention, policy refresh, and rule-bundle history.
+  </Card>
+  <Card title="Public preview" href="/manage/public-preview">
+    Enable public-preview features for your organization and see what is currently available.
+  </Card>
+  <Card title="Access" href="/manage/access">
+    Assign workspace roles and scoped platform API keys for people and automation.
+  </Card>
+  <Card title="Dome MCP" href="/manage/mcp">
+    Connect an MCP client to Dome and manage the platform with your own account.
+  </Card>
+  <Card title="Import & Export" href="/manage/import-export">
+    Move reviewed workspace, tenant, or organization configuration between compatible scopes.
+  </Card>
+  <Card title="Export" href="/manage/export">
+    Send retained audit records to your SIEM or object store, in batches or via continuous streaming.
+  </Card>
+  <Card title="Billing" href="/manage/billing">
+    Review plan status, usage, seats, and invoices.
+  </Card>
+</Cards>
+
+These grants and settings are platform administration only. They do not authorize agent tool or model calls, attach agent-facing resources, or replace investigation under [Operate](/operate). See [Scopes](/concepts/platform/scopes) for tenancy boundaries and [Permissions](/concepts/platform/permissions) for platform RBAC versus runtime agent authorization.
+
+## Typical workflow
+
+1. [Prepare environments](/manage/environments) to create tenants and workspaces, then select a CLI context.
+2. [Configure platform](/manage/settings) to set workspace defaults and review configuration changes in audit.
+3. [Enable public preview](/manage/public-preview) when you want to use public-preview features offered to your organization.
+4. [Manage access](/manage/access) to assign workspace members and create or revoke scoped platform API keys.
+5. [Import and export configuration](/manage/import-export) to move reviewed resources between compatible scopes.
+6. [Export data](/manage/export) to choose a format, configure a destination, schedule runs, and monitor forwarder health.
+7. [Review billing](/manage/billing) for plan status, usage, and invoices.
+
+Configure audit destinations and enterprise single sign-on under [Operate → Integrations](/operate/integrations).
+
+## Next steps
+
+- [Build](/build) to create agents, gateways, and managed-agent triggers.
+- [Connect](/connect) to attach callers, tools, models, and pools.
+- [Govern](/govern) to authorize actions, inspect content, and cap spend.
+- [Operate](/operate) to investigate audit events, configure integrations, and subscribe external systems.

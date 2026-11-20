@@ -1,0 +1,306 @@
+---
+title: Webhooks
+sidebarTitle: Subscribe to events
+description: Subscribe to Dome events and deliver signed webhooks to your endpoints or off-the-shelf providers, with retries and replay
+---
+
+import { webhook } from '@/snippets/glossary';
+
+<p>{webhook}</p>
+
+Refer to [Webhooks](/concepts/audit/webhooks) concept for how signed delivery works. Refer to [Event contracts](/reference/events/contracts#webhooks) reference for the wire contract.
+
+## Overview
+
+A **subscription** matches events by type and filter; the [Event catalog](/reference/events/catalog) marks which types are delivered. A **destination** receives them as signed HTTP POSTs. Create both in one call with `subscriptions create`, or attach a second subscription to an existing destination. Providers and custom URLs use the same model. Discover provider fields with `dome webhooks providers list`. Operating limits (body cap, rate, retention) are on [Webhooks](/concepts/audit/webhooks#operating-limits).
+
+Webhook `event_type` values use the same names as Audit schema-v4 operations (`agent.suspend`, `tool.call`, `guard.filter.evaluate`). There is no `access.denied` type: subscribe to the operation and filter on `result=denied`. Retired names such as `mcp.tool_call.completed` and `llm.output.filtered` do not match.
+
+The typical workflow is:
+
+1. [Create a subscription](#create-a-subscription) and optional [filters](#filters).
+2. [Test](#test-a-subscription) the destination, then [verify signatures](#verify-a-signature) on custom HTTPS endpoints.
+3. [Inspect](#inspect-deliveries) attempt history and [replay](#replay-deliveries) failures when needed.
+4. [Rotate the signing secret](#rotate-the-signing-secret) when credentials change.
+
+## Requirements
+
+Before you begin, authenticate to Dome and select a workspace.
+
+### Permissions
+
+Webhook operations require platform permissions. People and scoped API keys call the webhooks API. Agent credentials cannot.
+
+Most roles can inspect subscriptions and deliveries. Creating destinations, rotating secrets, and changing subscriptions need `eventing.manage`. Replay re-sends requests to your systems and can trigger downstream automation, so it uses a separate `eventing.replay` permission.
+
+| Default roles | Permission | Grants |
+|---------------|------------|--------|
+| All workspace roles | `eventing.view` | List and inspect subscriptions, deliveries, providers |
+| `admin`, `operator` | `eventing.manage` | Create, update, disable, delete, rotate secrets, test, cancel retries |
+| `admin`, `operator` | `eventing.replay` | Single and bulk replay |
+
+## Create a subscription
+
+Create a subscription and its destination atomically. A failed request leaves neither record behind. The response reveals the destination's `whsec_…` signing secret **once**. Store it before moving on. It is only rotatable afterward, never readable.
+
+On the API, pass either `delivery_endpoint` (create a new destination) or `destination_id` (attach to an existing one). Never both. Standalone destination RPCs (`ListDestinations`, `CreateDestination`, `UpdateDestination`, `RotateDestinationSecret`, `DeleteDestination`) support shared-destination setups. CLI and MCP create the destination inline with the subscription. The dashboard can also pick an existing destination.
+
+<Callout icon="key">Requires `eventing.manage`.</Callout>
+
+Custom HTTPS endpoint:
+
+```bash
+dome webhooks subscriptions create alerts \
+  --url https://ops.example.com/hooks/dome \
+  --event-type agent.suspend \
+  --event-type bundle.deploy
+```
+
+Slack via incoming-webhook URL:
+
+```bash
+dome webhooks subscriptions create slack-alerts \
+  --provider slack \
+  --setting webhook_url=https://hooks.slack.com/services/T.../B.../XXXX \
+  --event-type agent.suspend \
+  --event-type agent.revoke \
+  --filter 'result=denied'
+```
+
+For provider-specific settings, credentials, shared destinations, MCP, and API examples, see the [webhooks CLI reference](/cli/operate/webhooks).
+
+### Filters
+
+You can narrow which events deliver. An event must satisfy every filter that applies to its type. A filter constrains only event types that carry its field.
+
+Exact match
+
+```bash
+dome webhooks subscriptions create prod-only \
+  --url https://... --event-type agent.suspend \
+  --filter 'agent_name=checkout-worker'
+```
+
+Glob pattern (`*` any run, `?` one char, full-value match)
+
+```bash
+dome webhooks subscriptions create demo-tools \
+  --url https://... --event-type tool.call \
+  --filter 'tool_name~=demo-mcp/*'
+```
+
+OR set (repeat the same key)
+
+```bash
+dome webhooks subscriptions create critical-agents \
+  --url https://... --event-type agent.suspend \
+  --filter 'agent_name=checkout-worker' \
+  --filter 'agent_name=billing-worker'
+```
+
+Envelope filters apply to every event type: `stage` (`attempted` / `completed`), `result` (`allowed` / `denied`), `denial.reason`, and `error` (boolean presence). Payload filters include `agent_name`, `connection_name` (resolved from IDs at delivery time), `agent_id`, `tool_name`, plus each event type's own filterable fields. [`dome audit catalog`](/operate/audit#browse-the-event-catalog) and the dashboard Event catalog mark them. Repeated keys OR. Distinct keys AND. Caps: 16 keys, 16 alternatives per key, 256-byte patterns with up to 8 wildcards.
+
+Per-request events (`tool.call`, `guard.filter.evaluate`, `guard.validator.evaluate`) are high volume. Point them at a log sink rather than a chat channel, and narrow with filters. `model.call` is on the audit trail and is not delivered as a webhook.
+
+## Test a subscription
+
+Send a fixed `eventing.test` event through a subscription's destination to verify signing, headers, and the destination's own routing.
+
+<Callout icon="key">Requires `eventing.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome webhooks subscriptions test alerts
+    ```
+
+    The command prints the queued delivery ID. Check the outcome with `dome webhooks deliveries get <id>`.
+
+    <Callout icon="terminal">Reference: [`dome webhooks subscriptions test`](/cli/operate/webhooks#send-test-event)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_webhooks_subscription_test`
+
+    <Callout icon="cpu">Reference: [`dome_webhooks_subscription_test`](/reference/mcp/webhooks#subscription-test)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Test a webhook subscription"
+    Send a test event through the webhook subscription named alerts.
+    ```
+  </Tab>
+</Tabs>
+
+## Verify a signature
+
+Verify custom HTTPS deliveries with any Standard Webhooks library. Return `2xx` within 10 seconds to acknowledge. Acknowledge first, process async. Slow handlers time out and burn retry budget.
+
+<Tabs items={["Node.js","Python"]}>
+  <Tab value="Node.js">
+    ```javascript
+    import { Webhook } from "standardwebhooks";
+
+    const wh = new Webhook(process.env.DOME_WEBHOOK_SECRET); // whsec_...
+
+    app.post("/webhooks/dome", express.raw({ type: "application/json" }), (req, res) => {
+      try {
+        const event = wh.verify(req.body, req.headers);
+        // Dedupe on req.headers["dome-event-id"], then process async.
+        res.status(202).send();
+      } catch {
+        res.status(400).send("invalid signature");
+      }
+    });
+    ```
+  </Tab>
+  <Tab value="Python">
+    ```python
+    from standardwebhooks.webhooks import Webhook
+
+    wh = Webhook(os.environ["DOME_WEBHOOK_SECRET"])  # whsec_...
+
+    @app.post("/webhooks/dome")
+    def receive(request):
+        try:
+            event = wh.verify(request.body, dict(request.headers))
+            # Dedupe on request.headers["dome-event-id"], then process async.
+            return HttpResponse(status=202)
+        except Exception:
+            return HttpResponse(status=400)
+    ```
+  </Tab>
+</Tabs>
+
+## Inspect deliveries
+
+Inspect delivery attempt history, including the retained body while it is available.
+
+<Callout icon="key">Requires `eventing.view`.</Callout>
+
+<Tabs items={["CLI","MCP","Agent"]}>
+  <Tab value="CLI">
+    Failed deliveries in a time window:
+
+    ```bash
+    dome webhooks deliveries list --status failed --start 2026-07-14T00:00:00Z
+    ```
+
+    One delivery with attempt history and the retained body:
+
+    ```bash
+    dome webhooks deliveries get <delivery-id> --body
+    ```
+
+    <Callout icon="terminal">Reference: [`dome webhooks deliveries list`](/cli/operate/webhooks#list-deliveries), [`get`](/cli/operate/webhooks#get-delivery)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tools: `dome_webhooks_delivery_list`, `dome_webhooks_delivery_get`.
+
+    <Callout icon="cpu">Reference: [`dome_webhooks_delivery_list`](/reference/mcp/webhooks#delivery-list), [`dome_webhooks_delivery_get`](/reference/mcp/webhooks#delivery-get)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="List failed webhook deliveries"
+    List failed webhook deliveries since 2026-07-14T00:00:00Z.
+    ```
+  </Tab>
+</Tabs>
+
+## Replay deliveries
+
+Replay one delivery or bulk-replay failures in a window. A replay creates a **new** delivery from the retained body (fresh `webhook-id`, same `Dome-Event-Id`) so consumers that dedupe correctly ignore the overlap. Bulk replay processes up to 500 deliveries per run. Repeat to continue. Canceled deliveries are never recovered.
+
+<Callout icon="key">Requires `eventing.replay`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    Replay one delivery:
+
+    ```bash
+    dome webhooks deliveries replay <delivery-id>
+    ```
+
+    Bulk-replay terminal failures from the last 24 hours:
+
+    ```bash
+    dome webhooks deliveries replay-failed --since 24h
+    ```
+
+    Narrow by subscription and status:
+
+    ```bash
+    dome webhooks deliveries replay-failed --since 7d --subscription alerts --status failed,dlq
+    ```
+
+    `replay-failed` prints `matched · replayed · skipped (body expired) · failed`. It is safe to re-run: deliveries with a live or succeeded replay are not matched again.
+
+    <Callout icon="terminal">Reference: [`dome webhooks deliveries replay`](/cli/operate/webhooks#replay-delivery), [`replay-failed`](/cli/operate/webhooks#replay-failed-deliveries)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tools: `dome_webhooks_delivery_replay`, `dome_webhooks_delivery_replay_failed`, `dome_webhooks_delivery_cancel`.
+
+    ```json
+    {
+      "name": "dome_webhooks_delivery_replay_failed",
+      "arguments": { "since": "24h", "subscription": "alerts" }
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_webhooks_delivery_replay_failed`](/reference/mcp/webhooks#delivery-replay-failed)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /v1/webhooks/deliveries/replay-failed
+    Content-Type: application/json
+
+    {
+      "workspace_id": "ws_...",
+      "since": "2026-07-14T00:00:00Z",
+      "destination_id": "dst_...",
+      "statuses": ["failed", "dlq"],
+      "max_deliveries": 500
+    }
+    ```
+
+    The response returns `matched`, `replayed`, `skipped_body_expired`, and `failed` counts plus `replay_delivery_ids`. Also available: `ReplayDelivery`, `CancelDeliveryRetry`.
+
+    <Callout icon="code">Reference: Eventing `ReplayFailedDeliveries` RPC</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Replay failed webhook deliveries"
+    Replay all failed webhook deliveries from the last 24 hours.
+    ```
+  </Tab>
+</Tabs>
+
+## Rotate the signing secret
+
+Rotate a destination's signing secret without dropping deliveries. For 24 hours, the `webhook-signature` header carries a signature per key (current first, previous second) so a consumer verifying with either secret keeps working. Update your verifier to the new secret within the 24-hour grace window.
+
+<Callout icon="key">Requires `eventing.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome webhooks subscriptions rotate-secret alerts
+    ```
+
+    The command prints the new signing secret once (`whsec_…`) with its key ID.
+
+    <Callout icon="terminal">Reference: [`dome webhooks subscriptions rotate-secret`](/cli/operate/webhooks#rotate-signing-secret)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_webhooks_subscription_rotate_secret`
+
+    <Callout icon="cpu">Reference: [`dome_webhooks_subscription_rotate_secret`](/reference/mcp/webhooks#subscription-rotate-secret)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Rotate a webhook signing secret"
+    Rotate the signing secret for the webhook subscription named alerts.
+    ```
+  </Tab>
+</Tabs>
+
+## Next steps
+
+- [Audit events](/operate/audit) for the durable record
+- [Export Data](/manage/export) for scheduled batch export
+- [Stream Live Events](/operate/observe) for live Audit v1 streaming

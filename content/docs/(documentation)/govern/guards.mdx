@@ -1,0 +1,562 @@
+---
+title: Guards
+sidebarTitle: Filter and validate content
+description: Inspect, redact, and constrain content on tool and model connections
+---
+
+import { guard } from '@/snippets/glossary';
+
+<p>{guard}</p>
+
+## Overview
+
+Guards sit on Dome's content path and decide what of an authorized call's body may leave a backend or reach the agent. They attach to a connection, agent, or gateway and to a direction (`request` or `response`). When an assigned guard cannot be evaluated, the gateway blocks the affected traffic.
+
+Dome currently supports two guard types, each with its own workflow:
+
+- **filters** rewrite or withhold content. Model connections accept only `text` filters. Tool connections accept only `json` filters.
+
+  1. [Create a filter](#create-a-filter) for the connection kind you need.
+  2. [Assign ordered filter chains](#assign-ordered-filter-chains) on the connection and direction.
+  3. [Configure the streaming window](#configure-the-streaming-window) when model response filters need more context.
+
+- **validators** are pure predicates on tool connections. They never rewrite content. A failure blocks the whole request or response.
+
+  1. [Create a validator](#create-a-validator) for the tool-edge checks you need.
+  2. [Assign validators](#assign-validators) on the connection and direction.
+
+### Bind guards to an agent or gateway
+
+Bind a guard to an agent when it should apply to every request that agent makes. Bind it to a gateway when it should apply to every request addressed through that gateway.
+
+Connection guards run first, followed by gateway guards, then agent guards. The guard kind decides which calls it can inspect: text filters inspect model traffic, while JSON filters and validators inspect tool traffic.
+
+Set the complete guard list for one resource and direction:
+
+```bash title="Bind guards to a gateway"
+dome gateways guards set prod-gateway \
+  --direction response \
+  --guards pii-redact
+```
+
+```bash title="Bind guards to an agent"
+dome agents guards set support-agent \
+  --direction request \
+  --guards require-user-id
+```
+
+`--guards` accepts comma-separated filter or validator names and replaces the resource's existing list for that direction. Filter order is preserved. Pass `--guards ""` to clear the direction.
+
+Inspect resource bindings before changing them:
+
+```bash
+dome gateways guards list prod-gateway
+dome agents guards list support-agent
+```
+
+<Callout type="warning">
+A response validator inspects MCP results only. Binding one to a response direction blocks every REST tool call through that resource.
+</Callout>
+
+## Requirements
+
+Before you begin:
+
+- Authenticate to Dome and select a workspace
+- Have at least one [model](/connect/models) or [tool](/connect/tools) connection to assign
+
+### Permissions
+
+Guard filter operations require platform permissions. Each operation restates its permission inline.
+
+| Default roles | Permission | Grants |
+|---------------|------------|--------|
+| All workspace roles | `guards.view` | List filters, validators, and assignments |
+| `admin`, `operator` | `guards.manage` | Create, update, roll back, or delete filters and validators, and set assignments |
+| `admin`, `operator` | `gateways.manage` | Set a per-model filter window |
+| `admin`, `operator` | `config.manage` | Set the workspace streaming filter window floor |
+
+The legacy `filters.view` and `filters.manage` aliases still satisfy these checks during the cutover.
+
+## Filters
+
+Filters are a guard type. Create and version filters here, assign them to connections, and tune the streaming window used when response filters inspect model output.
+
+### Create a filter
+
+Create a filter to define its first active version. Text filters use convenience flags. JSON filters use a config file.
+
+<Callout icon="key">Requires `guards.manage`.</Callout>
+
+When more than one JSON action targets the same path, precedence is `BLOCK` > `OMIT` > `REDACT`. `REDACT` rewrites the matched span or value, `OMIT` removes a JSON field, and `BLOCK` withholds the whole message and stops the chain.
+
+<Tabs items={["CLI","MCP","Agent"]}>
+  <Tab value="CLI">
+    ```bash title="Text filter"
+    dome guards filters create pii-redact \
+      --description "Redact PII in model responses" \
+      --redact-ssn \
+      --redact-substring "internal-only" \
+      --block-substring "TOP-SECRET"
+    ```
+
+    ```bash title="JSON filter"
+    dome guards filters create tool-scrub \
+      --config-from ./tool-scrub.json
+    ```
+
+    ```json title="tool-scrub.json"
+    {
+      "json": {
+        "components": [
+          {
+            "field_actions": [
+              {"matcher": {"path": "ssn"}, "action": "FILTER_ACTION_OMIT"},
+              {"matcher": {"path": "email"}, "action": "FILTER_ACTION_REDACT"},
+              {"matcher": {"path": "card"}, "action": "FILTER_ACTION_BLOCK"}
+            ]
+          }
+        ]
+      }
+    }
+    ```
+
+    Convenience flags build at most two text components. Redact runs first, then block. Use `--config-from` for a JSON filter or a multi-component text chain.
+
+    <Callout icon="terminal">Reference: [`dome guards filters create`](/cli/govern/guards#create-filter)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_guards_create_filter`
+
+    ```json
+    {
+      "name": "pii-redact",
+      "description": "Redact PII in model responses",
+      "redact_ssn": true,
+      "redact_substrings": ["internal-only"],
+      "block_substrings": ["TOP-SECRET"]
+    }
+    ```
+
+    Pass `config_json` with a protojson `dome.guards.v1.FilterConfig` to author a JSON filter or a multi-component text chain. Convenience params only produce text filters.
+
+    <Callout icon="cpu">Reference: [`dome_guards_create_filter`](/reference/mcp/guards#create-filter)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Create a filter"
+    Create a text filter named "pii-redact" that redacts SSNs and the substring "internal-only", and blocks on "TOP-SECRET".
+    ```
+  </Tab>
+</Tabs>
+
+### Update a filter
+
+Update filter metadata in place, or pass any config flag to deploy a new active version. The previous version remains in history. Assigned connections follow the active version on the next gateway sync.
+
+<Callout icon="key">Requires `guards.manage`.</Callout>
+
+<Tabs items={["CLI","MCP"]}>
+  <Tab value="CLI">
+    ```bash
+    dome guards filters update pii-redact \
+      --description "Redact PII and secrets in model responses" \
+      --redact-ssn \
+      --block-substring "TOP-SECRET"
+    ```
+
+    <Callout icon="terminal">Reference: [`dome guards filters update`](/cli/govern/guards#update-filter)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_guards_update_filter`
+
+    ```json
+    {
+      "filter": "pii-redact",
+      "description": "Redact PII and secrets in model responses",
+      "redact_ssn": true,
+      "block_substrings": ["TOP-SECRET"]
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_guards_update_filter`](/reference/mcp/guards#update-filter)</Callout>
+  </Tab>
+</Tabs>
+
+### Roll back a filter
+
+Roll a filter back to an earlier version. The target version's config is copied forward into a new active version. History is never mutated.
+
+<Callout icon="key">Requires `guards.manage`.</Callout>
+
+<Tabs items={["CLI","MCP"]}>
+  <Tab value="CLI">
+    ```bash
+    dome guards filters rollback pii-redact --to-version 1
+    ```
+
+    <Callout icon="terminal">Reference: [`dome guards filters rollback`](/cli/govern/guards#rollback-filter)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_guards_rollback_filter`
+
+    ```json
+    {
+      "filter": "pii-redact",
+      "to_version": 1
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_guards_rollback_filter`](/reference/mcp/guards#rollback-filter)</Callout>
+  </Tab>
+</Tabs>
+
+### Delete a filter
+
+Delete a filter and its connection assignments. Corrupt filters can still be addressed by UUID when their config fails to render.
+
+<Callout icon="key">Requires `guards.manage`.</Callout>
+
+<Callout type="warning">
+Delete removes the filter and every assignment that references it.
+</Callout>
+
+<Tabs items={["CLI","MCP"]}>
+  <Tab value="CLI">
+    ```bash
+    dome guards filters delete pii-redact
+    ```
+
+    <Callout icon="terminal">Reference: [`dome guards filters delete`](/cli/govern/guards#delete-filter)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_guards_delete_filter`
+
+    ```json
+    {
+      "filter": "pii-redact"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_guards_delete_filter`](/reference/mcp/guards#delete-filter)</Callout>
+  </Tab>
+</Tabs>
+
+### Assign ordered filter chains
+
+Each assignment binds filters to a `(connection, direction)` slot. Setting a chain replaces the complete ordered list for that slot. Clear a chain with an empty filter list.
+
+<Callout icon="key">Requires `guards.manage`.</Callout>
+
+Model connections accept only `text` filters. Tool connections accept only `json` filters.
+
+<Tabs items={["CLI","MCP","Agent"]}>
+  <Tab value="CLI">
+    ```bash title="Model connection"
+    dome models guards filters set claude-prod \
+      --direction response \
+      --filters pii-redact,secrets-block
+    ```
+
+    ```bash title="Tool connection"
+    dome tools guards filters set github-mcp \
+      --direction request \
+      --filters tool-scrub
+    ```
+
+    ```bash title="Clear a chain"
+    dome models guards filters set claude-prod \
+      --direction request \
+      --filters ""
+    ```
+
+    Inspect assignments with:
+
+    ```bash
+    dome models guards filters list <connection>
+    dome tools guards filters list <connection>
+    ```
+
+    <Callout icon="terminal">Reference: [`dome models guards filters set`](/cli/govern/guards#set-model-filters) · [`dome tools guards filters set`](/cli/govern/guards#set-tool-filters)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_models_guards_filters_set`
+
+    ```json
+    {
+      "connection": "claude-prod",
+      "direction": "response",
+      "filters": ["pii-redact", "secrets-block"]
+    }
+    ```
+
+    Tool: `dome_tools_guards_filters_set`
+
+    ```json
+    {
+      "connection": "github-mcp",
+      "direction": "request",
+      "filters": ["tool-scrub"]
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_models_guards_filters_set`](/reference/mcp/guards#set-model-connection-filters) · [`dome_tools_guards_filters_set`](/reference/mcp/guards#set-tool-connection-filters)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Assign filter chains"
+    Assign filters "pii-redact" and "secrets-block" in that order to the response direction on model connection "claude-prod".
+    ```
+  </Tab>
+</Tabs>
+
+### Configure the streaming window
+
+Configure how much streamed model output the gateway buffers before applying response filters. Layering rules are on the [guards](/concepts/controls/guards#streaming-model-responses) concept and [streaming window](/reference/controls/guards#streaming-window) reference.
+
+<Callout icon="key">Requires `config.manage` for the workspace floor. Per-connection windows require `gateways.manage`. Per-request overrides are set by the calling agent in the request body.</Callout>
+
+In the dashboard, set the workspace floor under **Settings → Config**. From the API:
+
+```http
+PUT /v1/workspaces/<workspace-uuid>/llm-filter-window
+Content-Type: application/json
+
+{
+  "tenant_id": "<tenant-uuid>",
+  "llm_filter_window_bytes": 4096,
+  "llm_filter_window_tokens": 1024
+}
+```
+
+<Callout icon="code">Reference: [`UpdateWorkspaceLLMFilterWindow`](/api/tag/workspaces/update-workspace-llm-filter-window)</Callout>
+
+Agents can request a wider buffer for a single call by adding a `_dome` block to the OpenAI- or Anthropic-shaped body:
+
+```json
+{
+  "model": "production",
+  "messages": [{"role": "user", "content": "Summarize the notes."}],
+  "_dome": {"filter_window_bytes": 8192, "filter_window_tokens": 64}
+}
+```
+
+The override is validated against the same bounds the workspace floor uses and is invisible to the upstream provider. Refer to [Models](/connect/models) for the per-connection flags.
+
+## Validators
+
+Validators are a guard type for tool connections. They check structured conditions on tool request arguments or MCP tool results and block when any condition fails. They never redact or omit fields. Every assigned validator must pass.
+
+Condition catalogs and response targets are on the [guards](/reference/controls/guards#validators) reference.
+
+### Create a validator
+
+Create a validator with a protojson `dome.guards.v1.ValidatorConfig`. The config arm (`toolRequest` or `toolResponse`) sets the kind and is immutable after create.
+
+<Callout icon="key">Requires `guards.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome guards validators create require-user-id \
+      --description "Require user_id on tool calls" \
+      --config-from ./require-user-id.json
+    ```
+
+    ```json title="require-user-id.json"
+    {
+      "toolRequest": {
+        "json": {
+          "requiredPaths": ["user_id"],
+          "maximumSize": 4096
+        }
+      }
+    }
+    ```
+
+    ```json title="require-status.json"
+    {
+      "toolResponse": {
+        "target": "VALIDATION_TARGET_STRUCTURED_CONTENT",
+        "json": {
+          "requiredPaths": ["status"]
+        }
+      }
+    }
+    ```
+
+    <Callout icon="terminal">Reference: [`dome guards validators create`](/cli/govern/guards#create-validator)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_guards_create_validator`
+
+    ```json
+    {
+      "name": "require-user-id",
+      "description": "Require user_id on tool calls",
+      "config_json": "{\"toolRequest\":{\"json\":{\"requiredPaths\":[\"user_id\"],\"maximumSize\":4096}}}"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_guards_create_validator`](/reference/mcp/guards#create-validator)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Create a validator"
+    Create a tool-request validator named "require-user-id" that requires the path "user_id" and caps arguments at 4096 bytes.
+    ```
+  </Tab>
+</Tabs>
+
+### Update a validator
+
+Update metadata in place, or pass `--config-from` / `config_json` to deploy a new active version. Kind cannot change.
+
+<Callout icon="key">Requires `guards.manage`.</Callout>
+
+<Tabs items={["CLI","MCP"]}>
+  <Tab value="CLI">
+    ```bash
+    dome guards validators update require-user-id \
+      --description "Require user_id and tenant_id" \
+      --config-from ./require-user-id.json
+    ```
+
+    <Callout icon="terminal">Reference: [`dome guards validators update`](/cli/govern/guards#update-validator)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_guards_update_validator`
+
+    ```json
+    {
+      "validator": "require-user-id",
+      "description": "Require user_id and tenant_id",
+      "config_json": "{\"toolRequest\":{\"json\":{\"requiredPaths\":[\"user_id\",\"tenant_id\"],\"maximumSize\":4096}}}"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_guards_update_validator`](/reference/mcp/guards#update-validator)</Callout>
+  </Tab>
+</Tabs>
+
+### Roll back a validator
+
+Roll a validator back to an earlier version. The target version's config is copied forward into a new active version.
+
+<Callout icon="key">Requires `guards.manage`.</Callout>
+
+<Tabs items={["CLI","MCP"]}>
+  <Tab value="CLI">
+    ```bash
+    dome guards validators rollback require-user-id --to-version 1
+    ```
+
+    <Callout icon="terminal">Reference: [`dome guards validators rollback`](/cli/govern/guards#rollback-validator)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_guards_rollback_validator`
+
+    ```json
+    {
+      "validator": "require-user-id",
+      "to_version": 1
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_guards_rollback_validator`](/reference/mcp/guards#rollback-validator)</Callout>
+  </Tab>
+</Tabs>
+
+### Delete a validator
+
+Delete a validator and its connection assignments.
+
+<Callout icon="key">Requires `guards.manage`.</Callout>
+
+<Callout type="warning">
+Delete removes the validator and every assignment that references it.
+</Callout>
+
+<Tabs items={["CLI","MCP"]}>
+  <Tab value="CLI">
+    ```bash
+    dome guards validators delete require-user-id
+    ```
+
+    <Callout icon="terminal">Reference: [`dome guards validators delete`](/cli/govern/guards#delete-validator)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_guards_delete_validator`
+
+    ```json
+    {
+      "validator": "require-user-id"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_guards_delete_validator`](/reference/mcp/guards#delete-validator)</Callout>
+  </Tab>
+</Tabs>
+
+### Assign validators
+
+Attach validators to a tool connection as an unordered set on one direction. Direction must match the validator kind. Response validators are MCP-only.
+
+<Callout icon="key">Requires `guards.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","Agent"]}>
+  <Tab value="CLI">
+    ```bash title="Attach"
+    dome tools guards validators add github-mcp \
+      --direction request \
+      --validators require-user-id
+    ```
+
+    ```bash title="Detach"
+    dome tools guards validators remove github-mcp \
+      --direction request \
+      --validators require-user-id
+    ```
+
+    ```bash title="List"
+    dome tools guards validators list github-mcp
+    ```
+
+    <Callout icon="terminal">Reference: [`dome tools guards validators add`](/cli/govern/guards#add-validator)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_tools_guards_validators_add`
+
+    ```json
+    {
+      "connection": "github-mcp",
+      "direction": "request",
+      "validators": ["require-user-id"]
+    }
+    ```
+
+    Tool: `dome_tools_guards_validators_remove`
+
+    ```json
+    {
+      "connection": "github-mcp",
+      "direction": "request",
+      "validators": ["require-user-id"]
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_tools_guards_validators_add`](/reference/mcp/guards#add-tool-connection-validators)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Assign validators"
+    Attach validator "require-user-id" to the request direction on tool connection "github-mcp".
+    ```
+  </Tab>
+</Tabs>
+
+## Next steps
+
+- [guards](/concepts/controls/guards) concept for how content inspection works
+- [guards](/reference/controls/guards#filter-audit-events) reference for filter catalogs and audit payloads
+- [Audit](/operate/audit) to query `guard.filter.evaluate`, `guard.validator.evaluate`, and the enclosing `tool.call` or `model.call`
+- [Connect Tools](/connect/tools) to add tool connections
+- [Models](/connect/models) to set per-connection filter windows
+- [Authorize Access](/govern/rules) when a call should be allowed or denied before guards run
+- [Architecture](/concepts/architecture#guards) concept for where guards sit in the request path

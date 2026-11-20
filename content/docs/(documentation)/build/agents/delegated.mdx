@@ -1,0 +1,150 @@
+---
+title: Delegated agents
+sidebarTitle: Delegated agents
+description: Configure external or managed agents to act for a verified person so rules, quotas, and audit can authorize on that human
+---
+
+import { delegatedAgent } from '@/snippets/glossary';
+
+<p>{delegatedAgent}</p>
+
+## Overview
+
+Your application sends the identity on each request as `X-Dome-Act-As`. Dome verifies it, then rules and audit can read `principal.act_as`. The agent still authenticates as itself. Act-As never replaces agent authentication.
+
+Delegated identity is optional configuration for an external or managed agent. Interactive agents receive a signed-in person's identity through [interactive access](/build/gateways/interactive-mcp-access) instead.
+
+This application-carried identity is separate from two other sign-in paths:
+
+- **Enterprise SSO** creates a platform session for Dome Dashboard and CLI administration.
+- **Interactive OAuth** lets a human MCP client ride one designated agent through one gateway.
+
+Interactive OAuth supplies the human identity from its own short-lived access token. Do not add `X-Dome-Act-As` to that client flow.
+
+For a request to authorize as a person, three things have to be true:
+
+1. **Dome knows how to verify the person.** You point Dome at an IdP (OIDC) or a shared HMAC secret, either as a workspace verification provider or inline on the agent. You can also set a workspace floor that requires every agent to present verified Act-As and limits which methods are allowed. Both live on [Callers](/connect/callers).
+2. **The agent is configured to act for people.** On the agent record you set the Act-As method, whether a person is required, which provider to use, and optional allow-lists. Do that when you [register](/build/agents/external#register-agent) or [update](/build/agents/external#change-end-user-identity) the agent.
+3. **Your application sends who the person is.** Each request includes `X-Dome-Act-As`. Without it, rules have no end user to evaluate. Refer to [Pass identity for delegated agents](/develop#pass-identity-for-delegated-agents).
+
+Malformed or rejected headers never become Cedar claims. Method `none` explicitly accepts an unverified assertion and records that method. The agent credential still identifies the workload, and an end user cannot expand access beyond a higher-scope `forbid`.
+
+The typical workflow is:
+
+1. [Create a verification provider](/connect/callers#create-a-verification-provider) on Callers, or inline OIDC/HMAC on the agent.
+2. Configure Act-As on the agent when you [register](/build/agents/external#register-agent) or [update](/build/agents/external#change-end-user-identity) it.
+3. Optionally [require verified identity](/connect/callers#require-verified-identity) for every agent in the workspace.
+4. Write [claim-aware rules](#claim-aware-rules) that read `principal.act_as`. Claim names are on the [Rules](/reference/controls/rules#principal-attributes) reference.
+
+### Verification methods
+
+Each agent chooses how Dome verifies the Act-As envelope. Your application must send a matching `X-Dome-Act-As` value on MCP, OpenAI, and Anthropic requests.
+
+| Method | How Dome verifies | What your application sends in `X-Dome-Act-As` |
+|--------|-------------------|-----------------------------------------------|
+| `oidc` | Verify an end-user JWT through the provider's OpenID Connect discovery metadata | Raw end-user JWT |
+| `hmac` | Verify a signed identity header with a shared secret | Signed, timestamped act-as envelope |
+| `none` | Decode an unsigned assertion without cryptographic verification | Canonical JSON encoded with standard base64 (development only) |
+| `bound` | Server-bound enrollment identity with no client-supplied Act-As | No header. The platform supplies the enrolled user |
+| `session` | Verify the human through interactive OAuth | No header. The interactive access token supplies the identity |
+
+Prefer OIDC, bound, or session identity for production traffic. Agents can use a provider from the visible scope chain or inline OIDC/HMAC material.
+
+### Identity claims
+
+Verified identity is exposed to Cedar as `principal.act_as`:
+
+| Claim | Description |
+|-------|-------------|
+| `sub` | Stable end-user subject identifier |
+| `email` | End-user email |
+| `roles` | End-user roles |
+| `groups` | End-user groups |
+| `claims` | Additional customer-defined claims |
+
+Attribute types for policy are also on the [Rules](/reference/controls/rules#principal-attributes) reference.
+
+### Workspace floor
+
+The workspace can require Act-As on every request and restrict which verification methods are allowed. That floor applies to every agent in the workspace. Agent settings can be stricter than the floor, but cannot weaken it. Set it on [Callers](/connect/callers#require-verified-identity).
+
+Providers can also be inherited: a workspace sees its own providers plus those from its tenant and organization, and Dome resolves one effective provider per agent. Refer to [Provider hierarchy](/connect/callers#provider-hierarchy).
+
+### Where verified identity is consumed
+
+Verified identity can also:
+
+- Scope [Quotas](/govern/quotas) to an Act-As subject
+- Forward to upstream tools when a connection uses an Act-As egress header. Refer to [Tools](/connect/tools#change-egress-headers) and [Tools](/reference/resources/tools#egress-headers) reference
+- Drive per-user credentials on the [Tools](/reference/resources/tools#upstream-authentication) reference and [Models](/reference/resources/models#credentials) reference
+- Drive pool `match_when` conditions on `principal.act_as.*`. Refer to [Pools](/reference/resources/model-pools#pool-resolution) reference
+
+<Callout type="warning">
+  Act-As egress does not rank verification methods again. It forwards the accepted assertion when the connection requests it. Set the required strength with workspace allowed methods or a required provider.
+</Callout>
+
+A connection configured to forward Act-As still fails closed when the request has no accepted identity. The gateway never forwards the agent's own bearer token to the upstream service.
+
+## Requirements
+
+Before you begin, authenticate to Dome and select a workspace.
+
+### Permissions
+
+Per-agent Act-As configuration uses agent register permissions. Verification providers and the workspace floor use `config.manage` at their owning scope; those permissions are on [Callers](/connect/callers#permissions).
+
+| Default roles | Permission | Grants |
+|---------------|------------|--------|
+| `admin`, `operator`, `developer` | `agents.register` | Configure Act-As on an agent |
+| `admin`, `operator`, `security` | `rules.deploy` | Required with `agents.register` when setting Act-As allow-lists |
+| `admin`, `operator` | Workspace `config.manage` | Manage workspace providers and workspace Act-As enforcement |
+
+## Configure verification
+
+Verification setup belongs to the caller, not the agent, so it lives on [Callers](/connect/callers):
+
+- [Create a verification provider](/connect/callers#create-a-verification-provider) — OIDC or HMAC, workspace-scoped and shareable across agents
+- [List](/connect/callers#list-verification-providers) and [delete](/connect/callers#delete-a-verification-provider) providers, including inherited tenant and organization providers
+- [require verified identity](/connect/callers#require-verified-identity) and restrict allowed methods for the whole workspace
+- [Select default and required providers](/connect/callers#select-default-and-required-providers) at workspace, tenant, or organization scope
+
+An agent can skip the shared provider entirely and carry inline OIDC or HMAC material instead. Set that with `--actas-oidc-url` or `--actas-hmac-secret` when you [register](/build/agents/external#register-agent) or [update](/build/agents/external#change-end-user-identity) the agent.
+
+## Inspect observed callers
+
+Once delegated traffic flows, the [Callers](/connect/callers#inspect-callers) registry projects the accepted Act-As identities from audit evidence. Use it to find who appeared behind which agents, which verification methods were observed, and what activity is attributed to each person.
+
+## Claim-aware Rules
+
+Rules can require Act-As and test verified claims. When the workspace permits requests without Act-As, a rule that reads claims should test `principal has act_as` first.
+
+```cedar title="end-user-access.cedar"
+permit(
+  principal,
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"customer-records"
+) when {
+  principal has act_as &&
+  principal.act_as.roles.contains("support")
+};
+
+forbid(
+  principal,
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"production-deploy"
+) unless {
+  principal has act_as &&
+  principal.act_as.roles.contains("admin")
+};
+```
+
+Refer to [Authorize Access](/govern/rules) for the rule lifecycle, [Rules](/reference/controls/rules#principal-attributes) reference for claim names, and the [authorization model](/concepts/architecture/authorization-model) concept for evaluation.
+
+## Next steps
+
+- [Callers](/connect/callers) to configure verification providers and inspect the people behind delegated traffic
+- [Configure Act-As on an agent](/build/agents/external#change-end-user-identity) for method, required flag, provider, and allow-lists
+- [Pass identity for delegated agents](/develop#pass-identity-for-delegated-agents) from your application
+- [Identity Patterns](/concepts/identity-patterns) concept for when to choose delegated vs standing identity
+- [Agent Identity](/concepts/agents/identity#act-as-identity) concept for tokens and act-as on the request path
+- [Simulate Rules](/govern/rules/simulate#simulate-with-agent-act-as) with representative Act-As claims before deploy

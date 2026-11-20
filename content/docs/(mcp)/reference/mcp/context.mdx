@@ -1,0 +1,169 @@
+---
+title: Context
+description: Switch org, tenant, and workspace sessions and check authentication status
+---
+
+import { environment } from '@/snippets/glossary';
+
+<p>{environment}</p>
+
+Refer to [Environments](/manage/environments#select-a-cli-context) for how a
+context selects the workspace CLI and MCP tools use. The MCP server and CLI
+share `~/.config/dome/config.yaml`: a context switch through either surface is
+visible to the other, and the MCP server reloads disk changes before tool calls.
+These tools are always available — they do not require an active workspace
+context or any specific permissions.
+
+## Context
+
+### dome_context_list
+
+List all available contexts in the org/tenant/workspace hierarchy.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| — | — | — | No parameters |
+
+Returns each context with its name, alias (if set), server, and active status.
+
+```json title="Example tool call"
+{
+  "name": "dome_context_list"
+}
+```
+
+### dome_context_current
+
+Show the active context name and details.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| — | — | — | No parameters |
+
+Returns the currently selected context including org, tenant, workspace, and server URL.
+
+### dome_context_use
+
+Switch the active context by name, alias, or shorthand. The selection is written
+to the shared config file, so the next CLI command uses it too.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Context name, alias, or shorthand |
+
+Supports several shorthand formats:
+
+- **Exact name:** `prod/acme/backend`
+- **Alias:** `backend` (if alias is set)
+- **Workspace shorthand:** `backend`
+- **Tenant/workspace:** `acme/backend`
+- **Org/tenant/workspace:** `prod/acme/backend`
+
+If the shorthand is ambiguous, the tool returns an error listing all matching contexts.
+
+```json title="Example tool call"
+{
+  "name": "dome_context_use",
+  "arguments": {
+    "name": "acme/backend"
+  }
+}
+```
+
+<Callout type="info">
+  After switching context, the available tool list updates to reflect your permissions in the new workspace.
+</Callout>
+
+### dome_context_sync
+
+Refresh contexts from server memberships. Fetches all org/tenant memberships,
+creates or updates contexts with scoped session tokens across all authenticated
+servers, and persists the result to the shared config file.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| — | — | — | No parameters |
+
+### dome_context_rename
+
+Rename a context. Persists the change to the config file.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `old_name` | string | Yes | Current context name or alias |
+| `new_name` | string | Yes | New context name |
+
+### dome_context_delete
+
+Delete a context. Persists the change to the config file. If the active context is deleted, platform tools are removed. Marked destructive.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Context name or alias to delete |
+
+<Callout type="warning">
+  Deleting a context removes the local session. Re-run `dome_context_sync` to recreate it from server memberships.
+</Callout>
+
+### dome_context_alias
+
+Set or remove an alias for a context. Aliases provide short names for frequently used contexts. Persists the change to the config file.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Context name (or alias to remove when `remove=true`) |
+| `alias` | string | Yes | Alias value (ignored when `remove=true`, but the parameter must still be provided) |
+| `remove` | bool | No | Remove the alias instead of setting it (default: `false`) |
+
+```json title="Example — set alias"
+{
+  "name": "dome_context_alias",
+  "arguments": {
+    "name": "prod/acme/backend",
+    "alias": "backend"
+  }
+}
+```
+
+```json title="Example — remove alias"
+{
+  "name": "dome_context_alias",
+  "arguments": {
+    "name": "backend",
+    "alias": "",
+    "remove": true
+  }
+}
+```
+
+## Auth
+
+### dome_auth_status
+
+Show authentication status for the current session.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| — | — | — | No parameters |
+
+Returns the authenticated user, server URL, token expiry, and active workspace.
+
+## Version
+
+### dome_version
+
+Get the Dome MCP server version.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| — | — | — | No parameters |
+
+Returns the server version string and build metadata.
+
+## Next steps
+
+Create tenants and workspaces from Manage, then switch context here:
+
+- [Prepare Environments](/manage/environments)
+- [Scopes](/concepts/platform/scopes) concept
+- [Setup AI assistant](/setup-ai-assistant)

@@ -1,0 +1,129 @@
+---
+title: Audit events
+sidebarTitle: Audit events
+description: Why Dome keeps one evidence trail across configuration and runtime events
+---
+
+import { auditEvent } from '@/snippets/glossary';
+
+<p>{auditEvent}</p>
+
+## High-level overview
+
+Dome keeps one audit system for configuration and runtime. Both write the same envelope into one workspace-scoped trail, with one query surface.
+
+Governance records both kinds of activity. The table below names each source, where its traffic arrives, and which actions it records.
+
+| Source | What it is | What it audits |
+|-------|------------|----------------|
+| **Configuration** | API, CLI, MCP, SDK, and dashboard calls that create or change settings | agent lifecycle, rule deploys, grants, credentials, workspace settings, identity and security actions |
+| **Runtime** | The [data plane](/concepts/architecture/dataplane) path that authorizes tool and model traffic | Admission, rule decisions, quotas, guards, tool and LLM call lifecycles |
+
+Joining a configuration change to a runtime decision looks like this:
+
+1. An operator deploys a rule bundle. That write is a configuration state change.
+2. Minutes later an agent calls a tool that the new rule denies. That denial is a runtime governing decision.
+3. Both land as typed events in the same trail, so an investigator can move from "who changed policy?" to "what did that policy do at runtime?" without switching systems.
+
+Query, stream, and export, including `dome audit export` and scheduled forwarders, read that shared trail. Those surfaces do not choose a source. Filters narrow within the unified corpus.
+
+A few rules hold across the whole trail:
+
+- Configuration and runtime producers write the same envelope into one record.
+- If Dome cannot prove a governed mutation was recorded, it denies the action.
+- Use `activity_id` to follow a story across requests or planes, and `trace_id` to join one request.
+- Who queried or exported the trail is itself recorded in the trail.
+- Gateway decisions often leave `request_surface` unset. Join through correlation when you need client origin.
+
+### How surfaces consume the trail
+
+Product surfaces do not invent separate evidence stores. They consume the same activity in different shapes:
+
+| Surface | Contract | Job |
+|---------|----------|-----|
+| **Audit v1** | Full forensic envelope + typed `payload` | Durable evidence: query, stream, export, ingest |
+| **Webhooks** (`dome.webhook.v1`) | Slim public envelope + `data` | Real-time automation through signed HTTP delivery |
+| **OpenTelemetry / product telemetry** | Separate models | Observability and product analytics, not compliance evidence |
+
+[Audit events](/operate/audit) and [Stream Live Events](/operate/observe) both read **Audit v1**: the same workspace trail, same envelope, same type catalog, and same filter vocabulary. Audit queries and reconstructs. Streaming shows the present.
+
+[Subscribe to Events](/operate/webhooks) delivers a **public projection** of overlapping activity. Refer to [Webhooks](/concepts/audit/webhooks) concept for the delivery model. Webhook `event_type` values are the same names as Audit schema-v4 operations (`agent.suspend`, `tool.call`, `guard.filter.evaluate`). The wire shape, field names, PII rules, and catalog size still differ: a webhook body is a slim public envelope plus `data`, and not every audit type is delivered. There is no `access.denied` type; a refusal is the operation's own event with `result=denied`.
+
+### What an event records
+
+Every event uses the same envelope. The envelope answers the forensic questions without opening the typed payload.
+
+- **Who:** `actor` and optional `identity_chain` (including verified act-as end users)
+- **Where:** `scope` (organization, tenant, workspace, agent) and `request_surface` when the call had a direct network origin
+- **What:** `event_type`, `primary_resource`, and related resources
+- **Outcome:** `stage` (`attempted` or `completed`), `result` (`allowed` or `denied`), the shared `denial` block, and an independent `error`
+- **When:** `occurred_at` at the producer, `accepted_at` when the audit pipeline accepted the event
+- **How to join:** `correlation` (`trace_id`, `activity_id`), plus `operation_id` / `parent_event_id` for multi-phase actions
+
+The payload holds event-specific detail such as the tool name or token usage. Refusal detail is in the envelope's shared `denial` block. Envelope fields stay filterable across classes, so operators do not learn a different schema per producer.
+
+Refer to [Event contracts](/reference/events/contracts#envelope) reference for field-level contracts, enum forms, and filter syntax.
+
+### Event classes
+
+Events group into four classes. Class is a lens for investigation, not a separate store. The table below lists each class and the kind of action it covers.
+
+| Class | Role |
+|-------|------|
+| `governing` | Authorization and runtime decisions: allows, denies, filters, quotas |
+| `state_change` | Configuration mutations: agents, rules, resources, gateways, integrations |
+| `security` | Authentication front door: login, session, impersonation, token exchange, credential rejection |
+| `audit_access` | Reads of the trail itself: query, get, stream, and export |
+
+Reading audit is audited. `audit_access` events are first-class evidence. Evidence of who inspected or exported the trail is part of the same record.
+
+Not every identity lifecycle signal is an audit event. `identity.session.created`, `identity.session.switched`, and `identity.session.rotated` live in operational telemetry (slog / OTEL), not Audit v1. Session rotation is a background ~5-minute token refresh, not a governed decision. `identity.session.terminated` remains on the trail.
+
+### Why some decisions carry a policy snapshot
+
+A governing decision that applied a loaded rule bundle stamps the policy snapshot into the payload: which bundle versions contributed, which rule matched, and the content-hash of the effective policy at decision time. That lets an investigator answer "which policy denied this?" and detect drift against today's deployed rules. Events with no loaded bundle omit those fields.
+
+Refer to [Event contracts](/reference/events/contracts#decision-provenance) reference for the stamped fields and which event types carry them.
+
+### Correlation across sources
+
+Three identifiers nest so a single human activity can span many HTTP hops and both configuration and runtime. Narrower scopes sit inside wider ones.
+
+| Scope | Field | Typical use |
+|-------|-------|-------------|
+| One operation | `operation_id` | Joins `stage=attempted` to `stage=completed` |
+| One HTTP request cascade | `trace_id` | Everything stamped for one inbound request |
+| One session, LLM turn, or scripted run | `activity_id` | End-to-end chain across configuration and runtime |
+
+`trace_id` answers what happened in one request. `activity_id` answers what happened in the whole activity. An operator run that deploys rules and then exercises the gateway can share one activity chain. Configuration state changes and runtime tool calls group together when they carry the same `activity_id`.
+
+Chains are computed at read time inside a workspace. There is no stored chain object, only events that share an id. Trust labels (`server_owned` vs `caller_asserted`) describe how that id was set. Those labels do not split the chain.
+
+### Why attribution differs by source
+
+Configuration events carry `request_surface`: surface, source IP, user agent, and HTTP method. A person or automation called Dome directly, so those fields support pivots by IP or client during an incident.
+
+Runtime authorization decisions often leave `request_surface` unset. The initiator of a rule evaluation is the gateway hop, not a dashboard click, and the hop's IP would not identify the originating client. Those events pivot by `actor`, `activity_id`, or `trace_id`, then join back to an originating configuration or application event when IP attribution is required. Join through correlation when client origin is required.
+
+Gateway events stamp the gateway that scoped the request. A filter on `producer_gateway_id` answers "what happened on this gateway?" rather than "who called the API?"
+
+### Durability and completeness
+
+Audit is evidence, not best-effort telemetry. When durability cannot be proven, governed mutations fail closed rather than silently dropping the record. Dome denies the action rather than silently losing evidence.
+
+State-changing configuration paths co-commit audit with the business mutation when the design requires it. If audit cannot be accepted, the mutation fails. Security-sensitive admits (login, token issuance, impersonation start) follow the same posture. Forced terminations write after the fact with retry. Refusing to kill a revoked session because the audit store is down would be the worse failure.
+
+Reads and exports expose completeness metadata so a page of events is never silently mistaken for the full matching set. Interactive views may warn and still show readable rows. Strict export paths refuse to claim success on a gapped corpus.
+
+Retention and sink details are operational concerns. Conceptually, S3 (or the configured archive) is the store of record. Query indexes and live streams are projections of that trail.
+
+## Next steps
+
+With the one-trail audit model in mind, continue with:
+
+- [Event catalog](/reference/events/catalog) reference for every event type, its class, and webhook delivery
+- [Event contracts](/reference/events/contracts) reference for the Audit v1 and webhook envelopes, enum forms, and filters
+- [Audit events](/operate/audit) to query, filter, and reconstruct activity chains
+- [Stream Live Events](/operate/observe) to stream live Audit v1 events
+- [Subscribe to Events](/operate/webhooks) to deliver signed webhook projections
+- [Export Data](/manage/export) to ship retained history downstream

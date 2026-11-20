@@ -1,0 +1,216 @@
+---
+title: Import and export configuration
+sidebarTitle: Import/export configuration
+description: 'Move Dome configuration between scopes or keep reviewed exports under version control'
+---
+
+Move configuration between workspace, tenant, and organization scopes. Export a reviewed file, then plan and import it without destroying existing resources.
+
+## Overview
+
+An export contains the selected Dome resources and their relationships. Use it to promote reviewed changes or keep a durable record of a scope's resources.
+
+Exports never contain secrets. Dome replaces secret and environment-specific values with variables, then asks for their values when you import. Scope identifiers are derived from the scope you import into and are never values you need to supply.
+
+The typical workflow is:
+
+1. [Choose the source and target scope](#choose-the-source-and-target-scope) and confirm the target can contain the resources you plan to move.
+2. [Export configuration](#export-configuration) from the source scope and review the generated file.
+3. [Plan the import](#plan-the-import) in the target scope and review the proposed changes.
+4. [Import configuration](#import-configuration) only after the plan is correct.
+5. Store any one-time outputs as soon as the import completes.
+
+The sections below explain scope boundaries, required permissions, export selection, and safe import practices.
+
+<Callout type="info">
+Import / Export is available in every organization. Actions remain governed by the permissions listed below; make sure you are working in the intended source or target scope.
+</Callout>
+
+This page describes configuration portability. To deliver audit records to a SIEM or object store, use [Export data](/manage/export) instead.
+
+## Choose the source and target scope
+
+Select the source scope before export and the target scope before planning or importing. A target cannot import resources above or outside its own boundary. Dome derives scope identifiers from the target, so you never need to enter them.
+
+| Resource family | Workspace | Tenant | Organization |
+| --- | :---: | :---: | :---: |
+| gateways, tool and model connections, model pools, and memberships | ✅ | ✅ | ✅ |
+| agents, agent keys, rules, filters, validators, judges, and constitutions | ✅ | ✅ | ✅ |
+| Managed agents and triggers (preview) | ✅ | ✅ | ✅ |
+| Workspace quotas, verification providers, custom roles, API keys, and memberships | ✅ | ✅ | ✅ |
+| Webhooks, audit streams, scheduled jobs, and workspace settings | ✅ | ✅ | ✅ |
+| Tenant settings, roles, custom roles, API keys, verification providers, and quotas | ❌ | ✅ | ✅ |
+| Workspaces | ❌ | ✅ | ✅ |
+| Organization settings, members, domain SSO requirements, model pricing, custom roles, API keys, verification providers, and quotas | ❌ | ❌ | ✅ |
+| Tenants | ❌ | ❌ | ✅ |
+
+Secrets are never exported. Resources that create credentials, such as API keys, produce new one-time outputs when imported. Shared connections that require a person to finish authorization are reported as a handoff.
+
+Managed agents and their triggers are preview resources. Export omits them without source organization preview access. Importing them requires the target organization to opt into previews.
+
+## Requirements
+
+Before you begin:
+
+- Select the source scope for export and the target scope for planning or import.
+- Confirm access to both scopes and every preview family in the export.
+
+### Permissions
+
+| Task | Required permission |
+| --- | --- |
+| Export | `export.manage` at the source scope, plus view permission for each resource family you export |
+| Inspect, preview, follow, or cancel an import | `import.manage` at the target scope |
+| Run an import | `import.manage` at the target scope, plus every permission required to create or update the imported resources |
+
+An export omits a family you cannot view and reports that omission. An import preflight reports every missing permission before it starts a job.
+
+## Export configuration
+
+<Tabs items={["Dashboard", "CLI"]}>
+  <Tab value="Dashboard">
+    1. Open **Settings** and select **Import / Export**.
+    2. In **Export**, select the resource families or individual resources to include. Enable dependencies when the selected resources refer to other configuration that should move with them.
+    3. Download the generated `.tf` file.
+    4. Review the file before sharing it or committing it to a repository.
+  </Tab>
+  <Tab value="CLI">
+    Use the active Dome context as the source scope. Start with `--list` to see exportable resources, then export every resource, a family, or selected resource IDs.
+
+    ```bash title="Export a workspace configuration"
+dome export --list
+dome export --all --output dome.tf
+
+# Export a family and the resources it references.
+dome export --include gateways --with-dependencies --output gateways.tf
+```
+
+    The command writes the export file to standard output unless you provide `--output`. Use `--resource <id>` to select individual resources.
+  </Tab>
+</Tabs>
+
+The export includes only the selected configuration and any dependencies you request. If Dome cannot render a selected resource, it lists the resource and reason rather than silently producing an incomplete file.
+
+### Review the export file
+
+An export file carries Dome metadata that helps import match resources with an existing scope. Treat it as a configuration artifact: review changes in version control and retain it with the environment it describes.
+
+An export can contain variables, resource definitions, and outputs. Import accepts only the Dome resource format and rejects executable or ambient features such as modules, data sources, provisioners, backends, provider configuration, and filesystem-reading functions. These limits ensure that an uploaded file cannot execute outside the import job.
+
+Exports retain disabled triggers, paused jobs and streams, inactive webhooks, disabled quotas, and managed agents with manual runs off. Exports write every scope setting value, so imports reproduce source choices instead of retaining different target settings.
+
+<Callout type="warning">
+Do not add secret values to an export file. Declare a sensitive variable and supply its value during import. A completed import may create new credentials. Save its one-time outputs immediately because Dome reveals them only once to the person or API key that started the job.
+</Callout>
+
+## Plan the import
+
+A plan validates the export file, resolves its variables, and reports the proposed changes without changing the target scope. Run a plan every time you move an export to a new scope or revise its values.
+
+<Tabs items={["Dashboard", "CLI"]}>
+  <Tab value="Dashboard">
+    1. Open **Settings** → **Import / Export** in the target scope.
+    2. Upload one or more `.tf` files, or paste a supported Dome configuration.
+    3. Select **Inspect**. Dome validates the file, lists its resources and variables, and reports missing permissions.
+    4. Enter required variable values, then select **Preview (plan only)**.
+    5. Review the plan summary and per-resource results.
+  </Tab>
+  <Tab value="CLI">
+    ```bash title="Plan an import without changing the target scope"
+dome import dome.tf --plan-only --var api_token="$API_TOKEN"
+```
+
+    The CLI validates the file and prompts for any missing values before it submits the plan job. Use a variable file or environment variables for unattended runs.
+
+    For structured variables, such as a map of secret headers, pass JSON as the value. For example: `--var headers='{"X-Api-Key":"…"}'`.
+  </Tab>
+</Tabs>
+
+### Import file requirements
+
+Import accepts an export from Dome or a hand-authored Dome configuration file. A bundle can contain up to 32 `.tf` files, with a maximum of 1 MiB per file, 2 MiB in total, and 2,000 resource definitions. The values you supply for variables can total up to 256 KiB.
+
+Each file must contain only supported Dome configuration. Dome rejects modules, data sources, provisioners, backends, non-Dome providers, and functions that can read from the worker or its filesystem. The inspection step reports these problems before it creates an import job.
+
+### Interpret plan results
+
+A plan can include these outcomes:
+
+| Outcome | Meaning | Next step |
+| --- | --- | --- |
+| Create | The target scope does not contain a matching resource. | Review the resource that will be created. |
+| Update | A matching resource exists but differs from the export. | Confirm the proposed configuration is intended. |
+| Import | Dome matched an existing resource during the state-free run. | No separate state is retained. |
+| Unchanged | The target already matches the export. | No action needed. |
+| Refused | The plan would be unsafe, the file is unsupported, or permission is missing. | Read the refusal detail, fix the file or access, and plan again. |
+
+## Import configuration
+
+After you approve the plan, start the import. Dome processes the import on a managed worker and keeps no state: it matches resources that already exist by their natural identity, creates the rest, and never destroys or replaces a resource. Dome refuses any plan that would destroy or replace something.
+
+<Tabs items={["Dashboard", "CLI"]}>
+  <Tab value="Dashboard">
+    1. Return to the inspected file and its reviewed values in **Settings** → **Import / Export**.
+    2. Select **Import**.
+    3. Follow the job until it finishes. Complete any displayed handoff, then reveal and store any one-time outputs.
+  </Tab>
+  <Tab value="CLI">
+    ```bash title="Import a reviewed export"
+dome import dome.tf --var api_token="$API_TOKEN" --yes
+```
+
+    ```bash title="Run an import in CI"
+dome import dome.tf \
+  --var-file production-vars.yaml \
+  --yes
+
+# Equivalent environment-variable form for a declared variable named api_token.
+export DOME_IMPORT_VAR_api_token="$API_TOKEN"
+dome import dome.tf --yes
+```
+
+    Use `--detach` to submit without waiting, then follow the job later:
+
+    ```bash title="Follow an import job"
+dome import dome.tf --detach --yes
+dome import status <job-id>
+dome import outputs <job-id>
+```
+
+    `dome import outputs` reveals secrets created by the job exactly once. Run it only when you are ready to store the values securely.
+  </Tab>
+</Tabs>
+
+The import job records its status, per-resource results, and any required handoff. A handoff means a shared connection needs a human action, such as OAuth consent. Complete the listed follow-up before relying on that connection.
+
+Cancel a job only before it begins applying. Once application begins, wait for the result rather than assuming cancellation took effect.
+
+## Troubleshoot imports
+
+| Situation | What it means | What to do |
+| --- | --- | --- |
+| Missing permissions | The target role cannot create or update one or more resources in the file. | Review the permissions reported during inspection, then ask an administrator to grant the required access. |
+| Unsupported file | The file contains unsupported configuration or exceeds a bundle limit. | Inspect again, remove the unsupported content, or split the configuration into smaller files. |
+| Scope mismatch | The file contains a resource outside the target's scope, such as a tenant resource in a workspace import. | Choose a target that contains the resource or export only resources that fit within the target boundary. |
+| Preview resource unavailable | The file includes a preview resource, such as a managed agent or trigger, that the target organization cannot use. | Ask an organization owner or administrator to opt the target organization into previews, or remove that resource from the import. |
+| Cancellation does not complete | The job has already started applying. | Wait for the job result. Dome does not interrupt application after it begins. |
+| Handoff required | A shared connection needs a person to finish setup, such as granting OAuth consent. | Complete the handoff shown in the job result before relying on the connection. |
+
+## Operational guidance
+
+- Keep exports in source control, but protect variable files and CI secrets.
+- Promote a reviewed export through environments with a preview at each target scope.
+- Export dependencies with a resource when you need a self-contained configuration. Otherwise, ensure its referenced resources already exist in the target.
+- Use the export result's omissions and exclusions as a review checklist. Do not assume an export is complete when your access excludes a resource family.
+- Start with a small export when moving a new type of configuration, then use the preview summary to confirm how Dome matches existing resources.
+
+## Next steps
+
+- [Import CLI reference](/cli/manage/import) to plan, apply, and monitor configuration imports
+- [Export CLI reference](/cli/manage/export) to create reviewed configuration files
+- [MCP reference](/reference/mcp/import-export) for agent-driven workflows
+- [API reference](/api) for REST operations
+- [Audit event catalog](/reference/events/catalog#import-and-export-configuration) for export and import job activity
+- [Manage Access](/manage/access) to grant portability permissions
+- [Prepare Environments](/manage/environments) to organize promotion targets
+- [Settings](/manage/settings) to configure workspace defaults

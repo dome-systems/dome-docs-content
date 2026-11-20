@@ -1,0 +1,304 @@
+---
+hidden: true
+title: Govern your first agent — agent instructions
+sidebarTitle: Govern your first agent
+description: "Machine-readable instructions for an AI agent running the Govern your first agent tutorial"
+---
+
+These are the instructions an AI agent follows to run the [Govern your first agent](/tutorials/get-started/govern-your-first-agent) tutorial on your behalf. Read the tutorial instead if you are running the steps yourself.
+
+## Goal
+
+Stand up a governed HR assistant in a tutorial workspace, then hand the user the questions that demonstrate three outcomes: an allowed call, a call whose contact fields are redacted, and a denied call. The user asks those questions; you do not call the governed tools to demo them.
+
+## Rules
+
+Follow these even if the rest of this page is unreachable.
+
+- **Confirm before you start.** Before running any commands, present the plan below and wait for the user to say proceed.
+- **Narrate as you go.** Before each step, tell the user in one or two sentences what you are about to do and why it matters (workspace isolation, response filters, gateway grants, Cedar allowlists). Do not silently run the whole flow.
+- **Confirm the active context.** After switching context, run `dome context current` and confirm the workspace name starts with `studio-`. If it does not, stop and ask. Only change the workspace selected for this tutorial.
+- **Never print the agent token.** `dome agents create-key` returns a live bearer token once. Write it straight into the MCP client config, or a gitignored `.env` if the user is verifying with curl. Do not echo it, log it, or repeat it in chat. Confirm the config file is gitignored.
+- **Stop at both human handoffs.** `dome auth login` opens a browser; run it, then wait. You cannot reload the user's MCP config; after writing it, stop and wait for confirmation that the server is live. If the user prefers curl, skip the client reload and hand them the Verify the results curl tab instead.
+- **Hand off the demo.** Do not call `list_employees`, `get_employee`, `get_salary`, or `get_customer` yourself to prove the outcomes. After setup, give the user the AI Client prompts or the API via curl commands from the tutorial, then stop.
+- **Link the console.** After each create/grant/deploy step, give the user a markdown link into the Dome console for the resource you just touched. Derive the base URL from `dome auth status` → `Server` (for example `https://app.glint-8c.domesystems.ai`). Keep the user on the workspace context before linking. The console follows the active workspace.
+- **Expect re-runs.** Check for existing resources before creating them. Pass `--if-not-exists` where it exists.
+- **Show your evidence.** Never report a step as done without the command output that proves it.
+
+## Quick setup
+
+Before running any commands, present the user with this checklist and wait for confirmation:
+
+```
+Here's what I'll do to get you set up with a governed HR assistant.
+
+1. Install the Dome CLI (if needed) and sign in. This opens your browser.
+2. Sync your contexts, then create a tutorial workspace
+3. Register the demo HR tool server as demo-hr
+4. Create a JSON Filter that redacts email and phone on the response path
+5. Register an hr-assistant agent and mint its API key
+6. Grant Gateway access and deploy Cedar Rules (allow IT and directory, deny the rest)
+7. Write your MCP client config (or prepare curl against the gateway tools ingress)
+8. Give you the questions to ask — or the matching curls — and what you should expect
+
+Shall I proceed?
+```
+
+Do not start step 1 until the user confirms.
+
+## Steps
+
+### 1. Install and authenticate
+
+Check for the CLI. If it is missing, install it with `brew trust dome-systems/tap && brew install dome-systems/tap/dome`, or use the direct download described in [Install](/install):
+
+```bash
+command -v dome && dome version || echo "Dome CLI not installed"
+```
+
+Authenticate, then confirm. `dome auth status` should report `Authenticated true`:
+
+```bash
+dome auth login
+dome auth status
+```
+
+If the user was invited to a non-default stack, pass `--server`, for example `dome auth login --server https://app.glint-8c.domesystems.ai`.
+
+After a successful sign-in, sync contexts so stale workspaces from earlier sessions drop out of the local cache:
+
+```bash
+dome context sync
+dome context list
+```
+
+### 2. Create a workspace
+
+```bash
+dome workspaces create --name studio-get-started
+dome context sync
+dome context current
+```
+
+Confirm the workspace name starts with `studio-` before continuing. Record the gateway host from `dome context current`, and record the console base URL from `dome auth status` → `Server` (you will use it for links below).
+
+### 3. Register the demo tool
+
+Register the public demo server and attach it to Default. A tool is unreachable until it belongs to a gateway:
+
+```bash
+dome tools add \
+  --name demo-hr \
+  --url https://demo-mcp.domesystems.ai/mcp \
+  --protocol streamable-http \
+  --auth-method none \
+  --gateway Default
+```
+
+The connection name prefixes every tool, so the demo server's tools become `demo-hr/it/get_incidents`, `demo-hr/hr/get_employee`, and so on. Use those qualified names in the rules below.
+
+Then point the user at the tools page so they can see `demo-hr`: `<Server>/tools` (for example [https://app.glint-8c.domesystems.ai/tools](https://app.glint-8c.domesystems.ai/tools)). Also link `<Server>/gateways` so they can confirm Default now lists the tool.
+
+### 4. Redact contact fields
+
+Tool connections take JSON filters. Write `redact-contact.json`:
+
+```json
+{
+  "json": {
+    "components": [
+      {
+        "fieldActions": [
+          {
+            "matcher": { "path": "**.email" },
+            "action": "FILTER_ACTION_REDACT"
+          },
+          {
+            "matcher": { "path": "**.phone" },
+            "action": "FILTER_ACTION_REDACT"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The `**.` prefix is recursive descent, so it matches the field at any depth. Create the filter, then assign it to the response direction — creating it does not apply it:
+
+```bash
+dome guards filters create redact-contact \
+  --description "Redact contact fields in tool responses" \
+  --config-from redact-contact.json
+dome tools guards filters set demo-hr \
+  --direction response \
+  --filters redact-contact
+```
+
+Confirm the assignment landed before continuing:
+
+```bash
+dome tools guards filters list demo-hr
+```
+
+This is what produces the redaction the user will see. If the chain is empty, stop and report it rather than continuing to a demo that will not hold.
+
+### 5. Register the agent and mint a key
+
+```bash
+dome agents register --name hr-assistant --if-not-exists
+dome agents create-key hr-assistant --name agent-tutorial
+```
+
+Capture the token without printing it.
+
+Link the agents page so they can open `hr-assistant`: `<Server>/agents` (for example [https://app.glint-8c.domesystems.ai/agents](https://app.glint-8c.domesystems.ai/agents)).
+
+### 6. Grant access and narrow it
+
+```bash
+dome gateways access grant Default hr-assistant
+```
+
+Link `<Server>/gateways` (or `<Server>/gateways/<DEFAULT_GATEWAY_ID>`) so they can see `hr-assistant` under the gateway's granted agents.
+
+Explain briefly: the grant admits the agent at Default and permits every current and future member of that gateway. That is a useful baseline, but broader than this HR assistant's job. Then deploy three rules on top of it: a `permit` that keeps discovery open, a `permit` for the tools this assistant may call, and a `forbid … unless` that blocks everything else (`forbid` always wins). The last two share the same allowlist. Write `hr-assistant.cedar`:
+
+```cedar
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:discover",
+  resource
+);
+
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:call",
+  resource
+) when {
+  resource in [
+    Dome::MCPTool::"demo-hr/hr/list_employees",
+    Dome::MCPTool::"demo-hr/hr/get_employee",
+    Dome::MCPTool::"demo-hr/hr/org_chart",
+    Dome::MCPTool::"demo-hr/it/list_services",
+    Dome::MCPTool::"demo-hr/it/get_incidents"
+  ]
+};
+
+forbid(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:call",
+  resource
+) unless {
+  resource in [
+    Dome::MCPTool::"demo-hr/hr/list_employees",
+    Dome::MCPTool::"demo-hr/hr/get_employee",
+    Dome::MCPTool::"demo-hr/hr/org_chart",
+    Dome::MCPTool::"demo-hr/it/list_services",
+    Dome::MCPTool::"demo-hr/it/get_incidents"
+  ]
+};
+```
+
+Deploy it scoped to the agent, which is what limits `principal is Dome::Agent` to `hr-assistant`:
+
+```bash
+dome rules apply hr-assistant.cedar --agent hr-assistant --name hr-assistant
+```
+
+Verify all three cases before touching any client config:
+
+```bash
+dome rules simulate --agent hr-assistant --action mcp:call \
+  --resource demo-hr/hr/get_employee --resource-type mcp_tool
+dome rules simulate --agent hr-assistant --action mcp:call \
+  --resource demo-hr/finance/get_salary --resource-type mcp_tool
+dome rules simulate --agent hr-assistant --action mcp:call \
+  --resource demo-hr/sales/get_customer --resource-type mcp_tool
+```
+
+Expect `ALLOW`, `DENY`, `DENY`. If `get_employee` is not `ALLOW`, or either denied tool is `ALLOW`, the rule did not deploy. Stop and report it rather than continuing to a demo that will not hold.
+
+Link the rules page so they can see the deployed `hr-assistant` bundle: `<Server>/rules` (for example [https://app.glint-8c.domesystems.ai/rules](https://app.glint-8c.domesystems.ai/rules)).
+
+### 7. Write the client config
+
+Get the agent token and Default gateway ID. `AGENT_API_KEY` is the `Token: dome_…` value from `dome agents create-key` earlier. Tokens are shown once; if the user did not save it, mint another with `dome agents create-key hr-assistant --name cursor` and use that value — never print it in chat.
+
+```bash
+dome gateways list
+dome context current
+```
+
+The client URL is the Default gateway's **tools ingress** — MCP discovery and `tools/call` enter the data plane here:
+
+```
+https://<gateway-host>/gateways/<DEFAULT_GATEWAY_ID>/mcp
+```
+
+It is not `dome mcp serve`, which exposes platform management tools instead.
+
+If the user prefers curl over an MCP client, skip writing client config. Hand them the gateway URL and token (into a gitignored `.env`, never in chat), point them at the Verify the results curl tab, and continue to step 8.
+
+Otherwise write the config for the client you are running in. For Cursor, `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "hr-assistant": {
+      "url": "https://<gateway-host>/gateways/<DEFAULT_GATEWAY_ID>/mcp",
+      "headers": {
+        "Authorization": "Bearer <AGENT_API_KEY>"
+      }
+    }
+  }
+}
+```
+
+For Claude Code:
+
+```bash
+claude mcp add --transport http hr-assistant \
+  https://<gateway-host>/gateways/<DEFAULT_GATEWAY_ID>/mcp \
+  --header "Authorization: Bearer <AGENT_API_KEY>"
+```
+
+For Codex, export the token and reference it by variable name in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.hr-assistant]
+url = "https://<gateway-host>/gateways/<DEFAULT_GATEWAY_ID>/mcp"
+bearer_token_env_var = "DOME_AGENT_TOKEN"
+```
+
+Then stop. Tell the user to enable the `hr-assistant` server in their client and wait for confirmation.
+
+### 8. Hand the user the demo
+
+Once the server is live — or if the user prefers not to use an MCP client — **stop calling tools yourself**. Give them the Verify the results path from the tutorial:
+
+- **AI Client** (default): the four prompts below, with expected results.
+- **API via curl**: the four `tools/call` curls in the tutorial, using `DOME_GATEWAY_URL` and `DOME_TOKEN` (never print the token).
+
+| Ask | Expect |
+|---|---|
+| "Who works here?" | A list of demo employees with ids such as `E001`. |
+| "Who is E001, and how do I reach them?" | The record, with `"email": "[REDACTED]"`. |
+| "What is Alice's salary?" | Denied by the rule. |
+| "Pull up the Acme Corp customer record." | Denied, though nothing named that tool explicitly. |
+
+Explain why redaction happens: a response filter on the connection replaces `email` and `phone` at any depth before the result reaches the agent. The backend returned the real address. Governance applies to the agent's path, not to the user's prompt wording.
+
+If the user reports that the customer record returned data, say so plainly. The rule is broader than intended.
+
+### 9. Show the record and the exit
+
+After the user has tried the prompts, offer to inspect the audit trail:
+
+```bash
+dome audit query --limit 20
+```
+
+Point out the attempted and completed stages of `tool.call`, the sibling `guard.filter.evaluate`, and the refused `tool.call` with `result=denied`, all attributed to `hr-assistant`. To show only rejections, run `dome audit query --results denied --limit 10`. Also link the console audit view: `<Server>/audit/events`, or the agent-scoped view `<Server>/audit/agents/<AGENT_ID>`.
+
+Close by pointing the user at [Call a model through a pool](/tutorials/get-started/call-a-model-through-a-pool). Keep the `studio-get-started` workspace — later tutorials in this track reuse it. Do not tear it down.

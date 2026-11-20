@@ -1,0 +1,151 @@
+---
+title: Architecture
+description: How Dome Platform components govern agent access to tools and models
+---
+
+Dome governs how AI agents access tools and models. The following components decide what happens to each request.
+
+For a high-level platform overview, start with [What is Dome?](/what-is-dome).
+
+## High-level overview
+
+Dome architecture separates into three kinds of concept: the **components** you define, the **controls** you apply to them, and the **audit** that records what happened.
+
+The **control plane** is where you configure those components and controls and sync that configuration. The **[data plane](/concepts/architecture/dataplane)** is where requests are enforced on the hot path.
+
+**Components** are what you define in the control plane:
+
+- **Agents** identify the applications and automated processes making requests.
+- **Resources** are the tools, model connections, and model pools exposed through Dome.
+- **gateways** group resources behind named endpoints and control which agents can reach them.
+
+**Controls** are what you apply to components to govern traffic:
+
+- **rules** authorize what an agent may do after reaching a gateway.
+- **escalations** route selected authorization decisions to review before a request proceeds.
+- **guards** inspect request and response content before it reaches its destination.
+- **quotas** cap what an agent can spend on model calls over a window.
+
+**[Audit events](/concepts/audit)** record every request's outcome across control-plane changes and data-plane decisions, so you can review or investigate it later.
+
+Within a workspace, these concepts have the following relationships:
+
+![An agent reaches tools, model pools, and model connections through a gateway while traffic controls govern requests](/images/diagrams/agent-resource-architecture.svg)
+
+An agent reaches a gateway through an access grant, then reaches the tools, model pools, and model connections behind it through membership. On every call that passes through the data plane, rules, escalations, guards, and quotas govern the traffic, and Audit logs the outcome.
+
+The access grant, membership, and rule are three separate checks, and all three must allow the request:
+
+| Check | Asks |
+|-------|------|
+| **Access grant** | May this agent use the gateway? |
+| **Membership** | Is this resource in the gateway? |
+| **rule** | May this agent perform this action on the resource? |
+
+### Agents
+
+An **agent** is an identity in Dome. It represents the application, assistant, or automated process making a request. That identity can back either execution model:
+
+- An **external agent** runs its worker in your own runtime and authenticates through an API key or short-lived agent token.
+- A **managed agent** uses the same agent identity, while Dome runs its worker from the configured prompt, model, gateway, and triggers.
+
+In both cases, the agent identity is separate from its permissions and is not bound to one gateway. Gateway grants and rules decide what it can reach. Refer to [Agents](/concepts/agents) for the identity model, [External agents](/build/agents/external) to run a worker yourself, or [Managed agents](/build/agents/managed) to have Dome run one.
+
+### Resources
+
+A **resource** is something an agent can call through Dome. Dome supports three resource types:
+
+1. **Tools** are MCP servers, local processes over stdio, or catalog-backed tool integrations.
+2. **Model connections** point to LLM providers such as Anthropic, OpenAI, Google, or a self-hosted runtime.
+3. **Pools** group model connections and add routing, weighting, and failover.
+
+Refer to [Resources](/concepts/resources) concept for how backends are modeled, and [Tools](/concepts/resources/tools) concept, [Models](/concepts/resources/models) concept, and [Pools](/concepts/resources/model-pools) concept for each type.
+
+### Gateways
+
+A **gateway** is a named logical access surface in Dome. Each gateway packages a selected set of resources behind an endpoint and defines which agents may use it. A gateway is not a separately deployed data-plane process. A gateway can contain many resources, and the same resource can belong to more than one gateway. A registered resource that belongs to no gateway is **Unreachable**.
+
+A gateway exposes both tools and models through different protocol endpoints:
+
+- Tools use `/gateways/<id>/mcp`
+- models and model pools use `/gateways/<id>/v1/...`
+
+For a model call, the request can target a direct model connection or a model pool. Configured routing can also select a matching or default pool. A direct model connection must be a member of the gateway. When a pool is selected, Dome chooses one of its model connections.
+
+Tools and models do not have to share a gateway. You can use different gateways for different jobs, as long as each gateway grants that agent access and rules permit each request.
+
+An **access grant** gives an agent permission to use a gateway. A gateway can also grant access to every agent in its workspace.
+
+### Rules
+
+An access grant and membership get the request to the resource. A **rule** then controls what the agent may do once it's there, deciding tool calls and model calls the same way.
+
+Cedar, the default rule engine, evaluates the agent, requested action, resource, and request context, and denies the request by default when no rule matches. Dome combines rules from organization, tenant, workspace, and agent scopes. Those rules can permit access to one tool while forbidding another, even when both belong to the same gateway.
+
+Dome fails closed if it can't verify current policy, rather than falling back to a stale or default configuration.
+
+### Guards
+
+**guards** inspect content in both directions. Request guards inspect prompts or tool arguments before Dome calls the resource. Response guards inspect model output or tool results before content returns to the agent.
+
+Guards use ordered, connection-specific filters. A filter can redact, omit, or block matching content. Dome fails closed when an assigned filter cannot be evaluated, rather than forwarding uninspected traffic. Refer to [guards](/concepts/controls/guards) concept for the model and [Configure guards](/govern/guards) for configuration.
+
+### Quotas
+
+**quotas** cap spend on model calls. Each quota sets a budget over a window at a chosen scope: workspace, agent, gateway, pool, model, or verified end user.
+
+Dome checks applicable quotas before it authorizes the call. An exhausted total cap rejects the request. An exhausted per-model budget can spill to another member of the pool. Refer to [quotas](/concepts/controls/quotas) concept for the model and [Set usage limits](/govern/quotas) for configuration.
+
+## How requests move through Dome
+
+Every request passes through Dome before it reaches a tool or model. Dome identifies the agent, enforces access and authorization, applies request guards, calls the resource with protected backend credentials, and applies response guards before returning content.
+
+<Steps>
+  <Step title="Send the request">
+    The agent runtime sends an API key or agent token to a gateway endpoint.
+  </Step>
+  <Step title="Authenticate and check access">
+    Dome validates the credential, identifies the agent, and checks the active gateway, access grant, and resource membership.
+  </Step>
+  <Step title="Verify represented identity">
+    If the request carries an act-as claim for an end user, Dome verifies it before exposing it to rules or backends.
+  </Step>
+  <Step title="Check quotas">
+    For a metered call, Dome checks applicable spend quotas. An exhausted limit stops the request here.
+  </Step>
+  <Step title="Apply rules">
+    Dome evaluates the agent, action, resource, and request context. A denied request stops here.
+  </Step>
+  <Step title="Apply request guards">
+    Dome inspects configured prompts or tool arguments before they reach the resource. A guard can transform or block the request.
+  </Step>
+  <Step title="Call the resource">
+    For an allowed request, Dome retrieves the backend credentials and calls the tool or model provider. The agent never receives those credentials.
+  </Step>
+  <Step title="Apply response guards and return">
+    Dome inspects configured model output or tool results before disclosure, then returns the governed response.
+  </Step>
+  <Step title="Record the outcome">
+    Dome writes an audit event for the permitted, denied, failed, or filtered result.
+  </Step>
+</Steps>
+
+Tool discovery follows the same core model. Tools blocked by rules are omitted from the catalog. Other access or operational failures can return an empty catalog or deny the request.
+
+If a model produces a tool call, the model does not invoke the tool itself. The agent runtime receives the tool request and makes a second call through the gateway's MCP endpoint. The model call and tool call are separate requests governed with the same agent identity.
+
+## Workspaces and isolation
+
+An **organization** is a company's top-level account. It contains one or more **tenants**, hard isolation boundaries usually drawn around a business unit or product line, such as a `Commerce` tenant kept separate from a `Support` tenant. Each tenant holds **workspaces** that scope day-to-day work, such as separate production and staging workspaces for the same team.
+
+Agents, resources, gateways, rules, escalations, guards, quotas, and audit events all live inside a workspace. Dome enforces tenant and workspace boundaries on every configuration and runtime request, so nothing scoped to one workspace leaks into another.
+
+## Next steps
+
+With the component and request-path model in mind, continue with:
+
+- [Scopes](/concepts/platform/scopes) concept for organization, tenant, and workspace isolation
+- [Agents](/concepts/agents) concept, [Resources](/concepts/resources) concept, and [gateways](/concepts/gateways) concept for the components you define
+- [rules](/concepts/controls/rules) concept, [escalations](/concepts/controls/escalations) concept, [guards](/concepts/controls/guards) concept, and [quotas](/concepts/controls/quotas) concept for the controls on each request
+- [Audit events](/concepts/audit) concept for the evidence trail
+- [data plane](/concepts/architecture/dataplane) concept for fail-closed runtime placement

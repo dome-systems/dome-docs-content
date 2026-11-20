@@ -1,0 +1,19 @@
+---
+title: dome config
+description: Platform configuration
+---
+
+`dome config` reads platform configuration values, such as how long audit events are retained and how stale a registry entry may be before Dome refuses it. These are server-side settings; the command is read-only, and CLI session settings live under [`dome context`](/cli/session/context) instead.
+
+## Get
+
+```bash
+dome config get [key]
+```
+
+Get a configuration value by key.
+
+```bash
+dome config get audit.retention_days
+dome config get registry.staleness_window
+```

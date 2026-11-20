@@ -1,0 +1,568 @@
+---
+title: Rules
+sidebarTitle: Authorize access
+description: Control which tools and models each agent is allowed to use
+---
+
+Rules decide which tool and model requests each agent is allowed to make. Dome evaluates them on every governed request, so you can grant, restrict, or deny access down to the specific action and condition.
+
+## Overview
+
+Rules ship as scoped **bundles** of `.cedar` files. The gateway merges every active bundle that covers the agent and evaluates the request against that set.
+
+The typical workflow is:
+
+1. [Write rules](#write-rules) manually or with the [Rules assistant](/govern/rules/assistant).
+2. [Validate the rules](#validate-rules) for Cedar errors and advisory warnings.
+3. [Simulate representative decisions](#simulate-rules) before changing production behavior.
+4. [Apply the rules](#apply-rules) to activate the change.
+5. [Inspect the rules that apply to an agent](#show-effective-rules) and [roll back](#roll-back-rules) if the result is not expected.
+
+## Requirements
+
+Before you begin:
+
+- Authenticate to Dome and select a workspace
+- Register at least one [external agent](/build/agents/external)
+- Identify the tools or models the rules will govern
+- Choose the workspace or agent scope where the rules should apply
+
+### Permissions
+
+Rule bundle operations require platform permissions. Each operation states its required permission inline.
+
+| Default roles | Permission | Grants |
+|---------------|------------|--------|
+| All workspace roles | `rules.view` | View bundles and history |
+| `admin`, `operator`, `security` | `rules.deploy` | Deploy rules |
+| `admin`, `operator`, `security` | `rules.rollback` | Roll back a rule bundle |
+
+## Write Rules
+
+Write each authorization requirement as a sentence before translating it to Cedar. For example, “Allow this agent to call the `github/list_issues` tool.”
+
+You can also use the [Rules assistant](/govern/rules/assistant) to translate natural-language requirements into a draft. Assistant drafts never deploy automatically.
+
+<Callout icon="key">Writing local files requires no Dome permission. Using the rules assistant to draft or apply changes requires `rules.deploy`.</Callout>
+
+Map the sentence to a rule in five steps.
+
+1. Choose `permit` for an allowed request or `forbid` for a denied request.
+2. Set the principal to the agent's UUID or use a broader form when the rule should cover every agent in scope.
+3. Choose the action that represents the operation.
+4. Set the resource to the specific tool or model, or use a resource type when the rule should cover every resource of that type.
+5. Add a `when` condition if the rule should apply only under certain circumstances or add `unless` to define an exception.
+
+Inside the parentheses, name `principal`, `action`, and `resource`. Omit a constraint to match every value. Use `==` for one entity, `is` for every entity of a type, and `in` for several actions. Common actions are `mcp:call`, `mcp:discover`, and LLM actions such as `llm:invoke`, `llm:embed`, and `llm:moderate`. Connection attributes appear as `resource.<key>`. Per-call values appear as `resource.arguments.<key>` after `resource has arguments`. The full action catalog and attribute tables are on the [Rules](/reference/controls/rules) reference.
+
+### Author in the dashboard
+
+The rules editor supports a Visual **Builder** alongside raw Cedar. The Builder is a form for the common shape: effect (`permit`, `forbid`), principal, one or more actions, a resource, and `when` / `unless` conditions. Dropdowns are sourced from your workspace catalog (agents, tools, models, pools, attribute keys). Cedar renders live in the preview pane.
+
+Toggle **Builder ↔ Cedar** on the editor toolbar. In-progress form state is preserved across the switch. Builder-generated rules parse back into the form on reopen. Rules the Builder cannot model (custom annotations, cross-clause `||`, set helpers outside the Builder's operators) render as a raw card and open in the code editor.
+
+**Create rule** opens a scope picker — workspace bundle or a specific agent's bundle. Edit links from elsewhere in the dashboard skip the picker and open the bundle directly.
+
+The rules screen can also show the read-only **Effective rules** view for a chosen agent: the resolved policy across organization, tenant, workspace, and agent scopes, grouped into scope cards in precedence order. Filter, search, expand Cedar, or open [Simulate](/govern/rules/simulate) from any row.
+
+### Permit a tool call
+
+Replace `AGENT_ID` with the registered agent's UUID. The tool resource uses `CONNECTION_NAME/TOOL_NAME`.
+
+```cedar title="rules.cedar"
+permit(
+  principal == Dome::Agent::"AGENT_ID",
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"github/list_issues"
+);
+```
+
+Discovery is a different action. A rule that only permits `mcp:discover` does not allow tool calls.
+
+```cedar title="discover.cedar"
+permit(
+  principal,
+  action == Dome::Action::"mcp:discover",
+  resource
+);
+```
+
+### Forbid with an exception
+
+Deny a sensitive tool for everyone, then carve out agents whose metadata marks them for it. Guard the read with `has` first, because an agent without that metadata key errors the rule out instead of matching it.
+
+```cedar title="restrict-deploy.cedar"
+forbid(
+  principal,
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"deployment/production-deploy"
+) unless {
+  principal has metadata &&
+  principal.metadata has deploy_target &&
+  principal.metadata.deploy_target == "production"
+};
+```
+
+### Condition on attributes or arguments
+
+Gate an LLM call on a connection attribute (`resource.<key>`) or a per-call argument (`resource.arguments.<key>`). Guard argument reads with `resource has arguments` first. Dereferencing a missing argument errors the rule out.
+
+```cedar title="attribute-and-args.cedar"
+permit(
+  principal,
+  action == Dome::Action::"llm:embed",
+  resource is Dome::LLMModel
+)
+when {
+  resource.pii_certified == true
+};
+
+forbid(
+  principal,
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"vector-search"
+)
+when {
+  resource has arguments &&
+  resource.arguments has query &&
+  resource.arguments.query like "*Atlas*"
+};
+```
+
+A `.cedar` file can contain multiple rules.
+
+Include every user-authored file that should remain active at the target scope because [Apply rules](#apply-rules) replaces the current user-authored bundle.
+
+After writing the files, [validate the rules](#validate-rules) before simulation or deployment.
+
+## Validate Rules
+
+Validate one or more Cedar files without deploying them. Validation returns blocking Cedar errors and advisory warnings for resource references.
+
+<Callout icon="key">Scoped validation and the MCP tool require `rules.view`. Scope-less CLI and API validation require authentication.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome rules validate rules.cedar
+    ```
+
+    Add `--agent data-pipeline` to check tool references against that agent's workspace catalog. Without `--agent`, the CLI checks Cedar syntax and semantics only.
+
+    <Callout icon="terminal">Reference: [`dome rules validate`](/cli/govern/rules#validate-rules)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_rules_validate`
+
+    ```json
+    {
+      "files": [
+        {
+          "name": "rules.cedar",
+          "content": "permit(principal == Dome::Agent::\"data-pipeline\", action == Dome::Action::\"mcp:call\", resource == Dome::MCPTool::\"database-query\");"
+        }
+      ]
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_rules_validate`](/reference/mcp/rules#rules-validate)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /v1/rules/validate
+    Content-Type: application/json
+
+    {
+      "files": [
+        {
+          "name": "rules.cedar",
+          "content": "permit(principal == Dome::Agent::\"data-pipeline\", action == Dome::Action::\"mcp:call\", resource == Dome::MCPTool::\"database-query\");"
+        }
+      ],
+      "scope_kind": "workspace",
+      "scope_id": "{{WORKSPACE_ID}}"
+    }
+    ```
+
+    Include a workspace or agent scope to check catalog references. Scope-less validation checks Cedar syntax and semantics.
+
+    <Callout icon="code">Reference: [`ValidateRules`](/api/tag/authorization/validate-rules)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Validate Rules"
+    Validate rules.cedar for the active workspace and explain every error or warning.
+    ```
+  </Tab>
+</Tabs>
+
+## Simulate Rules
+
+Simulate an authorization decision against the rules currently in effect without performing the requested action. Supply the agent, action, resource, and any request context the rules inspect.
+
+<Callout icon="key">Requires `rules.view`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome rules simulate \
+      --agent data-pipeline \
+      --action mcp:call \
+      --resource database-query \
+      --resource-type mcp_tool
+    ```
+
+    <Callout icon="terminal">Reference: [`dome rules simulate`](/cli/govern/rules#simulate-rules)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_rules_simulate`
+
+    ```json
+    {
+      "agent_id": "data-pipeline",
+      "action": "mcp:call",
+      "resource": "database-query",
+      "resource_type": "mcp_tool"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_rules_simulate`](/reference/mcp/rules#rules-simulate)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /v1/authz/evaluate
+    Content-Type: application/json
+
+    {
+      "caller": {
+        "agent_id": "{{AGENT_ID}}"
+      },
+      "action": "mcp:call",
+      "resource": "database-query",
+      "resource_type": "mcp_tool",
+      "workspace_id": "{{WORKSPACE_ID}}"
+    }
+    ```
+
+    `workspace_id` selects simulation mode and loads that workspace's effective rules.
+
+    <Callout icon="code">Reference: [`Evaluate`](/api/tag/authorization/evaluate)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Simulate Rules"
+    Simulate whether "data-pipeline" may call the "database-query" MCP tool.
+    ```
+  </Tab>
+</Tabs>
+
+Refer to [Simulate Rules](/govern/rules/simulate) for request arguments, agent Act-As claims, and historical replay.
+
+## Apply Rules
+
+Apply one or more Cedar files to replace the active user-authored bundle at a target scope. Each successful apply creates a bundle with a new sequence number and content hash.
+
+<Callout icon="key">Requires `rules.deploy`.</Callout>
+
+<Callout type="warning">
+Applying rules replaces the active user-authored bundle at the selected scope. Include every user-authored file that should remain active. Dome also keeps generated bundles (allowed resources, Act-As, blocked tools, and similar). Change those through the feature that created them, not by applying over them.
+</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome rules apply rules.cedar --name "production-v2"
+    ```
+
+    The active workspace is the default scope. Add `--agent data-pipeline` to apply the bundle to one agent instead. The CLI preserves managed `tool-*.cedar` files when they are omitted.
+
+    Advisory warnings identify MCP tool references that do not match the workspace catalog. Warnings do not block the apply.
+
+    <Callout icon="terminal">Reference: [`dome rules apply`](/cli/govern/rules#apply-rules)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_rules_deploy`
+
+    ```json
+    {
+      "files": [
+        {
+          "name": "rules.cedar",
+          "content": "permit(principal == Dome::Agent::\"data-pipeline\", action == Dome::Action::\"mcp:call\", resource == Dome::MCPTool::\"database-query\");"
+        }
+      ],
+      "name": "production-v2",
+      "scope_kind": "workspace",
+      "scope_id": "{{WORKSPACE_ID}}"
+    }
+    ```
+
+    The tool defaults to the active workspace when you omit the scope. The tool preserves managed `tool-*.cedar` files and returns advisory validation warnings without blocking the apply.
+
+    <Callout icon="cpu">Reference: [`dome_rules_deploy`](/reference/mcp/rules#rules-deploy)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /v1/rules
+    Content-Type: application/json
+
+    {
+      "files": [
+        {
+          "name": "rules.cedar",
+          "content": "permit(principal == Dome::Agent::\"data-pipeline\", action == Dome::Action::\"mcp:call\", resource == Dome::MCPTool::\"database-query\");"
+        }
+      ],
+      "scope_kind": "workspace",
+      "scope_id": "{{WORKSPACE_ID}}",
+      "name": "production-v2"
+    }
+    ```
+
+    The API requires `scope_kind` and `scope_id`. Use `org`, `tenant`, `workspace`, or `agent`. An agent scope also requires `workspace_id`.
+
+    <Callout icon="code">Reference: [`DeployBundle`](/api/tag/authorization/deploy-bundle)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Apply Rules"
+    Apply rules.cedar to the active workspace as a bundle named "production-v2".
+    ```
+  </Tab>
+</Tabs>
+
+After applying rules, [show the effective rules](#show-effective-rules) to confirm that the new bundle contributes to the expected agents. Gateways pick up the change through [effective Rules caching](/concepts/architecture/authorization-model#effective-policy). Allow time for the next sync before testing requests.
+
+## Show effective Rules
+
+Show the rules that apply to an agent after Dome assembles organization, tenant, workspace, agent, and generated bundles. The result includes a content hash for gateway synchronization and the contributing bundles that formed the [effective Rules](/concepts/architecture/authorization-model#effective-policy).
+
+<Callout icon="key">Requires `rules.view`.</Callout>
+
+<Tabs items={["CLI","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome rules show --agent data-pipeline
+    ```
+
+    Omit `--agent` to show the effective rules for every agent in the active workspace.
+
+    <Callout icon="terminal">Reference: [`dome rules show`](/cli/govern/rules#show-rules)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    GET /v1/agents/{{AGENT_ID}}/policies?workspace_id={{WORKSPACE_ID}}
+    ```
+
+    The API uses `policy` in this endpoint name and response schema. The returned `effective_policy` is the assembled effective rule set.
+
+    <Callout icon="code">Reference: [`GetAgentEffectivePolicy`](/api/tag/agents/get-agent-effective-policy)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Show effective Rules"
+    Show every Rule that applies to "data-pipeline" and identify the contributing bundles.
+    ```
+  </Tab>
+</Tabs>
+
+## Get active Rules at a scope
+
+Get the currently active user-authored rules at one scope when you need that scope's files rather than the assembled [effective rules](#show-effective-rules).
+
+<Callout icon="key">Requires `rules.view`.</Callout>
+
+<Tabs items={["MCP","API","Agent"]}>
+  <Tab value="MCP">
+    Tool: `dome_rules_get_active`
+
+    ```json
+    {
+      "scope_kind": "workspace",
+      "scope_id": "{{WORKSPACE_ID}}"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_rules_get_active`](/reference/mcp/rules#rules-get-active)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    GET /v1/rules/active?scope_kind=workspace&scope_id={{WORKSPACE_ID}}
+    ```
+
+    <Callout icon="code">Reference: [`GetBundle`](/api/tag/authorization/get-bundle)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Get active Rules at a scope"
+    Get the active user-authored Rules for the current workspace.
+    ```
+  </Tab>
+</Tabs>
+
+## List Rule history
+
+List deployment history at a scope to retrieve IDs, names, sequence numbers, timestamps, and active status. Use an ID when you [roll back rules](#roll-back-rules).
+
+<Callout icon="key">Requires `rules.view`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome rules list --limit 20
+    ```
+
+    Add `--agent data-pipeline` to list the history for one agent.
+
+    <Callout icon="terminal">Reference: [`dome rules list`](/cli/govern/rules#list-rules)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_rules_list_versions`
+
+    ```json
+    {
+      "scope_kind": "workspace",
+      "scope_id": "{{WORKSPACE_ID}}",
+      "limit": 20
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_rules_list_versions`](/reference/mcp/rules#rules-list-versions)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    GET /v1/rules?scope_kind=workspace&scope_id={{WORKSPACE_ID}}&limit=20
+    ```
+
+    <Callout icon="code">Reference: [`ListBundles`](/api/tag/authorization/list-bundles)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="List Rule history"
+    List the 20 most recent Rule deployments for the active workspace.
+    ```
+  </Tab>
+</Tabs>
+
+## Roll back Rules
+
+Roll back to a historical user-authored bundle when a deployment produces an unexpected authorization result. Rollback creates a new bundle from the selected historical content and preserves the original deployment.
+
+<Callout icon="key">Requires `rules.rollback`.</Callout>
+
+<Callout type="warning">
+Rollback changes the active user-authored rules at the bundle's stored scope. You cannot roll back the currently active bundle or a system-generated bundle.
+</Callout>
+
+Generated bundles (`kind=generated`, labeled by `generator` — allowed resources, Act-As, blocked tools, and similar) appear in deployment history for lineage, but they are not rollback targets. The dashboard hides rollback for those rows. Diffs are scoped to the same lineage (scope + kind + generator). Change generated content through the feature that created it, not by rolling back a user-authored bundle over it.
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome rules rollback {{BUNDLE_ID}}
+    ```
+
+    The bundle ID identifies its scope, so no scope flag is required.
+
+    <Callout icon="terminal">Reference: [`dome rules rollback`](/cli/govern/rules#rollback-rules)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_rules_rollback`
+
+    ```json
+    {
+      "bundle_id": "{{BUNDLE_ID}}"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_rules_rollback`](/reference/mcp/rules#rules-rollback)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /v1/rules/rollback
+    Content-Type: application/json
+
+    {
+      "bundle_id": "{{BUNDLE_ID}}"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`RollbackBundle`](/api/tag/authorization/rollback-bundle)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Roll back Rules"
+    Roll back to Rule bundle "{{BUNDLE_ID}}" and confirm the new active bundle.
+    ```
+  </Tab>
+</Tabs>
+
+After rollback, [show the effective rules](#show-effective-rules) to confirm that the restored content contributes at the expected scope.
+
+## Delete Rules
+
+Delete the active user-authored rules at a scope when that scope should no longer contribute custom rules. Deletion preserves bundle history for later inspection.
+
+<Callout icon="key">Requires `rules.deploy`.</Callout>
+
+<Callout type="warning">
+Deleting rules removes the active authorization contribution from the selected scope. Broader, narrower, and system-generated rules can still apply.
+</Callout>
+
+<Tabs items={["API","Agent"]}>
+  <Tab value="API">
+    ```http
+    DELETE /v1/rules?scope_kind=workspace&scope_id={{WORKSPACE_ID}}
+    ```
+
+    <Callout icon="code">Reference: [`DeleteRules`](/api/tag/authorization/delete-rules)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Delete Rules"
+    Delete the active user-authored Rules from the current workspace while preserving bundle history.
+    ```
+  </Tab>
+</Tabs>
+
+After deletion, [list rule history](#list-rule-history) and [show effective rules](#show-effective-rules) to confirm the resulting authorization state.
+
+## Generate starter Rules
+
+<Callout type="warning">
+`dome rules generate` is deprecated. It writes a static discovery permit and a commented tool-call example, and `--from-tools` does not change the output. Prefer [writing rules](#write-rules) or the [Rules assistant](/govern/rules/assistant).
+</Callout>
+
+Generate a static Cedar template with one active rule that lets every agent discover available tools. The template also includes a commented example for permitting calls to one MCP tool.
+
+The generated rules do not permit tool calls, inspect registered tools, or change active rules. The `--from-tools` flag produces the same static template.
+
+<Callout icon="key">The MCP tool requires `rules.view`. CLI generation runs locally.</Callout>
+
+<Tabs items={["CLI","MCP","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome rules generate --output starter.cedar
+    ```
+
+    Omit `--output` to print the generated rules to standard output.
+
+    <Callout icon="terminal">Reference: [`dome rules generate`](/cli/govern/rules#generate-rules)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_rules_generate`
+
+    ```json
+    {}
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_rules_generate`](/reference/mcp/rules#rules-generate)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Generate starter Rules"
+    Generate a starter Cedar template with a tool-discovery permit and a commented example for permitting a tool call.
+    ```
+  </Tab>
+</Tabs>
+
+Validate and simulate the generated file before applying it.
+
+## Next steps
+
+- [Rules](/concepts/controls/rules) concept for how authorization decisions work
+- [Rules](/reference/controls/rules) reference for actions and attributes
+- [Draft with the Rules assistant](/govern/rules/assistant) when you prefer natural-language drafts
+- [Simulate Rules](/govern/rules/simulate) to probe decisions and replay history
+- [Authorization model](/concepts/architecture/authorization-model) concept for evaluation semantics

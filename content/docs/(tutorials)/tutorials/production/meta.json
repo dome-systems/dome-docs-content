@@ -1,0 +1,9 @@
+{
+  "pages": [
+    "index",
+    "use-dome-as-an-mcp-gateway",
+    "use-dome-as-a-model-broker",
+    "govern-callers-with-oidc",
+    "deploy-your-agent"
+  ]
+}

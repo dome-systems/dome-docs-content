@@ -1,0 +1,293 @@
+---
+title: Agents
+description: Register agents, issue credentials, allow resources, and manage lifecycle
+---
+
+import { agent } from '@/snippets/glossary';
+
+<p>{agent}</p>
+
+Refer to [Agents](/build/agents) for how to register agents, issue credentials, and manage lifecycle. All tools require workspace context.
+
+## Agents
+
+### dome_agents_list
+
+List registered agents. Returns agent ID, name, and status.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `status` | string | No | filter by status: `active`, `suspended`, `provisioned`, `revoked` |
+| `workspace_id` | string | No | filter by workspace ID (defaults to active workspace) |
+| `limit` | number | No | Maximum results (default: 100) |
+| `offset` | number | No | Pagination offset |
+
+<Callout icon="key">Requires `agents.view`.</Callout>
+
+```json title="Example tool call"
+{
+  "name": "dome_agents_list",
+  "arguments": {
+    "status": "active",
+    "limit": 25
+  }
+}
+```
+
+### dome_agents_get
+
+Get detailed information about a specific agent by ID.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `agent_id` | string | Yes | agent ID (UUID) |
+| `gateway_id` | string | No | gateway ID used to return complete endpoints; required when the agent can access more than one gateway |
+
+<Callout icon="key">Requires `agents.view`.</Callout>
+
+### dome_agents_register
+
+Register a new AI agent on the platform. After registration, create an API key with `dome_agents_create_key`.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | agent name (unique within workspace) |
+| `parent_id` | string | No | Parent agent ID for hierarchical agents |
+| `workspace_id` | string | No | Workspace to register in (defaults to active workspace) |
+| `metadata` | object | No | Key-value metadata |
+| `token_ttl` | string | No | Access-token lifetime for this agent, such as `15m` (`1m`–`24h`). Omit to use the `10m` default |
+| `allowed_pool_names` | array | No | LLM pools the agent may route to. Emits a `permit` against `Dome::LLMModel` matched via `resource.pool == "<name>"` |
+| `allowed_direct_model_names` | array | No | LLM model connections the agent may invoke directly (advanced). Emits a `permit` against `Dome::LLMModel` |
+| `allowed_tools` | array | No | MCP tools the agent may call, each as `connection/tool`. Emits `mcp:call` and `mcp:discover` permits against `Dome::MCPTool` |
+| `allowed_gateway_ids` | array | No | gateway IDs the agent may reach. Emits per-gateway permit rules |
+| `actas_allowed_groups` | array | No | Groups the verified act-as identity may belong to. Emits a `forbid` unless the verified group matches |
+| `actas_allowed_emails` | array | No | Emails the agent may act on behalf of. Emits a `forbid` unless the verified email matches |
+| `actas_allowed_subjects` | array | No | Subjects the agent may act on behalf of. Emits a `forbid` unless the verified subject matches |
+| `actas_method` | string | No | Act-as verification method: `none`, `oidc`, `hmac` |
+| `actas_required` | bool | No | Require act-as header on every request |
+| `actas_provider_id` | string | No | Workspace verification provider ID |
+| `actas_oidc_url` | string | No | Inline OIDC discovery URL |
+| `actas_hmac_secret` | string | No | Inline HMAC shared secret |
+| `actas_config_name` | string | No | Label for agent-specific verification config |
+| `interactive_access` | bool | No | Let allow-listed people sign in through Dome and ride this agent from an MCP client |
+
+<Callout icon="key">Requires `agents.register`. If the request includes a pool, model, tool, gateway, or act-as access setting, it also requires `rules.deploy` because registration generates the agent's rule bundle.</Callout>
+
+```json title="Example tool call"
+{
+  "name": "dome_agents_register",
+  "arguments": {
+    "name": "code-reviewer",
+    "token_ttl": "15m",
+    "metadata": {
+      "team": "platform",
+      "owner": "infra@example.com"
+    }
+  }
+}
+```
+
+### dome_agents_update
+
+Update an existing agent's metadata, token lifetime, allowed resources, or act-as verification config.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `agent_id` | string | Yes | agent ID or name |
+| `metadata` | object | No | Updated key-value metadata |
+| `token_ttl` | string | No | Set the agent's access-token lifetime, such as `15m` (`1m`–`24h`). An empty string resets to the `10m` default |
+| `allowed_pool_names` | array | No | Replace the agent's allowed LLM pool list |
+| `allowed_direct_model_names` | array | No | Replace the agent's allowed direct-model list |
+| `allowed_tools` | array | No | Replace the agent's allowed MCP tool list, each as `connection/tool` |
+| `allowed_gateway_ids` | array | No | Replace the agent's allowed gateway ID list |
+| `actas_allowed_groups` | array | No | Replace the agent's act-as allowed-groups list |
+| `actas_allowed_emails` | array | No | Replace the agent's act-as allowed-emails list |
+| `actas_allowed_subjects` | array | No | Replace the agent's act-as allowed-subjects list |
+| `actas_method` | string | No | Act-as verification method: `none`, `oidc`, `hmac` |
+| `actas_required` | bool | No | Require act-as header on every request |
+| `actas_provider_id` | string | No | Workspace verification provider ID |
+| `actas_oidc_url` | string | No | Inline OIDC discovery URL |
+| `actas_hmac_secret` | string | No | Inline HMAC shared secret |
+| `actas_config_name` | string | No | Label for agent-specific verification config |
+| `interactive_access` | bool | No | Enable or disable interactive MCP access |
+
+<Callout icon="key">Requires `agents.register`. Changing any pool, model, tool, or `actas_allowed_*` field regenerates the agent's rule bundle and additionally requires `rules.deploy`.</Callout>
+
+Interactive access requires at least one exact `actas_allowed_emails` or
+`actas_allowed_subjects` entry. Groups cannot match an interactive user. Their
+traffic spends the agent's quotas, and interactive access cannot be combined
+with device binding.
+
+## Interactive grants
+
+### dome_agents_interactive_grants_list
+
+List people who authorized an MCP client to ride an agent. A platform user sees
+their own grants by default.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `all_users` | bool | No | List every grant in the active workspace; requires `agents.view` |
+| `agent_id` | string | No | filter by agent name or ID; implies `all_users` |
+
+API-key credentials have no personal interactive grants. Use `all_users=true`
+with a workspace context and `agents.view`.
+
+### dome_agents_interactive_grants_revoke
+
+Revoke one grant and all refresh tokens issued beneath it.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `grant_id` | string | Yes | Grant UUID returned by `dome_agents_interactive_grants_list` |
+
+A person may revoke their own grant. Revoking someone else's grant requires
+`agentkeys.manage`.
+
+## Lifecycle
+
+### dome_agents_suspend
+
+Suspend an active agent, preventing it from making requests. Optionally cascade to child agents.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `agent_id` | string | Yes | agent ID (UUID) |
+| `reason` | string | No | Reason for suspension |
+| `cascade` | bool | No | Also suspend child agents (default: `false`) |
+
+<Callout icon="key">Requires `agents.suspend`.</Callout>
+
+```json title="Example tool call"
+{
+  "name": "dome_agents_suspend",
+  "arguments": {
+    "agent_id": "code-reviewer",
+    "reason": "Investigating anomalous behavior",
+    "cascade": true
+  }
+}
+```
+
+### dome_agents_reactivate
+
+Reactivate a previously suspended agent.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `agent_id` | string | Yes | agent ID (UUID) |
+
+<Callout icon="key">Requires `agents.suspend`.</Callout>
+
+### dome_agents_revoke
+
+Permanently revoke an agent. This cannot be undone. Marked destructive.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `agent_id` | string | Yes | agent ID (UUID) |
+| `reason` | string | No | Reason for revocation |
+
+<Callout icon="key">Requires `agents.revoke`.</Callout>
+
+<Callout type="warning">
+  Revocation is permanent and cannot be undone.
+</Callout>
+
+### dome_agents_delete
+
+Permanently delete a revoked agent and all its data. Agent must already be in the revoked state. Marked destructive.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `agent_id` | string | Yes | agent ID (UUID) |
+| `reason` | string | No | Reason for deletion |
+| `cascade` | bool | No | Also delete descendant agents |
+
+<Callout icon="key">Requires `agents.delete`.</Callout>
+
+<Callout type="warning">
+  Hard-delete removes all agent data irreversibly. The agent must be revoked first.
+</Callout>
+
+## Allowed tools
+
+### dome_tools_list
+
+List registered agents and the tools they reach in the active workspace. Only returns agents in `active` or `provisioned` status.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| — | — | — | No parameters |
+
+<Callout icon="key">Requires `agents.view`.</Callout>
+
+## API keys
+
+### dome_agents_create_key
+
+Create a new API key for an agent. Returns the token, selected gateway ID, and complete gateway endpoints once — save the token immediately.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `agent` | string | Yes | agent name |
+| `name` | string | Yes | Key name (unique per agent) |
+| `gateway_id` | string | No | gateway ID used to return complete endpoints; required when the agent can access more than one gateway |
+
+<Callout icon="key">Requires `agentkeys.manage`.</Callout>
+
+```json title="Example tool call"
+{
+  "name": "dome_agents_create_key",
+  "arguments": {
+    "agent": "code-reviewer",
+    "name": "production-v1",
+    "gateway_id": "{{GATEWAY_ID}}"
+  }
+}
+```
+
+<Callout type="info">
+  Store the returned key secret securely. It cannot be retrieved after creation — only rotated or revoked.
+</Callout>
+
+### dome_agents_list_keys
+
+List active API keys for an agent.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `agent` | string | Yes | agent name |
+
+<Callout icon="key">Requires `agents.view`.</Callout>
+
+### dome_agents_rotate_key
+
+Rotate an agent's API key — revokes the old secret and issues a new one with the same name. Returns the new token once.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `agent` | string | Yes | agent name |
+| `key_name` | string | Yes | Name of the key to rotate |
+| `gateway_id` | string | No | gateway ID used to return complete endpoints; required when the agent can access more than one gateway |
+
+<Callout icon="key">Requires `agentkeys.manage`.</Callout>
+
+### dome_agents_revoke_key
+
+Revoke an agent's API key. The key is no longer usable for authentication.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `agent` | string | Yes | agent name |
+| `key_name` | string | Yes | Name of the key to revoke |
+
+<Callout icon="key">Requires `agentkeys.manage`.</Callout>
+
+## Next steps
+
+Full agent workflows live under Connect. Lifecycle and rules stay one hop away:
+
+- [Register Agents](/build/agents)
+- [Agent Lifecycle](/concepts/agents/agent-lifecycle) concept
+- [Rules](/reference/mcp/rules)

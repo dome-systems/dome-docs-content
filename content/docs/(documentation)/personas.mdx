@@ -1,0 +1,58 @@
+---
+title: Personas
+sidebarTitle: Choose your role
+description: Identify your role and find relevant docs
+---
+
+Pick the persona that matches your job. Each path lists where to start and a hands-on tutorial.
+
+## Developer
+
+Developers own the agent as a workload. They register it, mint credentials, point the client at a gateway, and verify governed calls. They also wire Dome into the application when the agent runs in product code.
+
+- [Agent identity](/concepts/agents/identity) and [lifecycle](/concepts/agents/agent-lifecycle)
+- [Register external agents](/build/agents/external) and issue API keys
+- [Standing or delegated identity](/concepts/identity-patterns) when the agent acts for end users
+- [Develop](/develop) to authenticate, call tools and models, and handle denials
+- [Audit events](/operate/audit) to confirm outcomes
+
+Hands-on: [Developer tutorial](/tutorials/role/developer).
+
+## Security
+
+Security owns what each agent may call, what content may leave a backend, and whether the audit trail can prove it. They author and simulate rules, apply guards, investigate denials, and export evidence.
+
+- [Authorization model](/concepts/architecture/authorization-model) and [scope hierarchy](/concepts/platform/scopes)
+- [Rules](/govern/rules), [simulate](/govern/rules/simulate), and [Guards](/govern/guards)
+- [Quotas](/govern/quotas) when spend is a security control
+- [Audit events](/operate/audit) and [Export Data](/manage/export)
+
+Hands-on: [Security tutorial](/tutorials/role/security).
+
+## Operator
+
+Operators own tool and model connections, gateways, grants, and the live signals that show the platform is healthy. They attach backends, expose gateways, grant agents access, and triage live traffic.
+
+- [Prepare environments](/manage/environments) and [scope hierarchy](/concepts/platform/scopes)
+- [Tools](/connect/tools), [models](/connect/models), and [Gateways](/build/gateways)
+- [Stream Live Events](/operate/observe)
+- [Settings](/manage/settings) and [Integrations](/operate/integrations)
+
+Hands-on: [Operator tutorial](/tutorials/role/operator).
+
+## Platform admin
+
+Platform admins own tenancy, membership, who may administer Dome, and whether the estate stays operable and auditable as teams grow. They set access boundaries, prepare environments, and run export for oversight.
+
+- [Scopes](/concepts/platform/scopes) and [permissions](/concepts/platform/permissions)
+- [Manage access](/manage/access) and [Prepare environments](/manage/environments)
+- [Stream Live Events](/operate/observe) and [Export Data](/manage/export)
+- [Settings](/manage/settings) and [Integrations](/operate/integrations)
+
+Hands-on: [Platform Admin tutorial](/tutorials/role/platform-admin).
+
+## Next steps
+
+- [Tutorials](/tutorials) — Get Started and Role track
+- [What is Dome?](/what-is-dome) if you want the product overview first
+- [Setup AI assistant](/setup-ai-assistant) if you want an MCP-connected assistant while you work

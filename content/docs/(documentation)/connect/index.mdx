@@ -1,0 +1,42 @@
+---
+title: Connect
+sidebarTitle: Overview
+description: Configure callers, tools, models, and pools for governed AI traffic
+---
+
+**Connect** attaches callers and AI resources to the runtime surface you built in Dome. Configure tools, models, and pools; Dome stores their upstream credentials, so agents authenticate to Dome rather than to every backend.
+
+## What you connect
+
+<Cards>
+  <Card title="Callers" href="/connect/callers">
+    Configure trusted callers and end-user verification when access depends on the person an agent represents.
+  </Card>
+  <Card title="Tools" href="/connect/tools">
+    Attach MCP servers and related backends as resources a gateway can expose.
+  </Card>
+  <Card title="Models" href="/connect/models">
+    Connect LLM providers and hold their credentials server-side.
+  </Card>
+  <Card title="Pools" href="/connect/pools">
+    Group model connections behind one name with routing and failover.
+  </Card>
+</Cards>
+
+An agent reaches these resources only through a [gateway](/build/gateways) that admits it, and never holds their upstream credentials. [rules](/reference/glossary#rule), [guards](/reference/glossary#guard), and [quotas](/reference/glossary#quota) still decide what the call may do, what content may pass, and how much spend is allowed after admission.
+
+Choose between standing and delegated identity on [Identity Patterns](/concepts/identity-patterns). Refer to [Build](/build) for agents, gateways, and triggers, or [Architecture](/concepts/architecture) for the full request path.
+
+## Typical workflow
+
+1. Add [tools](/connect/tools), [models](/connect/models), and [pools](/connect/pools) when you need a stable name, routing, or failover.
+2. Add those resources to a [gateway](/build/gateways) you created in [Build](/build).
+3. Configure [callers](/connect/callers) or [delegated agents](/build/agents/delegated) when access needs verified end-user identity.
+4. Continue to [Govern](/govern) to define what the agent may do after the gateway admits it.
+
+## Next steps
+
+- [Build](/build) to create agents, gateways, and managed-agent triggers.
+- [Govern](/govern) to authorize actions, inspect content, and cap spend.
+- [Operate](/operate) to investigate audit events, stream live activity, and subscribe external systems.
+- [Develop](/develop) to send credentials, gateway endpoints, and Act-As envelopes from your application.

@@ -1,0 +1,436 @@
+---
+title: Quotas
+sidebarTitle: Set usage limits
+description: Cap governed LLM spend across workspaces, agents, gateways, pools, and models
+---
+
+import { quota } from '@/snippets/glossary';
+
+<p>{quota}</p>
+
+## Overview
+
+The gateway meters token usage on completed calls, prices it at per-model rates, updates spend for the window, and enforces every applicable quota. Limit changes reach the gateway on the next config sync. Refer to [Quotas](/concepts/controls/quotas#when-a-quota-change-takes-effect) concept for how that differs from spend accrual.
+
+Workspace quotas each have a subject, a limit, a reset window, an optional name, and an enabled flag. Subject identity is fixed at create time. Create is insert-only for each subject identity and window pair. Disabled quotas remain listed but are not enforced. Organization and tenant contexts instead use shared usage allowances; see [Set an organization or tenant usage allowance](#set-an-organization-or-tenant-usage-allowance).
+
+The typical workflow is:
+
+1. [Set a quota](#set-a-quota) for the subject that owns the budget.
+2. Optionally [set a gateway quota](#set-a-gateway-quota) when spend should follow a gateway.
+3. [Limit managed-agent runs](#limit-managed-agent-runs) or one [managed-agent run](#limit-one-managed-agents-run) when automation needs an execution budget.
+4. [Update](#update-a-quota), [list](#list-quotas), or [remove](#remove-a-quota) quotas as budgets change.
+
+## Requirements
+
+Before you begin:
+
+- Authenticate to Dome and select a workspace
+- Have the subject already configured (agent, model, pool, gateway, or a subject verified via [Delegated agents](/build/agents/delegated) as needed)
+- Use a plan that allows cost quotas for the workspace. Cost quotas are included on the **Pro** plan. Free workspaces ship with a create limit of zero.
+
+### Permissions
+
+Quota operations require platform permissions. Each operation restates its permission inline.
+
+| Default roles | Permission | Grants |
+|---------------|------------|--------|
+| All workspace roles | `gateways.view` | List quotas |
+| `admin`, `operator` | `gateways.manage` | Create, update, or delete quotas |
+
+## Set a Quota
+
+Create a cap for a workspace, agent, act-as subject, pool, model, gateway (`gateway`), tool, or tool connection. Subject identity cannot change after create. Pass `--disabled` / `disabled` to create a quota that is stored but not enforced until you enable it. Windows are `daily` (UTC midnight) or `monthly` (UTC month start, default `monthly`). Exhaustion behavior and event names are on the [Quotas](/reference/controls/quotas) reference.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+In the dashboard, open **models → Cost quotas**, choose the subject and target, set the USD limit and window, then save. Model quotas can cover a model globally or only within a selected pool, with an optional per-caller toggle.
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash title="Workspace monthly limit"
+    dome quotas set \
+      --subject workspace \
+      --limit 5000 \
+      --window monthly \
+      --name workspace-monthly
+    ```
+
+    ```bash title="Agent daily limit"
+    dome quotas set \
+      --subject agent \
+      --agent <agent-id> \
+      --limit 25 \
+      --window daily
+    ```
+
+    ```bash title="Pool monthly limit"
+    dome quotas set \
+      --subject pool \
+      --pool production \
+      --limit 2500 \
+      --window monthly
+    ```
+
+    ```bash title="Model budget within a pool"
+    dome quotas set \
+      --subject model \
+      --model claude-sonnet \
+      --pool production \
+      --limit 1000 \
+      --window monthly
+    ```
+
+    | Flag | Required | Description |
+    |------|:--------:|-------------|
+    | `--subject` | Yes | `workspace`, `agent`, `act-as`, `pool`, `model`, `gateway`, or `tool` |
+    | `--limit` | Yes | Cap in US dollars (or a whole count when `--unit` is `tokens` or `calls`) |
+    | `--window` | No | `daily` or `monthly` (default `monthly`) |
+    | `--name` | No | Human-readable label |
+    | `--agent` | Conditional | agent id when `--subject agent` |
+    | `--act-as` | Conditional | Verified end-user OIDC `sub` when `--subject act-as` |
+    | `--pool` | Conditional | Pool name when `--subject pool`, or to scope a model quota to one pool |
+    | `--model` | Conditional | model connection name when `--subject model` |
+    | `--gateway` | Conditional | gateway name or id when `--subject gateway` |
+    | `--tool` | Conditional | `<connection>/<tool>` when `--subject tool` |
+    | `--connection` | Conditional | MCP server connection name when `--subject tool-connection` |
+    | `--per-caller` | No | model only: independent budget per agent and verified end user |
+    | `--disabled` | No | Create without enforcement until enabled |
+
+    <Callout icon="terminal">Reference: [`dome quotas set`](/cli/govern/quota#set-quota)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_quotas_set`
+
+    ```json
+    {
+      "subject": "model",
+      "model": "claude-sonnet",
+      "pool": "production",
+      "limit_usd": 1000,
+      "window": "monthly"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_quotas_set`](/reference/mcp/quotas#dome_quotas_set)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /v1/quotas
+    Content-Type: application/json
+
+    {
+      "workspace_id": "<workspace-uuid>",
+      "subject_type": "model",
+      "subject_id": "<model-connection-uuid>",
+      "pool_id": "<pool-uuid>",
+      "limit_micros": 1000000000,
+      "window": "monthly",
+      "name": "sonnet-in-production"
+    }
+    ```
+
+    Limits are micro-USD on the API (`1000000000` is \$1,000.00). `scope` defaults to `total`. Set `per_caller` for per-caller model quotas. For `act_as`, set `subject_key` to the OIDC `sub` instead of `subject_id`.
+
+    <Callout icon="code">Reference: [`CreateLLMQuota`](/api/tag/quotas/create-llm-quota)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Set a model Quota"
+    Create a monthly \$1000 Quota on model "claude-sonnet" within pool "production".
+    ```
+  </Tab>
+</Tabs>
+
+## Limit managed-agent runs
+
+Use a run quota to limit how many managed-agent runs Dome queues in a UTC day or month. A run quota applies to the whole workspace, one managed agent, or one trigger. It limits queued runs, not concurrent work or model spend.
+
+<Tabs items={["CLI","MCP","API"]}>
+  <Tab value="CLI">
+    ```bash title="Limit one trigger to 30 queued runs each month"
+    dome quotas set \
+      --subject trigger \
+      --trigger nightly-triage \
+      --limit 30 \
+      --window monthly
+    ```
+
+    ```bash title="Limit all managed-agent runs in a workspace each day"
+    dome quotas set \
+      --subject workspace \
+      --dimension run \
+      --limit 100 \
+      --window daily
+    ```
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_quotas_set`
+
+    ```json
+    {
+      "subject": "trigger",
+      "trigger": "nightly-triage",
+      "limit_runs": 30,
+      "window": "monthly"
+    }
+    ```
+  </Tab>
+  <Tab value="API">
+    Set `dimension` to `run`, `unit` to `runs`, and `limit_amount` to the allowed queued-run count. Use a `workspace`, `agent`, or `trigger` subject.
+  </Tab>
+</Tabs>
+
+Every admitted run counts when Dome queues it, even when it is later withdrawn before it starts. A zero limit admits no runs. A full quota refuses manual runs before they enter the queue, returns HTTP `429` to webhook senders, and records a refused scheduled occurrence as `quota_exceeded`.
+
+## Limit one managed agent's run
+
+Use a per-run quota to cap the tokens or estimated provider spend for each run of one managed agent. This is separate from run limits such as turns or duration.
+
+```bash title="Cap each run at two million tokens"
+dome quotas set \
+  --subject agent \
+  --agent nightly-triage \
+  --unit tokens \
+  --limit 2000000 \
+  --window per_run
+```
+
+Set `--unit provider_usd` to use estimated upstream model spend instead. The runner stops after a cap is reached, but a single model call can exceed it before Dome receives its final usage.
+
+## Set an organization or tenant usage allowance
+
+Select an organization or tenant context, then use the same `dome quotas` commands without `--subject`. The allowance covers the selected scope as a whole, rather than an individual resource. It can cap all governed traffic, only LLM traffic, or only tool traffic.
+
+```bash title="Tenant-wide daily tool-call allowance"
+dome context use <tenant-context>
+dome quotas set --dimension tool --unit calls --limit 10000 --window daily
+```
+
+```bash title="Organization-wide monthly allowance"
+dome context use <organization-context>
+dome quotas set --dimension all --unit dome_usd --limit 5000 --window monthly
+```
+
+For organization and tenant allowances, `all` defaults to `dome_usd`, `llm` defaults to `tokens`, and `tool` defaults to `calls`. Use `dome quotas list`, `dome quotas update <id>`, and `dome quotas rm <id>` in the same context to manage the allowance. Gateway and resource subject flags do not apply at these levels.
+
+### Set an Act-As Quota
+
+Create a quota for one verified end-user subject. The quota applies only when [Delegated agents](/build/agents/delegated) verification has confirmed that subject on the call.
+
+```bash
+dome quotas set \
+  --subject act-as \
+  --act-as user-123 \
+  --limit 10 \
+  --window daily
+```
+
+### Set a per-caller model Quota
+
+Create a model quota that tracks each agent and each verified end user independently instead of combining their spend.
+
+```bash
+dome quotas set \
+  --subject model \
+  --model gpt-4o \
+  --per-caller \
+  --limit 5 \
+  --window daily
+```
+
+## Set a Gateway Quota
+
+Create a quota that covers all LLM calls routed through a gateway's model pools and direct model connections. Use `--subject gateway` on the same `dome quotas set` command as every other subject.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome quotas set \
+      --subject gateway \
+      --gateway prod-tools \
+      --limit 500 \
+      --window monthly \
+      --name prod-monthly
+    ```
+
+    <Callout icon="terminal">Reference: [`dome quotas set`](/cli/govern/quota#set-quota)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_quotas_set`
+
+    ```json
+    {
+      "subject": "gateway",
+      "gateway": "prod-tools",
+      "limit_usd": 500,
+      "window": "monthly",
+      "name": "prod-monthly"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_quotas_set`](/reference/mcp/quotas#dome_quotas_set)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /v1/quotas
+    Content-Type: application/json
+
+    {
+      "workspace_id": "<workspace-uuid>",
+      "subject_type": "gateway",
+      "subject_id": "<gateway-uuid>",
+      "limit_micros": 500000000,
+      "window": "monthly",
+      "name": "prod-monthly"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`CreateLLMQuota`](/api/tag/quotas/create-llm-quota)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Set a Gateway Quota"
+    Create a monthly \$500 Quota on Gateway "prod-tools" named "prod-monthly".
+    ```
+  </Tab>
+</Tabs>
+
+## Update a Quota
+
+Update a quota's name, USD limit, window, or enabled state. Subject identity cannot change. Create a new quota to cover a different subject.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+Only the fields you pass change. Disable a quota to pause enforcement without deleting its definition or history.
+
+<Tabs items={["CLI","MCP","API"]}>
+  <Tab value="CLI">
+    ```bash
+    dome quotas update <quota-id> \
+      --limit 7500 \
+      --enabled=true
+    ```
+
+    <Callout icon="terminal">Reference: [`dome quotas update`](/cli/govern/quota#update-quota)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_quotas_update`
+
+    ```json
+    {
+      "quota_id": "<quota-id>",
+      "limit_usd": 7500,
+      "enabled": true
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_quotas_update`](/reference/mcp/quotas#dome_quotas_update)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    PATCH /v1/quotas/<quota-uuid>
+    Content-Type: application/json
+
+    {
+      "workspace_id": "<workspace-uuid>",
+      "limit_micros": 7500000000,
+      "enabled": true
+    }
+    ```
+
+    Omitted optional fields keep their current values.
+
+    <Callout icon="code">Reference: [`UpdateLLMQuota`](/api/tag/quotas/update-llm-quota)</Callout>
+  </Tab>
+</Tabs>
+
+## List Quotas
+
+List quotas in the workspace, including disabled ones. Listing returns each quota's id, subject, USD limit, window, and enabled state.
+
+<Callout icon="key">Requires `gateways.view`.</Callout>
+
+<Tabs items={["CLI","MCP","API"]}>
+  <Tab value="CLI">
+    ```bash
+    dome quotas list
+    dome quotas list --gateway prod-tools
+    ```
+
+    Pass `--gateway` to list only the caps on one gateway. Pass `--dimension llm` or `--dimension tool` to list one traffic type.
+
+    <Callout icon="terminal">Reference: [`dome quotas list`](/cli/govern/quota#list-quotas)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_quotas_list`
+
+    ```json
+    {
+      "name": "dome_quotas_list",
+      "arguments": {}
+    }
+    ```
+
+    ```json
+    {
+      "gateway": "prod-tools"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_quotas_list`](/reference/mcp/quotas#dome_quotas_list)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    GET /v1/quotas?workspace_id=<workspace-uuid>
+    ```
+
+    <Callout icon="code">Reference: [`ListLLMQuotas`](/api/tag/quotas/list-llm-quotas)</Callout>
+  </Tab>
+</Tabs>
+
+## Remove a Quota
+
+Remove a quota by id. Listing first is the usual way to obtain the id.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Callout type="warning">
+Remove deletes the quota definition. Disable the quota instead when you need to pause enforcement and keep the record.
+</Callout>
+
+<Tabs items={["CLI","MCP","API"]}>
+  <Tab value="CLI">
+    ```bash
+    dome quotas rm <quota-id>
+    ```
+
+    <Callout icon="terminal">Reference: [`dome quotas rm`](/cli/govern/quota#remove-quota)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_quotas_remove`
+
+    ```json
+    {
+      "quota_id": "<quota-id>"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_quotas_remove`](/reference/mcp/quotas#dome_quotas_remove)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    DELETE /v1/quotas/<quota-uuid>?workspace_id=<workspace-uuid>
+    ```
+
+    <Callout icon="code">Reference: [`DeleteLLMQuota`](/api/tag/quotas/delete-llm-quota)</Callout>
+  </Tab>
+</Tabs>
+
+## Next steps
+
+- [Quotas](/concepts/controls/quotas) concept for how spend caps work
+- [Quotas](/reference/controls/quotas) reference for subjects, windows, and event names
+- [Pools](/connect/pools) for routing strategies and failover
+- [Delegated agents](/build/agents/delegated) so Act-As quotas match live verified subjects
+- [Models](/connect/models) for the models and pools a quota can target

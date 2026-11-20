@@ -1,0 +1,26 @@
+---
+title: dome integrations
+description: List integrations connected to the active workspace
+---
+
+`dome integrations` lists the catalog integrations configured in the active workspace. Their slugs or IDs identify destinations for commands such as [`dome audit siem enable`](/cli/operate/audit#siem).
+
+| Command | |
+|---------|---|
+| [List integrations](#list-integrations) | `dome integrations list` |
+
+Alias: `dome integration`.
+
+## List integrations
+
+```bash
+dome integrations list
+```
+
+List each connected integration's slug, display name, ID, connection date, and most recently observed status. Requires `integrations.view`.
+
+`Connected` means Dome can reach the destination with its configured credentials. `Invalid credentials` means the destination rejected them; update the credential and reconnect. `Unreachable` means Dome could not reach the destination; check its URL, network policy, and service availability. Dome refreshes these checks in the background.
+
+A workspace can have at most one instance of each catalog integration, so commands that accept an integration reference can use its slug, such as `datadog`, instead of its UUID.
+
+Connecting an integration requires provider credentials and is available in the dashboard rather than the CLI.

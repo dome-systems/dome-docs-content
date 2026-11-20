@@ -1,0 +1,104 @@
+---
+title: Quotas
+sidebarTitle: Quotas
+description: 'quota subjects, windows, model quota options, and related audit events'
+---
+
+This page lists subject types and exhaustion behavior, reset windows, model quota options, and audit event names.
+
+For how spend caps work, see the [Quotas](/concepts/controls/quotas) concept. To create and manage quotas, see [Set Usage Limits](/govern/quotas).
+
+## Subjects
+
+| Subject | What the quota covers | Exhaustion behavior |
+|---------|-----------------------|---------------------|
+| Workspace | Aggregate governed LLM usage in one workspace | Rejects affected calls with HTTP `429` |
+| agent | Calls made by one agent | Rejects that agent's affected calls with HTTP `429` |
+| Act-as | Calls made under one verified end-user OIDC subject | Rejects that subject's affected calls with HTTP `429` |
+| gateway | Every LLM call routed through one gateway | Rejects calls through that gateway with HTTP `429` |
+| Pool | Every call routed through one model pool | Rejects calls to that pool with HTTP `429` |
+| model | Calls dispatched to one model, globally or within one pool | Removes the exhausted model from pool routing when another member remains; otherwise rejects with HTTP `429` |
+| tool | Calls to one discovered tool on an MCP server connection | Rejects calls to that tool with HTTP `429` |
+| tool connection | Every call to any tool served by one MCP server connection | Rejects calls through that connection with HTTP `429` |
+| trigger | Runs queued by one managed-agent trigger | Refuses a new run before it is queued |
+
+A model quota can also use **per-caller** scope. Each agent and each verified end user then receives an independent budget against that model.
+
+Quota scope is cumulative. A request proceeds only when every applicable limit has remaining budget.
+
+Workspace and agent quotas can cover all governed traffic together, only LLM traffic, or only tool traffic. Act-as quotas can cover LLM or tool traffic. Pools, models, and gateways are LLM-only; tools and tool connections are tool-only.
+
+Run quotas are different from gateway-enforced traffic quotas. They use `dimension=run`, `unit=runs`, and apply only to a workspace, managed agent, or trigger. They cap how many managed-agent runs can enter the queue in a day or month.
+
+## Organization and tenant allowances
+
+At an organization or tenant context, quotas are **usage allowances**, rather than a budget for one resource. An allowance caps all governed traffic, LLM traffic, or tool traffic at that scope for a daily or monthly window. It applies to the scope itself; it does not take an agent, model, pool, or gateway subject.
+
+Use allowances when a shared organization- or tenant-level traffic budget is the policy you need. Refer to [Set usage limits](/govern/quotas#set-an-organization-or-tenant-usage-allowance) for the CLI workflow.
+
+## Windows
+
+Cost limits are stored in micro-USD. CLI, MCP, and dashboard expose them in USD. On the API, `1000000000` micro-USD is \$1,000.00.
+
+| Window | Reset |
+|--------|-------|
+| `daily` | UTC midnight |
+| `monthly` | Start of each UTC calendar month |
+| `per_run` | One managed-agent run; only LLM quotas on an agent, measured in `tokens` or `provider_usd` |
+
+The default window on create is `monthly`. One quota may exist for each subject identity and window pair.
+
+A `per_run` quota stops a managed-agent run once it reaches its token or estimated-provider-spend budget. It does not constrain ordinary gateway traffic, and one model call can exceed the cap before Dome receives its final usage.
+
+## Run quotas
+
+Run quotas cap queued work rather than model usage. Set one for a workspace, managed agent, or trigger when a schedule, webhook, or manual run must not create more than a fixed number of runs in a UTC day or month.
+
+An admitted run counts when it is queued, including one later withdrawn before it starts. A scheduled occurrence refused for a full quota is recorded as cancelled with `quota_exceeded`; a signed webhook receives HTTP `429`; and a manual run or trigger fire reports the refusal and reset time.
+
+Refer to [Set usage limits](/govern/quotas#limit-managed-agent-runs) for the CLI, MCP, and API workflow.
+
+## Reported usage and write-offs
+
+Quota reads combine the durable usage baseline with recent gateway usage. The reported value excludes recorded non-billable excess before per-caller totals are reduced to the highest-usage caller.
+
+| Unit | Reported usage |
+|------|----------------|
+| Dome USD | Billable usage, clamped to the quota limit |
+| Tokens | Billable usage, clamped to the quota limit |
+| Calls | Billable usage, clamped to the quota limit |
+| Provider USD | Unclamped estimate of the upstream provider bill |
+
+A zero limit means unlimited and is not clamped. Write-offs are tied to the capped subject and window, so deleting and recreating a quota cannot reset prior usage or make excluded excess billable. When several caps cover the same call, billing excludes the excess once rather than once per quota.
+
+## Model Quotas
+
+A model quota can be global, limited to one pool, or per-caller:
+
+| Option | What it counts |
+|--------|----------------|
+| Global | Direct calls and calls through every pool |
+| Within one pool | Only dispatches from that pool |
+| Per-caller | Separate counter for each agent and verified end user |
+
+Exhausted within-pool model quotas spill to another eligible pool member when one remains. Direct exhausted model calls do not spill. Refer to [Quotas](/concepts/controls/quotas#exhaustion-reject-or-spill-inside-a-pool) concept.
+
+## Observability
+
+| Event | When it fires |
+|-------|---------------|
+| `model.call` at `stage=completed` | model call with token counts |
+| The refused operation with `result=denied`, `denial.reason=quota_exceeded` | quota exhaustion |
+| `quota.create` | quota created |
+| `quota.update` | quota updated |
+| `quota.delete` | quota deleted |
+
+## Next steps
+
+Create quotas from the how-to. Routing and Act-As subjects show up in pools and delegated agents:
+
+- [Quotas](/concepts/controls/quotas) concept for cumulative scopes, spillover, and passthrough
+- [Set Usage Limits](/govern/quotas) to create, update, list, and remove quotas
+- [Pools](/connect/pools) for routing strategies and failover
+- [Delegated agents](/build/agents/delegated) for Act-As subjects
+- [Event catalog](/reference/events/catalog) reference for the broader audit catalog

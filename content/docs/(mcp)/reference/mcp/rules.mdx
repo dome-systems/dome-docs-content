@@ -1,0 +1,216 @@
+---
+title: Rules
+description: Control which tools and models each agent is allowed to use
+---
+
+import { rule } from '@/snippets/glossary';
+
+<p>{rule}</p>
+
+Refer to [Rules](/govern/rules) for how to write, validate, simulate, and apply Cedar bundles. All tools require workspace context.
+
+## Rules
+
+### dome_rules_deploy
+
+Deploy a bundle of Cedar authorization rules. Each file has a name and Cedar policy content. Defaults to workspace scope if `scope_kind`/`scope_id` are omitted. Use `dome_agents_assign_policy` for agent-scoped rules.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `files` | array | Yes | Array of `{name, content}` objects — Cedar rule files |
+| `name` | string | No | Optional friendly display name for this rule bundle |
+| `scope_kind` | string | No | Scope kind: `tenant`, `workspace`, `agent` (defaults to `workspace` if a workspace context is active) |
+| `scope_id` | string | No | Scope ID (workspace or agent UUID) |
+
+<Callout icon="key">Requires `rules.deploy`.</Callout>
+
+```json title="Example tool call"
+{
+  "name": "dome_rules_deploy",
+  "arguments": {
+    "files": [
+      {
+        "name": "allow-code-search.cedar",
+        "content": "permit(\n  principal,\n  action == Dome::Action::\"mcp:call\",\n  resource == Dome::MCPTool::\"code-search\"\n);"
+      }
+    ],
+    "name": "allow-code-search"
+  }
+}
+```
+
+<Callout type="info">
+  Cedar policies use a declarative syntax. Use `dome_rules_validate` to check syntax before deploying.
+</Callout>
+
+The response includes an advisory `warnings` array. After a successful
+deploy, the control plane walks every policy for `Dome::MCPTool`
+references and cross-checks each `(connection, tool)` pair against the
+workspace's persisted MCP tool catalog. Mismatches surface as
+`ValidationWarning` entries (file + message) — a typo or rename is
+flagged, but the deploy still succeeds. Warnings are only emitted for
+`workspace`- and `agent`-scoped bundles; `tenant`-scoped deploys skip
+this check because the catalog is workspace-keyed.
+
+### dome_rules_get_active
+
+Get the currently active rule bundle at the specified scope. Defaults to workspace scope. For agent-specific rules, use `scope_kind="agent"` and `scope_id=<agent-id>`, or use `dome_agents_get_policies`.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `scope_kind` | string | No | Scope kind: `tenant`, `workspace`, `agent` |
+| `scope_id` | string | No | Scope ID |
+
+<Callout icon="key">Requires `rules.view`.</Callout>
+
+### dome_rules_validate
+
+Validate Cedar rule files without deploying. Returns errors and warnings.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `files` | array | Yes | Array of `{name, content}` objects — Cedar rule files |
+
+<Callout icon="key">Requires `rules.view`.</Callout>
+
+```json title="Example tool call"
+{
+  "name": "dome_rules_validate",
+  "arguments": {
+    "files": [
+      {
+        "name": "draft.cedar",
+        "content": "permit(\n  principal,\n  action == Dome::Action::\"mcp:call\",\n  resource\n);"
+      }
+    ]
+  }
+}
+```
+
+### dome_rules_generate
+
+Generate starter Cedar authorization rules. Returns a Cedar policy with blanket `mcp:discover` permit and comments explaining how backend tool availability works.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| — | — | — | No parameters |
+
+<Callout icon="key">Requires `rules.view`.</Callout>
+
+## Simulate
+
+### dome_rules_simulate
+
+Simulate an authorization decision against the active rules without actually performing the action.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `agent_id` | string | Yes | agent ID (or name — resolved to UUID) to simulate as the caller |
+| `action` | string | Yes | Action to evaluate (e.g., `mcp:call`, `mcp:discover`) |
+| `resource` | string | Yes | Resource identifier |
+| `resource_type` | string | Yes | Resource type: `mcp_tool`, `llm_model`, `resource` |
+| `context` | object | No | Additional context key-value pairs |
+| `actas_sub` | string | No | Act-as subject identifier (end-user the agent acts on behalf of) |
+| `actas_email` | string | No | Act-as email |
+| `actas_roles` | string | No | Act-as roles (comma-separated) |
+| `actas_groups` | string | No | Act-as groups (comma-separated) |
+
+<Callout icon="key">Requires `rules.view`.</Callout>
+
+```json title="Example tool call"
+{
+  "name": "dome_rules_simulate",
+  "arguments": {
+    "agent_id": "code-reviewer",
+    "action": "mcp:call",
+    "resource": "mcp_tool/code-search",
+    "resource_type": "mcp_tool"
+  }
+}
+```
+
+### dome_rules_simulate_result
+
+Get the result of a rule simulation run. If the simulation is still running, the status is `pending` or `running` — call again after a moment to check for completion.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `id` | string | Yes | Simulation ID |
+
+<Callout icon="key">Requires `rules.view`.</Callout>
+
+## Versions
+
+### dome_rules_list_versions
+
+List historical rule bundle versions at the specified scope. Defaults to workspace scope.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `scope_kind` | string | No | Scope kind: `tenant`, `workspace`, `agent` |
+| `scope_id` | string | No | Scope ID |
+| `limit` | number | No | Maximum results (default: 20) |
+
+<Callout icon="key">Requires `rules.view`.</Callout>
+
+Returns each version with its bundle ID, name, deploy timestamp, and deployer.
+
+### dome_rules_rollback
+
+Rollback to a previously deployed rule bundle by its ID. The server reads the bundle's scope from the stored row — no `scope_kind`/`scope_id` needed.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `bundle_id` | string | Yes | Bundle ID (UUID) from `dome_rules_list_versions` |
+
+<Callout icon="key">Requires `rules.rollback`.</Callout>
+
+<Callout type="warning">
+  Rollback immediately changes the active rules. All subsequent authorization decisions use the rolled-back bundle.
+</Callout>
+
+## Agent policies
+
+### dome_agents_assign_policy
+
+Deploy Cedar rules scoped to a specific agent. These rules are evaluated in addition to workspace-level rules. Cedar `forbid` at workspace scope overrides `permit` at agent scope.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `agent_id` | string | Yes | agent ID to assign rules to |
+| `files` | array | Yes | Array of `{name, content}` objects — Cedar rule files |
+
+<Callout icon="key">Requires `rules.deploy`.</Callout>
+
+```json title="Example tool call"
+{
+  "name": "dome_agents_assign_policy",
+  "arguments": {
+    "agent_id": "code-reviewer",
+    "files": [
+      {
+        "name": "agent-policy.cedar",
+        "content": "permit(\n  principal,\n  action == Dome::Action::\"mcp:call\",\n  resource == Dome::MCPTool::\"code-search\"\n);"
+      }
+    ]
+  }
+}
+```
+
+### dome_agents_get_policies
+
+Get the Cedar rules currently assigned to a specific agent (agent-scope only; does not include inherited workspace/tenant/org rules). To see workspace rules, use `dome_rules_get_active`.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `agent_id` | string | Yes | agent ID |
+
+<Callout icon="key">Requires `rules.view`.</Callout>
+
+## Next steps
+
+Write and simulate from Govern. Evaluation semantics and Cedar catalogs sit under Concepts and Reference:
+
+- [Authorize Access](/govern/rules)
+- [Authorization Model](/concepts/architecture/authorization-model) concept
+- [Rules](/reference/controls/rules) reference

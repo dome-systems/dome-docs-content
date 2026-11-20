@@ -1,0 +1,401 @@
+---
+title: Glossary
+description: "Concise definitions for Dome's core entities and terms, with links to full coverage"
+---
+
+{/*
+  Definitions below are imported from /snippets/glossary.mdx — the shared source
+  of truth also used as the opening intro on matching concept and usage pages
+  (and in glossary tooltips). Edit the snippet, not a local copy here.
+*/}
+
+The core terms you'll meet across Dome, each with a one-line definition and a link to the page that covers it in depth.
+
+import {
+  access,
+  accessGrant,
+  actAs,
+  agent,
+  externalAgent,
+  interactiveAgent,
+  agentIdentity,
+  agentLifecycle,
+  managedAgent,
+  trigger,
+  agentRegistry,
+  apiKey,
+  auditEvent,
+  authorizationModel,
+  caller,
+  cedar,
+  cedarAssistant,
+  controlPlane,
+  dataExport,
+  dataPlane,
+  delegatedAgent,
+  effectiveRules,
+  egressHeader,
+  environment,
+  filter,
+  gateways,
+  guard,
+  validator,
+  identityPatterns,
+  interactiveOAuth,
+  integrations,
+  llmGateway,
+  membership,
+  modelBroker,
+  modelConnection,
+  modelPool,
+  organization,
+  permissions,
+  platformApiKey,
+  quota,
+  resource,
+  rule,
+  ruleBundle,
+  scope,
+  settings,
+  simulation,
+  standingIdentity,
+  streamLiveEvents,
+  tenant,
+  tool,
+  toolsGateway,
+  verificationProvider,
+  webhook,
+  workspace,
+} from '@/snippets/glossary';
+
+### Access
+
+<p>{access}</p>
+
+**Related:** [Manage access](/manage/access) · [Permissions](/concepts/platform/permissions) concept
+
+### Access grant
+
+<p>{accessGrant}</p>
+
+**Related:** [Architecture](/concepts/architecture#gateways) concept · [Gateways](/build/gateways)
+
+### Act-as
+
+<p>{actAs}</p>
+
+**Related:** [Delegated agents](/build/agents/delegated) · [Identity Patterns](/concepts/identity-patterns) concept
+
+### Agent
+
+<p>{agent}</p>
+
+**Related:** [Agents](/concepts/agents) concept · [Agent Identity](/concepts/agents/identity) concept · [Agents](/build/agents)
+
+### Agent identity
+
+<p>{agentIdentity}</p>
+
+**Related:** [Agent Identity](/concepts/agents/identity) concept · [Agents](/build/agents) · [Identity Patterns](/concepts/identity-patterns) concept
+
+### External agent
+
+<p>{externalAgent}</p>
+
+**Related:** [Agents](/build/agents) · [Agents](/concepts/agents) concept
+
+### Interactive agent
+
+<p>{interactiveAgent}</p>
+
+**Related:** [Interactive access](/build/gateways/interactive-mcp-access) · [Agents](/concepts/agents) concept
+
+### Agent lifecycle
+
+<p>{agentLifecycle}</p>
+
+**Related:** [Agent lifecycle](/concepts/agents/agent-lifecycle) concept · [Agents](/build/agents)
+
+### Managed agent
+
+<p>{managedAgent}</p>
+
+**Related:** [Managed agents](/build/agents/managed) · [Managed agents](/reference/entities/managed-agents)
+
+### Trigger
+
+<p>{trigger}</p>
+
+**Related:** [Managed agents](/build/agents/managed) · [Triggers](/reference/entities/triggers)
+
+### Agent Registry
+
+<p>{agentRegistry}</p>
+
+**Related:** [Agents](/concepts/agents) concept · [Agents](/build/agents) · [Architecture](/concepts/architecture) concept
+
+### API key
+
+<p>{apiKey}</p>
+
+**Related:** [Agent Identity](/concepts/agents/identity) concept · [Agents](/build/agents)
+
+### Audit event
+
+<p>{auditEvent}</p>
+
+**Related:** [Audit events](/concepts/audit) concept · [Audit events](/operate/audit)
+
+### Authorization model
+
+<p>{authorizationModel}</p>
+
+**Related:** [Authorization Model](/concepts/architecture/authorization-model) concept · [Rules](/govern/rules) · [Rules](/reference/controls/rules) reference
+
+### Caller
+
+<p>{caller}</p>
+
+**Related:** [Callers](/connect/callers) · [Delegated agents](/build/agents/delegated) · [Identity Patterns](/concepts/identity-patterns) concept
+
+### Cedar
+
+<p>{cedar}</p>
+
+**Related:** [Authorization Model](/concepts/architecture/authorization-model) concept · [Rules](/govern/rules)
+
+### Control plane
+
+<p>{controlPlane}</p>
+
+**Related:** [Architecture](/concepts/architecture) concept · [Data plane](/concepts/architecture/dataplane) concept
+
+### Data plane
+
+<p>{dataPlane}</p>
+
+**Related:** [Data plane](/concepts/architecture/dataplane) concept · [Architecture](/concepts/architecture#how-requests-move-through-dome) concept
+
+### Delegated agents
+
+<p>{delegatedAgent}</p>
+
+**Related:** [Delegated agents](/build/agents/delegated) · [Identity Patterns](/concepts/identity-patterns) concept · [Act-as](/reference/glossary#act-as)
+
+### Effective Rules
+
+<p>{effectiveRules}</p>
+
+**Related:** [Rules](/concepts/controls/rules) concept · [Authorize Access](/govern/rules) · [Authorization Model](/concepts/architecture/authorization-model) concept
+
+### Egress header
+
+<p>{egressHeader}</p>
+
+**Related:** [Tools](/concepts/resources/tools) concept · [Tools](/connect/tools)
+
+### Environment
+
+<p>{environment}</p>
+
+**Related:** [Prepare environments](/manage/environments) · [Scope hierarchy](/concepts/platform/scopes) concept
+
+### Export
+
+<p>{dataExport}</p>
+
+**Related:** [Export data](/manage/export) · [Audit events](/operate/audit)
+
+### Filter
+
+<p>{filter}</p>
+
+**Related:** [Guards](/concepts/controls/guards) concept · [Configure Guards](/govern/guards)
+
+### Gateways
+
+<p>{gateways}</p>
+
+**Related:** [Gateways](/concepts/gateways) concept · [Gateways](/build/gateways)
+
+### Guard
+
+<p>{guard}</p>
+
+**Related:** [Guards](/concepts/controls/guards) concept · [Configure Guards](/govern/guards) · [Guards](/reference/controls/guards) reference
+
+### Identity patterns
+
+<p>{identityPatterns}</p>
+
+**Related:** [Identity Patterns](/concepts/identity-patterns) concept · [Delegated agents](/build/agents/delegated)
+
+### Interactive OAuth
+
+<p>{interactiveOAuth}</p>
+
+**Related:** [Identity Patterns](/concepts/identity-patterns) concept · [Agents CLI](/cli/build/agents#interactive-access) · [Interactive grant MCP tools](/reference/mcp/agents#interactive-grants)
+
+### Integrations
+
+<p>{integrations}</p>
+
+**Related:** [Integrations](/operate/integrations)
+
+### LLM gateway
+
+<p>{llmGateway}</p>
+
+**Related:** [LLM gateway](/concepts/gateways/llm-gateway) concept · [Data plane](/concepts/architecture/dataplane) concept · [Model Broker](/reference/glossary#model-broker)
+
+### Membership
+
+<p>{membership}</p>
+
+**Related:** [Architecture](/concepts/architecture#gateways) concept · [Gateways](/build/gateways)
+
+### Model Broker
+
+<p>{modelBroker}</p>
+
+**Related:** [Models](/connect/models) · [LLM gateway](/concepts/gateways/llm-gateway) concept · [Architecture](/concepts/architecture) concept
+
+### Model connection
+
+<p>{modelConnection}</p>
+
+**Related:** [Models](/concepts/resources/models) concept · [Models](/connect/models) · [LLM gateway](/concepts/gateways/llm-gateway) concept
+
+### Organization
+
+<p>{organization}</p>
+
+**Related:** [Scope hierarchy](/concepts/platform/scopes) concept
+
+### Permissions
+
+<p>{permissions}</p>
+
+**Related:** [Permissions](/concepts/platform/permissions) concept · [Manage access](/manage/access)
+
+### Platform API key
+
+<p>{platformApiKey}</p>
+
+**Related:** [Manage access](/manage/access) · [Permissions](/concepts/platform/permissions) concept
+
+### Pool
+
+<p>{modelPool}</p>
+
+**Related:** [Pools](/concepts/resources/model-pools) concept · [Pools](/connect/pools) · [LLM gateway](/concepts/gateways/llm-gateway) concept
+
+### Quota
+
+<p>{quota}</p>
+
+**Related:** [Quotas](/concepts/controls/quotas) concept · [Set Usage Limits](/govern/quotas) · [Architecture](/concepts/architecture#quotas) concept
+
+### Resource
+
+<p>{resource}</p>
+
+**Related:** [Resources](/concepts/resources) concept · [Architecture](/concepts/architecture#resources) concept · [Connect](/connect)
+
+### Rule
+
+<p>{rule}</p>
+
+**Related:** [Rules](/govern/rules) · [Authorization Model](/concepts/architecture/authorization-model) concept
+
+### Rule bundle
+
+<p>{ruleBundle}</p>
+
+**Related:** [Rules](/govern/rules)
+
+### Rules assistant
+
+<p>{cedarAssistant}</p>
+
+**Related:** [Rules assistant](/govern/rules/assistant) · [Rules](/govern/rules)
+
+### Scope
+
+<p>{scope}</p>
+
+**Related:** [Scope hierarchy](/concepts/platform/scopes) concept
+
+### Settings
+
+<p>{settings}</p>
+
+**Related:** [Configure platform](/manage/settings)
+
+### Simulation
+
+<p>{simulation}</p>
+
+**Related:** [Simulate rules](/govern/rules/simulate) · [Rules](/govern/rules)
+
+### Standing identity
+
+<p>{standingIdentity}</p>
+
+**Related:** [Identity Patterns](/concepts/identity-patterns) concept · [Agents](/build/agents)
+
+### Stream Live Events
+
+<p>{streamLiveEvents}</p>
+
+**Related:** [Stream Live Events](/operate/observe) · [Audit events](/concepts/audit) concept · [Event catalog](/reference/events/catalog) reference
+
+### Tenant
+
+<p>{tenant}</p>
+
+**Related:** [Scope hierarchy](/concepts/platform/scopes) concept
+
+### Tool
+
+<p>{tool}</p>
+
+**Related:** [Tools](/concepts/resources/tools) concept · [Tools](/connect/tools) · [Architecture](/concepts/architecture#resources) concept
+
+### Tools gateway
+
+<p>{toolsGateway}</p>
+
+**Related:** [Tools gateway](/concepts/gateways/tools-gateway) concept · [Data plane](/concepts/architecture/dataplane) concept
+
+### Validator
+
+<p>{validator}</p>
+
+**Related:** [Guards](/concepts/controls/guards) concept · [Configure Guards](/govern/guards#validators) · [Guards](/reference/controls/guards#validators) reference
+
+### Verification provider
+
+<p>{verificationProvider}</p>
+
+**Related:** [Delegated agents](/build/agents/delegated) · [Identity Patterns](/concepts/identity-patterns) concept
+
+### Webhook
+
+<p>{webhook}</p>
+
+**Related:** [Webhooks](/operate/webhooks) · [Webhooks](/concepts/audit/webhooks) concept
+
+### Workspace
+
+<p>{workspace}</p>
+
+**Related:** [Scope hierarchy](/concepts/platform/scopes) concept
+
+## Next steps
+
+Definitions stay short on purpose. Concepts carry the full model:
+
+- [Core Concepts](/concepts) for how Dome's pieces fit together
+- [What is Dome?](/what-is-dome) for platform purpose
+- [Quickstart](/quickstart) to register an agent and verify governed traffic

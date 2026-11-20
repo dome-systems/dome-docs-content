@@ -1,0 +1,36 @@
+---
+title: November 5, 2026
+description: 'Model dependencies, integrations, and verification updates released November 5, 2026.'
+date: '2026-11-05'
+---
+
+## Model connections and integrations
+
+- See what depends on a model connection or pool, including managed agents, granted agents, gateways, and pools, with `dome models usage` or `dome models pool usage` in CLI v1.7.0.
+- Move dependent agents to another model connection or pool as part of a delete with `--reassign-to` on `dome models rm` or `dome models pool rm`, or delete without moving them.
+- Rename a model connection or pool and the managed agents that run on it now stay pointed at the new name.
+- See each integration's last observed connection status, such as Connected, Invalid credentials, or Unreachable, on its page, the catalog, and the audit overview and Export menu.
+- Check connection status in the STATUS column of `dome integrations list`, which replaces CONNECTED. Dome re-checks credentials in the background after you connect or edit an integration.
+- Resume a scheduled audit export that stopped after failing for 72 hours or losing its destination. The export dialog says why it stopped.
+
+## Verification providers and sign-in
+
+- Require your Google Workspace domain as the `hd` claim on Google verification providers. Existing ones without `hd` stop verifying and show Inactive: needs hd until you add it.
+- Point an agent's act-as settings at a verification provider that requires `hd` instead of Google's issuer. Add the claim with `--oidc-required-claim hd=<your domain>`.
+- Deleting an act-as verification provider now works however many agents use it. Pinned agents and defaulting workspaces, tenants, and organizations move to their next default.
+- Stay signed in on your first browser or computer when you sign in on another; each device keeps its own session.
+- Run `dome auth login` again without leaving the previous session active; it now signs out the login it replaces on the same machine.
+- The Dome MCP server now refuses a malformed value for an optional setting instead of silently clearing it, and passing `null` leaves a setting unchanged.
+
+## Organizations and SSO
+
+- Organizations Dome sets up for you now start with auto-join off for their email domain. Invite people, or turn it on under Single Sign-On → Domains.
+- Renaming your organization now also updates the name in the single sign-on setup portal and on sign-in screens. On Team and Enterprise plans.
+- See when the Single Sign-On page's domain list comes from a recent rather than fresh identity provider check, and check again. On Team and Enterprise plans.
+- Find an audit log entry each time Dome links one of your domains to your identity provider's record of it. On Team and Enterprise plans.
+- Organization exports now work on every plan, including organizations without custom SSO.
+
+## Triggers
+
+- Read trigger lists in pages so they stay fast in workspaces with many triggers; `dome triggers list` still prints every trigger. Preview on all plans.
+- Update older Dome CLI, MCP server, and dashboard versions, which are refused once a workspace holds more than 500 triggers. Preview on all plans.

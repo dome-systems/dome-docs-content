@@ -1,0 +1,14 @@
+{
+  "pages": [
+    "index",
+    "architecture",
+    "identity-patterns",
+    "agents",
+    "resources",
+    "gateways",
+    "controls",
+    "platform",
+    "audit",
+    "integrations"
+  ]
+}

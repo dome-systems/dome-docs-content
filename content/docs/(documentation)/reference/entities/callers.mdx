@@ -1,0 +1,82 @@
+---
+title: Callers
+sidebarTitle: Callers
+description: Caller identity keys, verified claims, activity counters, list filters, and erasure behavior
+---
+
+This page lists the fields and projection behavior of a Caller record. A Caller is one verified end-user identity observed behind delegated agent traffic in a workspace.
+
+Refer to [Callers](/connect/callers) to configure verification providers and inspect the registry. Callers cannot be created directly.
+
+## Identity
+
+A Caller is keyed by:
+
+```text
+workspace + verification provider + subject
+```
+
+The same `sub` verified by two providers produces two Caller records because Dome cannot assume the providers identify the same person. Inline material, `none`, and device-bound verification use an internal provider identity for the same reason.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | UUID | Stable Caller record identifier |
+| `tenant_id` | UUID | Tenant that contains the workspace |
+| `workspace_id` | UUID | Workspace in which the identity was observed |
+| `sub` | string | Stable subject from the verified Act-As assertion |
+| `email` | string | Most recently verified email |
+| `roles` | list of strings | Most recently verified roles |
+| `groups` | list of strings | Most recently verified groups |
+| `claims_json` | JSON object | Snapshot of additional string claims from the latest assertion |
+| `verification_method` | string | Most recently observed method: `none`, `oidc`, `hmac`, or `bound` |
+| `verification_methods` | list of strings | Every method observed for this Caller |
+| `verification_provider` | string | Provider display name |
+| `verification_provider_id` | UUID | Provider that verified the identity; empty for inline, `none`, or bound identity |
+| `first_seen_at` | timestamp | First accepted delegated activity |
+| `last_seen_at` | timestamp | Most recent accepted delegated activity |
+
+Identity and claims are projected from `caller.identity.set` audit events. Activity is projected from completed model and tool calls carrying the same verified subject.
+
+Interactive OAuth users do not become Callers. Their identity and revocable access belong to interactive grants.
+
+## Activity
+
+| Field | Scope |
+|-------|-------|
+| `llm_calls` | Lifetime completed model calls |
+| `tool_calls` | Lifetime completed tool calls |
+| `llm_tokens` | Lifetime provider-reported input, cache-read, cache-write, output, and reasoning tokens |
+| `agent_count` | Distinct agents the Caller has appeared behind |
+| `agents` | Per-agent activity; returned by Get, not List |
+| `resources` | models and tools used, most recently used first; returned by Get, not List |
+| `monthly` | Current UTC calendar month's calls and provider-reported tokens; returned by Get |
+
+Monthly activity is present only when the Caller was active in the current UTC month. A prior month's accumulator is omitted until new activity resets it. Token totals never use byte-derived estimates, and Caller records do not carry spend.
+
+Each agent and resource detail includes first seen, last seen, calls, tokens where applicable, and the same current-month block. Tool resources always report `0` tokens.
+
+## List behavior
+
+Caller lists are workspace-scoped and return lean rows rather than agent and resource details.
+
+| filter | Match |
+|--------|-------|
+| `search` | Substring of `sub` or `email` |
+| `group` | Exact membership in `groups` |
+| `attribute_key` + `attribute_value` | Exact match in the claims snapshot |
+| `verification_provider_id` | One verification provider |
+
+Pagination is zero-based. The default page size is `50` and the maximum is `200`.
+
+## Erasure
+
+Deleting a Caller erases the projected Caller record and its per-agent activity rows. It does not delete the underlying audit events.
+
+The registry is rebuilt from new evidence, so later delegated traffic carrying the same identity creates the Caller again. Deletion is therefore PII erasure from the operational projection, not a deny-list or an audit-retention operation.
+
+## Related references
+
+- [`dome callers`](/cli/connect/callers) CLI commands
+- [Callers MCP tools](/reference/mcp/callers)
+- [Delegated agents](/build/agents/delegated)
+- [Audit event catalog](/reference/events/catalog)

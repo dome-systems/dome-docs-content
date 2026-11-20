@@ -1,0 +1,186 @@
+---
+title: Prompts
+description: Guided onboarding, tutorial, and adopt flows for the Dome MCP server
+---
+
+MCP prompts are guided flows that ship inside the Dome MCP server. Invoke a prompt from your client and the assistant runs the playbook end to end with `dome_*` tools — registering agents, importing model connections, deploying rules, and proving the path with audit events.
+
+Prompts are always registered. They are visible as soon as your client connects — you do not need an active context to list them.
+
+## Available prompts
+
+| Prompt | When to use it |
+|--------|----------------|
+| `quickstart` | First-time setup. Role-aware bootstrapping that routes you to the matching quickstart for developer, operator, or security. |
+| `tutorial` | Guided end-to-end walkthrough. Builds a governed Python agent from scratch through the gateway with Cedar rules, field classifications, and audit. |
+| `adopt` | Onboard an **existing** codebase. Reads your agent's source, routes its LLM calls through the Dome gateway via egress, and proves it — without changing the agent's logic. |
+
+## Invoking a prompt
+
+In Claude Code, type `/` and select a Dome prompt from the menu:
+
+```
+/dome:quickstart
+/dome:tutorial
+/dome:adopt
+```
+
+Other MCP clients expose prompts through their own UI — see your client's documentation for the invocation syntax. The prompt text is `//go:embed`'d into the `dome` binary, so prompts come along automatically whenever you add the Dome MCP server.
+
+## Adopt
+
+`/dome:adopt`
+
+Route an existing agent's LLM traffic through the Dome gateway without touching its logic. Use this when you already have working code — a Python script, a Node app, an n8n workflow — that calls an LLM provider directly and you want it under Dome governance fast.
+
+### When to use adopt
+
+Use `adopt` for **brownfield** onboarding. It is the counterpart to `quickstart`, which scaffolds a greenfield project.
+
+| You have… | Run… |
+|-----------|------|
+| Nothing yet — you want a starter project | `/dome:quickstart` |
+| A working agent that calls OpenAI/Anthropic/an OpenAI-compatible vendor directly | `/dome:adopt` |
+| A blank workspace and time to learn the platform end-to-end | `/dome:tutorial` |
+
+### What it does
+
+Adopt uses **gateway egress** only. Your agent keeps its existing LLM SDK; the prompt repoints the SDK's base URL at the Dome gateway and swaps its API key for a Dome agent key. The gateway then authorizes every call with Cedar, injects the real provider credential, records the call in audit, and forwards it upstream. The provider never knows Dome is in front of it.
+
+The prompt orchestrates an entire linear flow:
+
+1. Verifies authentication and selects a context.
+2. Lands you in a workspace — or provisions a new one.
+3. Reads your codebase to detect which providers, models, and capabilities (`llm:invoke`, `llm:embed`, `llm:list-models`) it uses.
+4. Presents the plan and stops for **explicit consent** to read each real provider key from the app's environment and store it on the Dome platform.
+5. Imports each provider as a model connection via `dome_models_add`.
+6. Registers an agent and mints its key.
+7. Authors a least-privilege Cedar rule, validates and simulates it before and after deploy, then deploys.
+8. Proposes the exact configuration changes — `OPENAI_BASE_URL`/`ANTHROPIC_BASE_URL` and the new agent key — without editing your source.
+9. Runs a smoke test through the gateway and shows the resulting `model.call` audit event.
+
+You are asked to confirm before secrets are imported, before rules are deployed, and before a real billable call is made.
+
+### Provider-secret consent
+
+Adopt stops at the plan and waits for your **explicit consent** before it touches any secret. The prompt states plainly that completing adoption means:
+
+- Dome **reads each real provider key** (e.g. `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) from the app's environment.
+- Dome **stores that key on the Dome platform** — on hosted Dome, that is Dome-managed infrastructure — in the Dome secret store.
+- The secret is **injected at the gateway on egress** to upstream providers.
+
+The prompt never displays the secret value back to you in chat or in files — it references each key by where it lives (`OPENAI_API_KEY` in `.env`). You must approve both the plan **and** the import-and-store of those specific provider secrets before any mutation runs.
+
+After adoption, the real provider key lives in Dome's secret store and the app holds only a scoped, revocable Dome agent key. Refer to [Security upgrade](#security-upgrade) below.
+
+### Configuration changes adopt proposes
+
+Adopt only changes configuration, never code logic. The exact settings depend on the wire protocol your SDK uses. Below, `{gateway}` is the complete selected gateway URL returned by `dome_agents_create_key`, and `{dome-agent-key}` is the minted key.
+
+<Callout type="info">
+Every line in `.env.dome` is written as an `export` statement. A bare `KEY=value` line sourced without `set -a` sets a *shell* variable that the app's child process never inherits — the overlay silently no-ops, and the app keeps calling the provider directly while *appearing* to work. `export` makes `source .env.dome` self-sufficient.
+</Callout>
+
+<Tabs items={["OpenAI / OpenAI-compatible","Anthropic","Hosted platform (n8n, Zapier)"]}>
+  <Tab value="OpenAI / OpenAI-compatible">
+    ```bash
+    # Append to .env.dome — do not overwrite your real provider key.
+    # Every line is an `export` so `source .env.dome` puts the values in the
+    # environment for the app's child process.
+    export OPENAI_BASE_URL={gateway}/v1
+    export OPENAI_API_KEY={dome-agent-key}
+    ```
+
+    Source the overlay before launching the app:
+
+    ```bash
+    source .env.dome && python agent.py
+    ```
+
+    `python-dotenv`'s `load_dotenv()` does not override variables already in the environment, so the Dome values win over the originals in `.env`. No `set -a` needed.
+  </Tab>
+  <Tab value="Anthropic">
+    ```bash
+    # The Anthropic SDK appends /v1/messages itself
+    export ANTHROPIC_BASE_URL={gateway}
+    export ANTHROPIC_API_KEY={dome-agent-key}
+    ```
+
+    Source the overlay before launching the app:
+
+    ```bash
+    source .env.dome && python agent.py
+    ```
+
+    The Anthropic SDK sends the key as its native `x-api-key` header; the gateway authenticates it the same way it authenticates an OpenAI `Bearer` token.
+  </Tab>
+  <Tab value="Hosted platform (n8n, Zapier)">
+    Set the credential's **base URL** to `{gateway}/v1` (OpenAI) or `{gateway}` (Anthropic) and the **API key** to `{dome-agent-key}` in the platform's credential UI. No file changes.
+  </Tab>
+</Tabs>
+
+### Starter rule
+
+Adopt deploys a deny-by-default Cedar rule that lets the new agent invoke this workspace's models:
+
+```cedar
+// Dome Adopt — starter LLM authorization for {agent-name}
+// Deny-by-default: this agent may invoke only this workspace's models.
+
+permit (
+  principal == Dome::Agent::"{agent-id}",
+  action == Dome::Action::"llm:invoke",
+  resource is Dome::LLMModel
+);
+
+permit (
+  principal == Dome::Agent::"{agent-id}",
+  action == Dome::Action::"llm:count-tokens",
+  resource is Dome::LLMModel
+);
+```
+
+`resource is Dome::LLMModel` scopes the permit to this workspace's model connections. Pin to a single connection with `resource == Dome::LLMModel::"{connection-name}"`. Add `"llm:embed"` or `"llm:list-models"` permits if your codebase uses them.
+
+<Callout type="warning">
+Deploying a rule bundle **replaces** the active workspace bundle — it does not append. For an existing workspace that already has rules (e.g. a baseline `mcp:discover` / `mcp:call` permit), adopt reads the active bundle first with `dome_rules_get_active` and deploys a bundle that includes the existing files plus the new LLM rule. Otherwise unrelated permits silently drop.
+</Callout>
+
+### Security upgrade
+
+After adoption, the real provider key (`sk-...`) lives in Dome's secret store. The app holds only a scoped, revocable Dome agent key. Rotate or revoke without touching the app, and remove the redundant copies from your local `.env` as a hardening follow-up.
+
+### Limits
+
+- **Base-URL override required.** Adopt works wherever the SDK's base URL is configurable — raw scripts, n8n, most LLM SDKs. Fully-hosted runtimes that hardcode the upstream URL cannot be reached by gateway egress; the prompt detects this and stops rather than half-finishing.
+- **No source edits.** Adopt will not insert authorization calls, wrap functions, or add SDK dependencies. If your agent's value requires editing its logic to govern, that is out of scope for this flow.
+- **Real, billable smoke test.** The final step makes an actual call upstream to prove the gateway path end-to-end. Adopt uses a small `max_tokens` value.
+
+## Quickstart
+
+`/dome:quickstart`
+
+Role-aware bootstrapping. Detects your context's role (developer, operator, security) and routes the assistant to the matching `dome://quickstart/<level>-<role>` resource. Use it the first time you connect the MCP server.
+
+## Tutorial
+
+`/dome:tutorial`
+
+Guided end-to-end walkthrough that builds a governed Python agent from scratch. The assistant creates a workspace, registers an agent, deploys Cedar rules with field classifications, writes a Python script that calls MCP servers through the Dome gateway, and shows the resulting audit trail. Use it when you have a blank workspace and want to see every Dome capability exercised once.
+
+## Next steps
+
+<Cards>
+  <Card title="MCP server reference" href="/reference/mcp">
+    Every `dome_*` tool the prompts orchestrate, with parameter schemas.
+  </Card>
+  <Card title="LLM gateway" href="/connect/pools">
+    How gateway egress authorizes, injects credentials, and audits LLM calls.
+  </Card>
+  <Card title="Setup AI assistant" href="/setup-ai-assistant">
+    Install the Dome MCP server in Claude Code, Claude Desktop, or any MCP client.
+  </Card>
+  <Card title="Authorization rules" href="/reference/mcp/rules">
+    Author, simulate, and deploy Cedar rules through MCP tools.
+  </Card>
+</Cards>

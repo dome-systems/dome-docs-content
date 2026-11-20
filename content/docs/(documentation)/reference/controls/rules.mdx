@@ -1,0 +1,135 @@
+---
+title: Rules
+sidebarTitle: Rules
+description: Entity types, actions, attributes, constraint forms, and argument keys for Dome rules
+---
+
+This page lists `Dome::*` entity types, actions the gateways set, attributes and argument keys rules can read, and constraint forms. It does not catalog customer-owned `resource.<key>` vocabulary.
+
+Dome rules are based on [Cedar](https://www.cedarpolicy.com/) policies. For how evaluation works, see the [Authorization Model](/concepts/architecture/authorization-model) concept. To write and deploy rules, see [Authorize Access](/govern/rules).
+
+## Entity types
+
+Each request maps to one principal, one action, and one resource. Conditions may also read `context`.
+
+| Entity | Type | Role |
+|--------|------|------|
+| **Principal** | `Dome::Agent` | Authenticated agent. Carries `metadata` and optionally verified `act_as` claims. |
+| **Action** | `Dome::Action` | Operation the gateway set for this request. |
+| **Resource** | `Dome::MCPTool` or `Dome::LLMModel` | Target tool or model. |
+| **Context** | map | Request-time metadata (timestamp, source IP, and related fields) available to `when` / `unless`. |
+
+A specific entity takes the form `Dome::<Type>::"<identifier>"`. An agent's identifier is its UUID. A tool's identifier is `CONNECTION_NAME/TOOL_NAME`.
+
+## Actions
+
+Actions are string literals. There is no separate registration step. The gateway that receives the request sets the action. There is no default action.
+
+| gateway | Action | Wire `resource_type` | Resource entity |
+|---------|--------|----------------------|-----------------|
+| MCP | `mcp:call` | `mcp_tool` | `Dome::MCPTool` |
+| MCP | `mcp:discover` | `mcp_tool` | `Dome::MCPTool` |
+| LLM | `llm:invoke` (chat / completion / responses) | `llm_model` | `Dome::LLMModel` |
+| LLM | `llm:embed` | `llm_model` | `Dome::LLMModel` |
+| LLM | `llm:moderate` | `llm_model` | `Dome::LLMModel` |
+| LLM | `llm:list-models` | `llm_model` | `Dome::LLMModel` |
+| LLM | `llm:count-tokens` (Anthropic pre-flight token counting) | `llm_model` | `Dome::LLMModel` |
+| LLM | `llm:passthrough` (opaque-body forwarding to a `custom` provider) | `llm_model` | `Dome::LLMModel` |
+
+`llm:count-tokens` is distinct from `llm:invoke`, so token counting can be allowed broadly while invocation stays tightly gated. `llm:passthrough` is likewise distinct from `llm:invoke`.
+
+The LLM protocol endpoint catalog lives on the [LLM gateway](/concepts/gateways/llm-gateway#endpoints) concept.
+
+## Constraint forms
+
+Inside the parentheses, a rule names three constraints in order: `principal`, `action`, `resource`.
+
+| Constraint | Available forms | Example |
+|---|---|---|
+| `principal` | Omitted, `is`, `==` | `principal == Dome::Agent::"AGENT_ID"` |
+| `action` | Omitted, `==`, `in` | `action in [Dome::Action::"mcp:call", Dome::Action::"mcp:discover"]` |
+| `resource` | Omitted, `is`, `==` | `resource is Dome::MCPTool` |
+
+An omitted constraint matches every value. `==` matches one entity. `is` matches every entity of one type. `in` with a list matches several actions.
+
+## Principal attributes
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `metadata` | record | Custom key-value pairs set on the agent record |
+| `act_as.sub` | string | End-user ID when act-as is present and verified |
+| `act_as.email` | string | End-user email |
+| `act_as.roles` | set of strings | End-user roles |
+| `act_as.groups` | set of strings | End-user groups |
+| `act_as.claims` | record | Additional customer-defined claims |
+
+`metadata` is present only when the agent record carries at least one pair, so guard reads with `principal has metadata` before dereferencing a key. Act-as attributes are available only when the act-as header is present and verified. Claim names and verification methods for setup are on [Delegated agents](/build/agents/delegated#identity-claims).
+
+## Resource attributes
+
+Reserved structural attributes cannot be overridden.
+
+| Attribute | Type | Source |
+|-----------|------|--------|
+| `type` | string | Resource entity type (`mcp_tool`, `llm_model`) |
+| `name` | string | Resource name (tool or model identifier) |
+| `gateways` | set | gateway IDs that include this resource (stamped at sync from membership) |
+| `<custom>` | string, bool, long, set, record | Any top-level key in the connection's `attributes` JSONB |
+
+The custom attribute namespace is customer-owned. Dome does not define keys such as `pii_certified` or `data_locality`. Those come from whatever your team stores on the connection. A gateway grant can test membership with `resource.gateways.contains("<id>")`. Configure membership on [Gateways](/build/gateways#resource-membership).
+
+Supported value shapes: strings, booleans, whole-number JSON numbers (`Long`), homogeneous sets, and nested records. Fractional numbers, `null`, and mixed-type lists are dropped. Reserved keys (`type`, `name`, `arguments`) are ignored if present in `attributes`.
+
+### LLM-injected attributes
+
+For LLM actions, Dome also injects server-side keys that describe the upstream actually dispatched.
+
+| Attribute | Meaning |
+|-----------|---------|
+| `resource.name` | model or pool name the request asked for. Unchanged by pool resolution. |
+| `resource.resolved_model` | Upstream native model id that will actually be called. |
+| `resource.connection_name` | Resolved connection's name. |
+| `resource.pool` | Pool that routed the call, or absent when the request addressed a connection directly. |
+
+`resolved_model`, `connection_name`, and `pool` win over any same-named key in `attributes`. On failover, each candidate upstream is evaluated against its own attributes and resolved model. Use `resource.pool` to grant every model behind a pool without enumerating members. Direct connection calls leave `resource.pool` unset, so a pool grant does not authorize them. Ingress behavior is on the [LLM gateway](/concepts/gateways/llm-gateway#authorization) concept.
+
+## Per-call arguments
+
+Values that change per call appear as `resource.arguments.<key>`.
+
+| gateway | Keys under `resource.arguments` |
+|---------|---------------------------------|
+| MCP | Top-level keys of the `tools/call` `arguments` object |
+| LLM (chat) | `model`, `stream`, `message_count`, `max_tokens`, `temperature`, `top_p`, `tool_choice`, `tool_names`, `stop_sequences` |
+| LLM (embed) | `model`, `input_count`, `user` |
+
+Guard with `resource has arguments` before reading `resource.arguments.<arg>`. The attribute is absent when the call sends no arguments, an empty object, or a non-object payload. Dereferencing a missing attribute errors the policy out, so the rule does not fire.
+
+Argument values keep their JSON types when they are strings, booleans, whole-number integers, homogeneous lists, or nested records. Fractional numbers (including `temperature` such as `0.7`), `null`, and mixed-type lists are dropped, so `resource.arguments has <key>` returns false for those args. Message bodies and embedding inputs are not surfaced.
+
+`resource.arguments` is distinct from `context`:
+
+- `resource.arguments.*` is what the call carries from the agent.
+- `context.*` is request-time metadata Dome attaches to the evaluation.
+
+By default the audit event for a call does not persist `resource.arguments`, because tool payloads are PII-shaped. Rule evaluation still reads them. Contact support to enable `data.arguments` capture on a workspace.
+
+## Evaluation outcomes
+
+| Situation | Decision |
+|-----------|----------|
+| Any matching `forbid` | Denied |
+| No `forbid`, at least one matching `permit` | Allowed |
+| No rule matches | Denied (default-deny) |
+| Evaluator error, stale policy, or no policy loaded | Denied |
+
+`forbid` always wins over `permit`, regardless of scope. Refer to [Authorization Model](/concepts/architecture/authorization-model) concept for effective policy assembly and fail-closed detail.
+
+## Next steps
+
+Write and simulate against this catalog:
+
+- [Authorization Model](/concepts/architecture/authorization-model) concept for permit/forbid semantics and effective policy
+- [Authorize Access](/govern/rules) to write, validate, simulate, and apply rules
+- [Simulate](/govern/rules/simulate) to probe decisions before deploy
+- [Permissions](/reference/permissions) reference for platform RBAC (separate from rules)

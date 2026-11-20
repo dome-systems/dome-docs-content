@@ -1,0 +1,127 @@
+---
+title: Billing
+sidebarTitle: Billing
+description: Review plan status, usage, seats, and invoices for your organization
+---
+
+Billing covers the organization plan, governed-action usage, seats, invoices, and payment methods. Alerts for past due, limit reached, and scheduled plan changes appear in the dashboard only.
+
+## Overview
+
+Dome meters governed actions from the durable audit trail. Plans include a permanent free SKU and paid tiers with usage caps and platform fees. SIEM streaming and other add-on capabilities depend on plan entitlements.
+
+The typical workflow is:
+
+1. [Check status and usage](#check-status-and-usage) for the active plan and current period.
+2. [Change a plan or workspace quantity](#change-a-plan-or-workspace-quantity) when you need a different SKU or Pro workspace count.
+3. [Manage payment methods and invoices](#manage-payment-methods-and-invoices) for collection.
+
+Card capture completes in the dashboard (or Stripe.js). The CLI can list methods and start setup, but it is not a full card-entry path.
+
+## Requirements
+
+Before you begin:
+
+- Authenticate to Dome with an organization-scoped role that can manage billing
+- Use the dashboard for payment-method capture and billing alert banners
+
+### Permissions
+
+| Default roles | Permission | Grants |
+|---------------|------------|--------|
+| Organization billing admins | `billing.manage` | Status, plans, usage, seats, invoices, plan changes, payment methods |
+
+## Check status and usage
+
+Read the active plan, period usage, and free-tier caps when they apply.
+
+<Callout icon="key">Requires `billing.manage`.</Callout>
+
+<Tabs items={["CLI","Dashboard"]}>
+  <Tab value="CLI">
+    ```bash
+    dome billing status
+    dome billing plans
+    dome billing usage
+    dome usage-caps
+    ```
+
+    `dome usage-caps` is read-only and returns empty for paid orgs.
+
+    <Callout icon="terminal">Reference: [`dome billing`](/cli/manage/billing)</Callout>
+  </Tab>
+  <Tab value="Dashboard">
+    Open **Billing** in the organization settings. Status, usage, and limit banners appear on the billing page and across the dashboard when alerts fire.
+  </Tab>
+</Tabs>
+
+## Change a plan or workspace quantity
+
+Change the SKU or purchased workspace count for the organization. Pro is priced per purchased workspace. Use `change-plan --quantity` when switching to Pro, then use `billing quantity set` to change the purchased count without changing plans. Quantities are absolute targets, not increments.
+
+<Callout icon="key">Requires `billing.manage`.</Callout>
+
+<Tabs items={["CLI","Dashboard"]}>
+  <Tab value="CLI">
+    ```bash
+    dome billing change-plan pro --interval monthly --quantity 5 --dry-run
+    dome billing change-plan pro --interval monthly --quantity 5
+    dome billing quantity
+    dome billing quantity set 8 --dry-run
+    dome billing quantity set 8
+    dome billing cancel --yes
+    ```
+
+    Increasing the purchased workspace count takes effect immediately and is billed now, prorated for the time left in the current period. Reducing it is scheduled for the period end, with no immediate refund; current workspaces remain available until then. Setting the current effective count cancels a scheduled reduction, and a later request replaces an earlier scheduled reduction.
+
+    <Callout icon="terminal">Reference: [`dome billing change-plan`](/cli/manage/billing#change-plan) and [`dome billing quantity set`](/cli/manage/billing#set-workspace-quantity)</Callout>
+  </Tab>
+  <Tab value="Dashboard">
+    Use the billing page to select a plan, adjust the Pro workspace quantity, or cancel. Scheduled downgrades and limit alerts surface as dashboard banners.
+  </Tab>
+</Tabs>
+
+## Manage payment methods and invoices
+
+List invoices and payment methods. Add a card through the dashboard.
+
+<Callout icon="key">Requires `billing.manage`.</Callout>
+
+<Tabs items={["CLI","Dashboard"]}>
+  <Tab value="CLI">
+    ```bash
+    dome billing invoices
+    dome billing payment-methods
+    dome billing contact
+    dome billing contact set --email billing@example.com
+    ```
+
+    <Callout icon="terminal">Reference: [`dome billing invoices`](/cli/manage/billing#list-invoices)</Callout>
+  </Tab>
+  <Tab value="Dashboard">
+    Add or replace payment methods and download invoices from the billing page. Billing alerts (past due, org lock, limit reached, scheduled downgrade) are dashboard-only.
+  </Tab>
+</Tabs>
+
+## Org lock and plan limits
+
+Every org member sees a read-only lock banner when the organization is suspended for billing reasons. Enterprise orgs are never locked for billing.
+
+| Deny reason | Meaning | Recovery |
+|-------------|---------|----------|
+| `trial_expired` | Free trial ended without a paid plan | Add a payment method and switch to a paid plan |
+| `billing_locked` | Paid plan is in dunning (failed charges) | Update the payment method |
+| `subscription_canceled` | Paid plan canceled and reverted to Free | Choose a plan on the billing page |
+| `org_suspended` | Org is locked from mutating operations | Resolve the underlying billing state |
+
+Upgrades apply on the next request. Downgrades and cancellations keep the current plan until the period ends, then the org moves to the target SKU.
+
+On Pro, **purchased** workspaces are the number the organization pays for and **in use** is the number of live workspaces across its tenants. Creating a workspace is refused when it would exceed the purchased count. Deleting a workspace lowers the in-use count, but does not lower the purchased count or the bill automatically. Review `dome billing quantity` or the billing page after deleting workspaces and explicitly schedule a reduction if appropriate. A reduction can never take effect below the number of workspaces the organization still holds.
+
+Downgrading may put existing assets — extra tenants, workspaces, seats, agents, managed agents, or connections — over the target plan's caps. Managed agents consume both the agent cap and their separate managed-agent cap. The dashboard blocks the switch and lists the over-limit resources; remove them first, then retry. Creates that hit a SKU cap return HTTP 429 and emit the refused create operation with `result=denied` and `denial.reason=plan_limit` (see [Denied operations](/operate/audit#denied-operations)). Use `dome usage-caps` to inspect free-tier caps when they apply.
+
+## Next steps
+
+- [Export data](/manage/export#stream-audit-evidence-to-a-siem) for continuous SIEM streaming when your plan includes it
+- [Set usage limits](/govern/quotas) for workspace quotas (runtime spend caps, separate from plan metering)
+- [Manage access](/manage/access) for who can administer the organization

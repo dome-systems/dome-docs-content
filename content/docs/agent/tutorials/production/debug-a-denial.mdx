@@ -1,0 +1,193 @@
+---
+hidden: true
+title: Debug a tool call denial — agent instructions
+sidebarTitle: Debug a tool call denial
+description: "Machine-readable instructions for an AI agent running the Debug a tool call denial tutorial"
+---
+
+These are the instructions an AI agent follows to run the [Debug a tool call denial](/tutorials/production/debug-a-denial) tutorial on your behalf. Read the tutorial instead if you are running the steps yourself.
+
+## Goal
+
+Teach the user to diagnose Dome denials by planting three failures at three different layers and walking through each one with evidence: a Cedar rule denial, an explicit gateway access denial, and a malformed endpoint that never reaches authorization. Restore every change before finishing.
+
+## Rules
+
+Follow these even if the rest of this page is unreachable.
+
+- **Confirm before you start.** Before running any commands, present the plan below and wait for the user to say proceed.
+- **Narrate as you go.** For each failure, tell the user what you are about to break, what error to expect, and which gate produced it. Do not silently run the whole flow.
+- **Confirm the active context.** Run `dome context current` and confirm the workspace name starts with `studio-`. If it does not, stop and ask. You are deliberately breaking things in this tutorial, so this check is not optional.
+- **Restore everything.** Every change you make must be reverted in the same session, with command output proving it. Never end while the workspace is broken. If you cannot restore something, say so prominently.
+- **Diagnose from evidence.** For each failure, show the audit event and the simulation result, not just the client-side error. The client's message is a model's paraphrase and is not evidence.
+- **Never fix a denial by widening the rules.** Show what the rule says, then restore the original state. Do not deploy a broader bundle or add tools to an allowlist.
+- **Never print the agent token.** Use a placeholder in any command you show the user.
+- **Show your evidence.** Never report a step as done without the command output that proves it.
+
+## Quick setup
+
+Before running any commands, present the user with this checklist and wait for confirmation:
+
+```
+Here's what I'll do to teach you denial diagnosis. I'll break three things on purpose,
+then restore them.
+
+1. Confirm the workspace from the first tutorial is active
+2. Reproduce a Cedar denial and attribute it to a specific rule
+3. Revoke a Gateway grant so invocation is denied, then diagnose and restore it
+4. Call a malformed endpoint to show what a non-authorization failure looks like
+5. Show you the audit evidence and simulation for each
+6. Verify the workspace is back to its original state
+
+Shall I proceed?
+```
+
+Do not start step 1 until the user confirms.
+
+## Steps
+
+### 1. Confirm the workspace
+
+```bash
+dome context current
+```
+
+The workspace must read `studio-get-started`. If it does not, run `dome context current`. If that workspace does not exist, run the [Govern your first agent](/tutorials/get-started/govern-your-first-agent) setup first and say so. This tutorial needs its `hr-assistant` agent, rule bundle, and `demo-hr` connection.
+
+Record the baseline so you can prove restoration later:
+
+```bash
+dome gateways access list Default
+dome rules show --agent hr-assistant
+```
+
+### 2. Explain the order of the gates
+
+Before breaking anything, give the user this ladder. The first gate to reject ends the call, so the gate that answered tells you where to look.
+
+| Order | Gate | Typical signal |
+|---|---|---|
+| 1 | Authentication | `401`; `403` for suspended or revoked |
+| 2 | Act-as verification | `400 act-as header required`, `403 act-as verification failed` |
+| 3 | Endpoint selection | `400 select a gateway` |
+| 4 | gateway membership | `tool not available in this gateway` |
+| 5 | gateway admission | `agent is not granted access to this gateway` |
+| 6 | quota | `429 llm: quota exceeded` |
+| 7 | rules | `denied by rule: <id>` |
+
+Emphasize two points: quota sits above rules, so a correct-looking permit still fails if the spend cap is exhausted; and discovery is not an access check because the gateway grant is enforced on invocation.
+
+### 3. Diagnose a rule denial
+
+The existing bundle already forbids payroll, so nothing needs breaking. Ask the user to send this to their assistant, or note that the denial is already reproducible:
+
+```
+What is Alice's salary?
+```
+
+Then gather evidence:
+
+```bash
+dome audit query --results denied --limit 5
+dome rules simulate --agent hr-assistant --action mcp:call \
+  --resource demo-hr/finance/get_salary --resource-type mcp_tool
+dome rules show --agent hr-assistant
+```
+
+Explain the distinction in the reason string: `denied by rule: <id>` means an explicit `forbid` matched, while a reason with no rule identifier or `no rule bundle loaded` means nothing permitted the call. Those have different fixes. Tell the user the first command to run in this situation is `dome audit query --results denied`.
+
+### 4. Diagnose a Gateway access denial
+
+Tell the user what you are about to do, then revoke the grant:
+
+```bash
+dome gateways access revoke Default hr-assistant
+```
+
+Ask the user to reload MCP in their client and call `demo-hr/hr/list_employees`. The call fails with `agent is not granted access to this gateway`. Explain that discovery can still list the tool and therefore does not prove the grant exists.
+
+Show why a rules check misleads here. Cedar still permits discovery:
+
+```bash
+dome rules simulate --agent hr-assistant --action mcp:discover \
+  --resource demo-hr/hr/list_employees --resource-type mcp_tool
+```
+
+That returns `ALLOW` while invocation is rejected, because gateway admission runs before resource authorization. Then show the command that actually answers the question:
+
+```bash
+dome gateways access list Default
+```
+
+**Restore immediately** and prove it:
+
+```bash
+dome gateways access grant Default hr-assistant
+dome gateways access list Default
+```
+
+Ask the user to retry the tool call and confirm it succeeds. Tell them the rule of thumb: when invocation reports a missing gateway grant, check access before changing rules. Mention `dome gateways get Default` for the neighboring membership failure, where a tool belongs to no gateway.
+
+### 5. Diagnose a malformed endpoint
+
+Show that not every failure is authorization. Use a placeholder for the token; do not print the real one:
+
+```bash
+curl -i -X POST https://<gateway-host>/mcp \
+  -H "Authorization: Bearer <AGENT_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+Expect `400` with `select a gateway: use /gateways/{id}/mcp`. Point out that nothing appears in audit, because the request never identified a gateway to evaluate against.
+
+Give the user the heuristic: `400` and `401` are the caller's problem, while `403` and JSON-RPC `-32001` are the policy's answer. Only the second kind is worth escalating.
+
+### 6. Distinguish denials from redactions
+
+Explain that `guard.filter.evaluate` is a verdictless sibling event. Its `direction` and `actions` fields say what the filter did; the enclosing call carries any denial. The call was authorized and something was changed rather than refused. If a field arrived as `[REDACTED]`, the rules are not the place to look:
+
+```bash
+dome tools guards filters list demo-hr
+```
+
+Show how to follow one request end to end:
+
+```bash
+dome audit chains --limit 10
+dome audit chain <ACTIVITY_ID>
+dome audit get <EVENT_ID>
+```
+
+### 7. Prove the workspace is restored
+
+Do not skip this. Compare against the baseline from step 1:
+
+```bash
+dome gateways access list Default
+dome rules simulate --agent hr-assistant --action mcp:call \
+  --resource demo-hr/hr/list_employees --resource-type mcp_tool
+dome rules simulate --agent hr-assistant --action mcp:call \
+  --resource demo-hr/finance/get_salary --resource-type mcp_tool
+```
+
+Expect the grant to be present, then `ALLOW` followed by `DENY`. State explicitly that the workspace is back to its original state.
+
+Mention that `dome rules simulate` exits non-zero on a denial, so it works as a CI check asserting that calls which should be impossible stay impossible.
+
+### 8. Give the user the summary
+
+Close with a short reference they can keep, mapping message to gate:
+
+| Message | Gate |
+|---|---|
+| `select a gateway` | Endpoint selection; nothing evaluated |
+| `401 invalid or expired token` | Authentication |
+| `agent is suspended` / `revoked` | Lifecycle state, not policy |
+| `act-as header required` / `verification failed` | Act-as |
+| `tool not available in this gateway` | Membership |
+| `agent is not granted access…` | Admission |
+| `llm: quota exceeded` | quota |
+| `denied by rule: <id>` | Cedar forbid |
+| `no rule bundle loaded` | Nothing deployed; default deny |
+| `policy stale` | Infrastructure, failing closed |

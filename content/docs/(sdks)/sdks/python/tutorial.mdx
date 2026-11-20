@@ -1,0 +1,146 @@
+---
+title: Tutorial
+sidebarTitle: Tutorial
+description: Wire the Python SDK into a service and verify governance end-to-end
+---
+
+Take a registered agent from the developer quickstart and embed the Python SDK in a real service. Tool calls route through the gateway, end-user identity flows on every request, and the audit trail correlates the run.
+
+<Callout type="info">
+**Prerequisites:**
+- Completed [Developer Quickstart](/tutorials/role/developer) — agent registered, API key minted, rules deployed
+- agent token saved as `$DOME_AGENT_TOKEN`
+- gateway URL saved as `$DOME_GATEWAY_URL` — must include the `/gateways/{id}` [Gateway](/sdks/python/reference#gateways) prefix (`https://gateway.../gateways/{id}`); a bare base URL fails closed
+- Control-plane URL saved as `$DOME_CONTROL_PLANE_URL`
+- Python 3.12+
+</Callout>
+
+## 1. Add the SDK
+
+```bash
+pip install dome-sdk
+```
+
+## 2. Initialize once at startup
+
+Construct the client during application startup. Share one `Client` across threads — the gateway clients are thread-safe.
+
+```python
+# governance.py
+import logging
+import os
+import dome
+
+log = logging.getLogger("agent")
+
+def build_client() -> dome.Client:
+    client = dome.Client(
+        token=os.environ["DOME_AGENT_TOKEN"],
+        gateway_url=os.environ["DOME_GATEWAY_URL"],
+        control_plane_url=os.environ["DOME_CONTROL_PLANE_URL"],
+        act_as_method="none",
+    )
+    client.connect()
+    return client
+```
+
+`connect()` prepares credentials and transport state. It does not block on local Cedar sync — only call `client.start_policy_sync()` if you also want in-process checks.
+
+## 3. Route tool calls through the gateway
+
+Replace direct tool invocations with `client.gateway.tools.call()`. The gateway evaluates authorization, resolves credentials, and audits the call before the upstream backend ever runs.
+
+```python
+# tools/database.py
+from typing import Any
+import dome
+
+class DatabaseTool:
+    def __init__(self, client: dome.Client) -> None:
+        self.client = client
+
+    def query(self, sql: str, user_email: str) -> dict[str, Any]:
+        result = self.client.gateway.tools.call(
+            "database/query",
+            {"sql": sql},
+            act_as=dome.PlainActAs(email=user_email),
+        )
+        if result.is_error:
+            return {"error": result.structured_content or result.content}
+        return {"rows": result.structured_content or result.content}
+```
+
+`act_as` carries the end user the agent is acting on behalf of. Cedar rules read `principal.act_as.email`, `principal.act_as.sub`, and so on — refer to [Authorization model](/concepts/architecture/authorization-model).
+
+## 4. Correlate a run with an activity
+
+Wrap each agent run in `client.activity(...)` so every gateway call and audit event shares an opaque activity ID.
+
+```python
+def handle_incident(client: dome.Client, case_id: str, user_email: str) -> str:
+    user = dome.PlainActAs(email=user_email)
+    with client.activity(metadata={"case": case_id}) as activity:
+        issues = client.gateway.tools.call(
+            "github/list_issues", {"repo": "dome"}, act_as=user,
+        )
+        issue_payload = issues.structured_content or issues.content
+        summary = client.gateway.llm.chat(
+            model="prod-gpt",
+            messages=[{"role": "user", "content": f"Summarize: {issue_payload}"}],
+            act_as=user,
+        )
+        return f"{summary['choices'][0]['message']['content']} (run={activity.activity_id})"
+```
+
+Outside an activity context, calls carry no activity ID — the SDK never mints one implicitly.
+
+## 5. Shut down cleanly
+
+Call `close()` on shutdown to release transports.
+
+```python
+import atexit
+
+client = build_client()
+atexit.register(client.close)
+```
+
+Or use the context-manager form for short-lived scripts:
+
+```python
+with dome.Client(token=..., gateway_url=...) as client:
+    ...
+```
+
+## 6. Verify in audit
+
+Pull the run back with `client.audit.query(...)` (or the CLI):
+
+```python
+page = client.audit.query(
+    event_types=("tool.call", "model.call"),
+    results=("RESULT_ALLOWED",),
+    page_size=50,
+)
+for event in page.events:
+    print(event.type, event.correlation.activity_id)
+```
+
+Or from the CLI:
+
+```bash
+dome audit query --activity-id {{ACTIVITY_ID}} --limit 20
+```
+
+Each gateway call appears with the rule decision, the act-as identity, the upstream latency, and the activity ID.
+
+## Next steps
+
+<Cards>
+  <Card title="Adapters" href="/sdks/python/adapters">
+    Skip manual wrapping — use the LangChain adapter for gateway tools and governed chat models.
+  </Card>
+  <Card title="Reference" href="/sdks/python/reference">
+    Full configuration, act-as methods, errors, and audit reads.
+  </Card>
+</Cards>

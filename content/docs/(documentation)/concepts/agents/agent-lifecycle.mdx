@@ -1,0 +1,82 @@
+---
+title: Agent lifecycle
+description: "The four states an agent moves through, what triggers each transition, and what cascades"
+---
+
+import { agentLifecycle } from '@/snippets/glossary';
+
+<p>{agentLifecycle}</p>
+
+## High-level overview
+
+The lifecycle is a directed graph with four states, two reversible transitions, and one terminal state. Provisioned and active agents can send traffic through the gateway. Suspended and revoked agents are rejected. Revocation is permanent. Suspension is reversible.
+
+Moving an agent through its lifecycle looks like this:
+
+1. An operator registers an agent.
+2. The agent stays provisioned until its first gateway request, then becomes active automatically.
+3. During an incident the operator suspends the agent (optionally cascading to active children).
+4. After the window, reactivate restores traffic for that agent alone.
+5. If the agent is decommissioned, revoke permanently disables it and every descendant.
+
+Lifecycle state gates whether the agent identity can send traffic. That gate is independent of rotating keys or rewriting rules.
+
+![Agent lifecycle states: provisioned, active, suspended, revoked](/images/diagrams/agent-lifecycle.svg)
+
+### States
+
+| State | Description | Can receive traffic? |
+|-------|-------------|---------------------|
+| **provisioned** | Created but never used. Waiting for first request. | Yes |
+| **active** | Operational. Making requests and receiving traffic. | Yes |
+| **suspended** | Temporarily disabled by an operator. | No |
+| **revoked** | Permanently decommissioned. Terminal. | No |
+
+### Transitions
+
+#### Provisioned to Active
+
+Happens **automatically** on first traffic. When a provisioned agent sends its first request through the gateway, the platform records the timestamp (`LastSeenAt`) and transitions the agent to active. No operator action required.
+
+#### Active to Suspended
+
+Triggered by an operator via `dome agents suspend`. Suspension is reversible. Use it for maintenance windows, incident response, or temporary access revocation.
+
+With `--cascade`, the platform also suspends all active child agents in the hierarchy. Without it, only the target agent is suspended.
+
+#### Suspended to Active
+
+Triggered by an operator via `dome agents reactivate`. The agent immediately resumes accepting traffic.
+
+#### Any State to Revoked
+
+Triggered by an operator via `dome agents revoke`. Revocation is **permanent** and **always cascades**. Every descendant in the hierarchy is revoked depth-first, regardless of their current state. There is no undo.
+
+### Cascade semantics
+
+Agents form hierarchies through the `parent_id` field (max depth: 10). Cascade behavior differs between suspend and revoke:
+
+| Operation | Cascade behavior | Reversible? |
+|-----------|-----------------|-------------|
+| **Suspend** | Optional (`--cascade`). Suspends active descendants only. | Yes |
+| **Revoke** | Always. Revokes all descendants depth-first, any state. | No |
+
+The parent must belong to the same tenant as the child. Cross-tenant hierarchies are not permitted.
+
+Hierarchy grants no access on its own. Each agent reaches only what you allow it. Refer to [Agents](/concepts/agents#lifecycle-and-hierarchy) concept and [External agents](/build/agents/external#hierarchy).
+
+### Heartbeat and staleness
+
+The platform tracks `LastSeenAt` for every agent. It is updated on each request through the gateway. This timestamp serves two purposes:
+
+- **Automatic activation.** Transitions provisioned agents to active on first traffic.
+- **Staleness detection.** Operators can identify agents that have stopped communicating, though there is no automatic suspension on staleness.
+
+## Next steps
+
+With the agent lifecycle model in mind, continue with:
+
+- [Agents](/concepts/agents) concept for how agents are identified and authenticated
+- [Agent Identity](/concepts/agents/identity) concept for credentials and act-as claims
+- [Agents](/build/agents) to suspend, reactivate, revoke, and manage hierarchy
+- [Rules](/concepts/controls/rules) concept when authorization should also reference agent state

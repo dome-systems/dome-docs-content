@@ -1,0 +1,10 @@
+{
+  "title": "role",
+  "defaultOpen": false,
+  "pages": [
+    "developer",
+    "operator",
+    "platform-admin",
+    "security"
+  ]
+}

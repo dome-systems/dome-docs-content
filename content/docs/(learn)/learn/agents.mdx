@@ -1,0 +1,137 @@
+---
+title: How agents work
+description: Learn how agent loops work, where existing controls fall short, and where authorization belongs
+full: true
+story: true
+---
+
+<AgentsStory />
+
+<MarkdownOnly>
+
+## Every agent is code, models, and tools
+
+An agent combines application code, one or more models, and a set of tools.
+The language, framework, and deployment can vary, but those three parts are
+consistent.
+
+- **Code** handles input, keeps track of state, and makes calls.
+- **Models** decide what to do next based on the conversation so far.
+- **Tools** connect the agent to other systems: APIs, databases, Slack, or a
+  payments endpoint.
+
+The balance depends on the job. A support chatbot may have a small amount of
+code, one model, and no tools. A workflow agent may have much more code, several
+models, and dozens of tools.
+
+The agent runtime (code) sends the available context to the model. If the model
+requests a tool, the runtime executes the call and includes the result in the
+next model request. One pass through those steps is a round. If the model is not
+ready to answer, the loop runs again.
+
+Rather than writing a branch for every next step, you let the model choose at
+runtime. You supply a question and a list of tools, and the model picks. It can
+also request more than one tool at a time. Two independent lookups may run
+together in the same round.
+
+So the same question, asked twice, can take a different route. One ask might
+make three calls across three rounds, two of them together. The next might make
+one call and stop, because one was enough. Both can reach the same answer.
+That variation is expected.
+
+You decide which tools the agent can reach. During a run, the model decides
+which ones to use, in what order, with which arguments, and when to stop.
+
+## Tool approval does not control access
+
+Teams usually approve tools one at a time for a specific agent, and each
+approval may be reasonable on its own. An HR assistant needs to read HR records.
+A standup bot needs to post to Slack. A payouts service needs to move money.
+
+Approval alone does not prevent another agent from calling the same tool. The
+system that handles the call must enforce the restriction at runtime.
+
+Now consider one agent with access to all four tools and no check in front of
+them. It can call the tools in any order, feed one result into the next call, or
+request several calls in the same round.
+
+An agent with several tools can combine them in ways that were not part of the
+individual reviews. It could read an HR record and post it to a channel with two
+hundred people, or take an amount from the ledger and use it in a transfer.
+
+Reviewing every combination would not stop an agent from using tools approved
+for someone else. Give a new agent the same tools and it gets the same access.
+The authorization check has to know which agent is making each call.
+
+## Where today's controls stop
+
+Suppose an agent is about to move $48,000 to an unfamiliar account. A normal
+stack may already have these protections:
+
+- **Access control** asks whether this caller may use the agent. Yes, she is on
+  the finance team.
+- **Scoped credentials** ask whether this key is valid for the payments API.
+  Yes, and it reaches nothing else.
+- **Network policy** asks whether this host is on the allowed list. Yes.
+- **Audit logging** asks whether the call can be recorded. Yes, once it
+  completes.
+
+All four checks can pass correctly. The missing question is whether this agent,
+acting for this person, should make this particular transfer.
+
+The log records the transfer and the 200 response after the fact. It may not say
+which agent acted, who the agent was acting for, or which rule allowed the call,
+because none of those controls made an authorization decision.
+
+## Authorize each call before it runs
+
+The authorization check has to run before the call reaches the tool. It also
+needs enough information to decide whether that specific call should run.
+
+The check needs four facts:
+
+1. **Which agent** is calling.
+2. **Which action** it is attempting.
+3. **The arguments** it is attempting them with.
+4. **Who it is acting for.**
+
+With only the action and arguments, the check can cap transfers, but the cap also
+blocks the payroll agent's legitimate $48,000 payment. Add the agent identity
+and the finance director still has the same limit as the intern. The person's
+identity is what allows a shared agent to apply different permissions to
+different users.
+
+The check also has to run in the right place:
+
+- **In the prompt**, the model decides whether to follow the instruction.
+- **In the agent's code**, it covers that agent and the code paths where the
+  check was added. Other agents and overlooked retry paths may bypass it.
+- **In front of every call**, it covers every agent that uses that boundary,
+  regardless of language or deployment.
+
+Rules and logs need an identity for the agent's code. Tool calls need
+authorization before they have an effect, and model calls need it before context
+leaves the agent.
+
+## How Dome does it
+
+Dome provides three control points, one for each part of the agent:
+
+- The [Registry](/build/agents) governs the code. It gives the agent an identity
+  that rules, logs, and operators can reference.
+- The [Tool Gateway](/build/gateways) governs tool calls. It decides each call
+  before it runs, keeps backend credentials out of the agent, and runs
+  [Guards](/govern/guards) on the response.
+- The [Model Broker](/connect/models) governs model calls. It routes
+  calls to the provider, evaluates them with the same [Rules](/govern/rules) and
+  guards, and records them in the same audit trail.
+
+All three use the same control plane for access, authorization, and audit.
+Dome uses [Cedar](/concepts/architecture/authorization-model) to evaluate the
+same request consistently. The audit trail records the reason for a denial as
+well as the result.
+
+To try it on an agent of your own, see
+[Govern your first agent](/tutorials/get-started/govern-your-first-agent).
+
+</MarkdownOnly>

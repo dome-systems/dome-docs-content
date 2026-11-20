@@ -1,0 +1,615 @@
+---
+title: Reference
+sidebarTitle: Reference
+description: Configuration, client surfaces, errors, and act-as methods for the Python SDK
+---
+
+Complete reference for the `dome-sdk` package on PyPI (imported as `dome`). All configuration is explicit — the SDK does not read environment variables.
+
+## Client construction
+
+The SDK ships two clients with identical surfaces: `dome.Client` (sync) and `dome.AsyncClient` (async). Both accept keyword arguments only.
+
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `token` | `str` | required | agent API key (`dome_...`) or exchanged JWT |
+| `control_plane_url` | `str \| None` | `None` | Dome control-plane URL. Required for token exchange, audit reads, local policy sync |
+| `gateway_url` | `str \| None` | `None` | Complete gateway URL, including `/gateways/{id}`. Bare roots and protocol-suffixed URLs fail at `connect()` with `DomeGatewayConfigurationError` |
+| `gateway_id` | `str \| None` | `None` | gateway UUID to select during token exchange. Omission succeeds only when the agent can access exactly one gateway |
+| `gateway_auth_mode` | `"auto" \| "raw" \| "exchange"` | `"auto"` | gateway bearer source. `auto` uses the raw `dome_*` key when `gateway_url` is set |
+| `act_as_method` | `"none" \| "hmac" \| "oidc" \| "bound" \| None` | `None` | gateway act-as method. Required when the SDK cannot discover it from the control plane |
+| `request_timeout` | `float` | `30.0` | Per-request HTTP timeout |
+| `tools_list_cache_ttl` | `float` | `30.0` | In-memory `tools/list` cache TTL |
+| `rule_sync_interval` | `float` | `30.0` | Local policy sync interval (only used when `start_policy_sync()` runs) |
+| `audit_batch_size` | `int` | `100` | Legacy local audit buffer size |
+| `audit_flush_interval` | `float` | `5.0` | Legacy local audit drain interval |
+
+```python
+import dome
+
+client = dome.Client(
+    token="{{AGENT_TOKEN}}",
+    gateway_url="https://gateway.domesystems.ai/gateways/{{GATEWAY_ID}}",
+    control_plane_url="https://api.domesystems.ai",
+    act_as_method="none",
+)
+client.connect()
+```
+
+`gateway_url` names the [gateway](#gateways) this client uses (`/gateways/{uuid}`). A client maps to one gateway; there is no implicit global endpoint. `connect()` validates the URL and verifies that `gateway_id`, when supplied, names the same gateway.
+
+`connect()` prepares credentials and transport. It performs a token exchange when needed for control-plane discovery, but never blocks on local Cedar sync.
+
+## Gateways
+
+A gateway is a workspace-scoped grouping of MCP tools and LLM models with its own access grants and protocol endpoints. The SDK accepts only a complete scoped URL:
+
+| Surface | URL |
+|---------|-----|
+| SDK and Anthropic base | `https://gateway.example.com/gateways/{gateway-id}` |
+| MCP | `https://gateway.example.com/gateways/{gateway-id}/mcp` |
+| OpenAI-compatible base | `https://gateway.example.com/gateways/{gateway-id}/v1` |
+
+Agent-key creation and token exchange return a `GatewayEndpoints` object containing all four call-ready values. Use `gateway_url` as returned; do not derive it from a bare data-plane host. If the client has `control_plane_url`, pass `gateway_id` to select a gateway during exchange. Omission succeeds only when the agent can access exactly one gateway; the workspace default marker does not resolve ambiguity.
+
+The tools-list cache is keyed by the complete gateway URL, agent, workspace, and act-as identity, so clients pointed at different gateways never share entries. Find IDs with `dome gateways list`, the dashboard, or the [admin surface](#gateway-admin).
+
+## Client surface
+
+| Member | Description |
+|--------|-------------|
+| `client.gateway` | gateway data-plane API. Tools, models, LLM helpers, provider client factories |
+| `client.audit` | Control-plane audit reads. Requires `control_plane_url` |
+| `client.activity(...)` | Open an [activity context](#activity-correlation) for correlated calls |
+| `client.evaluate(...)` | Run a local Cedar evaluation. Requires `start_policy_sync()` |
+| `client.check(...)` | Callback-based local Cedar check. Requires `start_policy_sync()` |
+| `client.start_policy_sync()` | Start background Cedar bundle sync for in-process checks |
+| `client.connect()` | Prepare credentials. Idempotent |
+| `client.close()` | Release transports, stop background sync, drain pending audit |
+| `client.gateway_url` | Complete selected gateway URL, or `""` before discovery |
+
+`AsyncClient` exposes the same members; methods marked synchronous below have async counterparts on `AsyncClient`.
+
+## Gateway tools
+
+`client.gateway.tools` is the MCP tool client.
+
+| Method | Description |
+|--------|-------------|
+| `list(*, act_as=None, refresh=False, ttl_seconds=None) -> ToolsListResult` | List MCP tools. Real gateway call unless served from the in-memory cache |
+| `list_cached(*, act_as=None, ttl_seconds=None) -> ToolsListResult` | Cache-preferred read (calls `list` with `refresh=False`; refreshes when the entry is missing or expired) |
+| `invalidate_cache(*, act_as=None)` | Drop one cache entry or all entries |
+| `call(name, arguments=None, *, act_as=None, activity_id=None, raise_on_tool_error=True) -> ToolCallResult` | Invoke an MCP tool |
+
+`tools/list` can do real work: upstream discovery, per-user authorization, audit emission, and credential-link generation. The SDK never does an implicit list-before-call.
+
+```python
+catalog = client.gateway.tools.list(refresh=True, act_as=user)
+for tool in catalog.tools:
+    print(tool.name, tool.description)
+
+for advisory in catalog.auth_required:
+    print("credential required:", advisory.connection_name, advisory.provision_url)
+```
+
+The cache is in-memory, bounded, and keyed by gateway root URL, agent fingerprint, workspace, act-as method, and an act-as header hash. Cache hits do not call the gateway and do not emit gateway audit. Per-user credential advisories on `tools/list` are returned on the fresh response and are not cached.
+
+### Calling a tool
+
+```python
+result = client.gateway.tools.call(
+    "github/list_issues",
+    {"repo": "dome"},
+    act_as=dome.PlainActAs(email="alice@corp.com"),
+)
+if result.is_error:
+    print("upstream tool error:", result.structured_content or result.content)
+else:
+    print(result.structured_content or result.content)
+```
+
+`call()` distinguishes JSON-RPC errors from MCP tool errors. JSON-RPC errors raise typed `DomeGatewayError` subclasses. If the upstream tool returns `isError=true`, the SDK raises `DomeToolExecutionError` by default. Pass `raise_on_tool_error=False` to receive `ToolCallResult(is_error=True)` instead.
+
+### Reading tool results
+
+`ToolCallResult` exposes convenience accessors so you do not have to walk the MCP content array by hand.
+
+| Accessor | Description |
+|----------|-------------|
+| `result.text` | Concatenate every `type=text` content block, newline-separated |
+| `result.first_text(default="")` | First `type=text` block, or `default` when there is none |
+| `result.json()` | Return `structured_content` when set; otherwise parse `text` as JSON. Raises `DomeToolExecutionError` when neither is available |
+| `result.require_success()` | Raise `DomeToolExecutionError` when `is_error=True`; otherwise return the result for chaining |
+
+```python
+result = client.gateway.tools.call(
+    "github/list_issues",
+    {"repo": "dome"},
+    act_as=user,
+).require_success()
+
+issues = result.json()
+summary = result.first_text("no summary returned")
+```
+
+## Gateway LLM
+
+`client.gateway.llm` posts OpenAI- and Anthropic-shaped requests through the Dome LLM ingress and decodes structured Dome errors.
+
+| Method | Description |
+|--------|-------------|
+| `chat(*, model, messages, act_as=None, **kwargs) -> Mapping[str, Any]` | OpenAI `/v1/chat/completions` |
+| `messages(*, model, messages, max_tokens, act_as=None, **kwargs) -> Mapping[str, Any]` | Anthropic `/v1/messages` |
+
+```python
+response = client.gateway.llm.chat(
+    model="prod-gpt",
+    messages=[{"role": "user", "content": "Summarize the open incidents"}],
+    act_as=dome.PlainActAs(email="alice@corp.com"),
+)
+```
+
+For a typed handle around one model, use `client.gateway.model(...)`:
+
+```python
+model = client.gateway.model("prod-claude", provider="anthropic", act_as=user)
+message = model.messages.create(
+    messages=[{"role": "user", "content": "Draft a status update"}],
+    max_tokens=512,
+)
+```
+
+### Provider-native clients
+
+For teams that want provider-native APIs, the gateway hands back a configured `openai`/`anthropic` client pointed at the Dome ingress:
+
+```python
+openai_client = client.gateway.openai_client(act_as=user)
+completion = openai_client.chat.completions.create(
+    model="prod-gpt",
+    messages=[{"role": "user", "content": "Hello"}],
+)
+```
+
+Provider factories return provider-shaped clients and do not promise typed Dome exceptions unless Dome owns the transport for that path. Use `client.gateway.llm.*` or `client.gateway.model(...)` when you want SDK-owned typed error decoding.
+
+## Gateway readiness
+
+`client.gateway.wait_ready()` polls unauthenticated `GET /ready` and is an explicit diagnostic helper — not a startup requirement.
+
+```python
+client.gateway.wait_ready(timeout=30)
+```
+
+For freshly created agent keys, use `dome.wait_for_agent_key(...)` or `dome.bootstrap.ensure_agent(..., wait_gateway=True)` in setup scripts to wait for the gateway's synced API-key snapshot.
+
+## Act-as
+
+The gateway act-as trust model is driven by Dome configuration, not by the client choosing a header shape. Pass the SDK value that matches the gateway method:
+
+| SDK value | gateway method | Header behavior |
+|-----------|----------------|-----------------|
+| `PlainActAs(...)` or legacy `ActAs(...)` | `none` | Canonical JSON, standard-base64 encoded |
+| `HMACActAs(secret=..., ...)` | `hmac` | Signed, timestamped, base64 encoded |
+| `OIDCActAs(jwt=...)` or raw JWT string | `oidc` | Raw JWT evidence |
+| `BoundActAs()` or no `act_as` | `bound` | No client act-as header; server-bound identity is used |
+
+```python
+# Plain caller-asserted identity
+user = dome.PlainActAs(email="alice@corp.com", roles=("admin",))
+
+# Verified OIDC delegation
+user = dome.OIDCActAs(jwt="eyJ...")
+
+# HMAC-signed identity
+user = dome.HMACActAs(secret=hmac_secret, email="alice@corp.com")
+```
+
+For `bound`, the SDK fails closed if caller code tries to send an act-as header.
+
+## Activity correlation
+
+Wrap a run in an activity context to stamp every gateway call and audit event with the same opaque activity ID.
+
+```python
+with client.activity(metadata={"case": "incident-123"}) as activity:
+    client.gateway.tools.call("github/list_issues", {"repo": "dome"})
+    page = client.audit.query(event_types=("tool.call",))
+    print(activity.activity_id)
+```
+
+Direct calls outside an activity carry no activity ID — the SDK never mints one implicitly. To thread an ID across processes, mint an opaque ID and put human-readable labels in metadata:
+
+```python
+activity_id = dome.new_activity_id()
+
+with client.activity(activity_id, metadata={"job": "nightly-batch"}) as activity:
+    ...
+```
+
+`AuditEventV1.correlation.activity_id` and `activity_trust` surface the stamp on each event.
+
+### `dome.new_activity_id() -> str`
+
+Mint a fresh UUIDv4 activity ID. Use when persisting an ID for later correlation. Equivalent to the ID `client.activity()` mints when none is passed.
+
+## Audit reads
+
+`client.audit` queries the hosted Audit v1 read APIs through the configured control plane. The SDK does not write hosted audit events — gateway and control-plane services do that.
+
+| Method | Description |
+|--------|-------------|
+| `client.audit.query(query \| **filters) -> AuditQueryResponse` | Cursor-paginated query with time-range, actor, producer/surface, operation, resource, and payload filters |
+| `client.audit.get(event_id) -> AuditEventV1` | Fetch a single normalized event by ID |
+| `client.audit.stream(query \| **filters) -> Iterator[AuditEventV1]` | Server-stream events using the Connect JSON streaming protocol |
+| `client.audit.find_gateway_events(*, activity_id="", workspace_id=None, event_types=(), type_prefix="", page_size=50) -> tuple[AuditEventV1, ...]` | One-shot query scoped to gateway events, optionally filtered by activity and event-type prefix |
+| `client.audit.wait_for_activity(activity_id, *, timeout=30.0, interval=0.5, event_types=(), type_prefix="", page_size=50) -> tuple[AuditEventV1, ...]` | Poll until at least one matching event lands, or raise `TimeoutError` |
+
+```python
+from dome import AuditPayloadFilter, AuditQuery
+
+page = client.audit.query(
+    AuditQuery(
+        event_types=("model.call",),
+        results=("RESULT_ALLOWED",),
+        producer_service="gateway",
+        request_surface="INITIATOR_SURFACE_GATEWAY_LLM",
+        start_time="2026-06-23T00:00:00Z",
+        end_time="2026-06-24T00:00:00Z",
+        payload_filters=(
+            AuditPayloadFilter(field="model", values=("prod-gpt",)),
+        ),
+        page_size=50,
+    )
+)
+
+for event in page.events:
+    print(event.type, event.correlation.activity_id, event.payload)
+```
+
+`AuditQuery` enum fields use the proto JSON enum names (for example `RESULT_ALLOWED`, `ACTOR_KIND_AGENT`, `INITIATOR_SURFACE_GATEWAY_MCP`). `stream` rejects query-only filters (`agent_ids`, `primary_resource_id`, `primary_resource_kind`, `trace_id`, `activity_id`, `workspace_id`, `start_time`, `end_time`, `page_size`) at call time instead of silently dropping them.
+
+<Callout type="warning">
+The current Python SDK does not expose the Audit schema-v4 `stages`, `deny_reasons`, or `has_error` query filters. Use the [CLI](/cli/operate/audit), [MCP tools](/reference/mcp/audit), or Audit API when a query depends on those filters. They will be documented here after the SDK adds them.
+</Callout>
+
+### Waiting on activity events
+
+Gateway audit lands asynchronously. Use `wait_for_activity` in tests and post-run verification to block until the events you correlated under an activity ID are visible.
+
+```python
+with client.activity() as run:
+    client.gateway.tools.call("github/list_issues", {"repo": "dome"}, act_as=user)
+
+events = client.audit.wait_for_activity(
+    run.activity_id,
+    type_prefix="tool.",
+    timeout=10.0,
+)
+assert any(event.type == "tool.call" for event in events)
+```
+
+`find_gateway_events` is the non-blocking form — it issues one query and returns whatever is already visible. Both helpers default the workspace to the client's authenticated workspace; pass `workspace_id=` to scope a platform-key reader explicitly.
+
+### Audit envelope
+
+`AuditEventV1` is the normalized read-side envelope returned by every audit read method.
+
+| Sub-block | Fields |
+|-----------|--------|
+| `AuditScope` | `kind`, `org_id` (alias `organization_id`), `tenant_id`, `workspace_id`, `agent_id` |
+| `AuditActor` | `kind`, `id`, `email`, `display` |
+| `AuditResourceRef` | `kind`, `id`, `name`, `tenant_id`, `workspace_id` |
+| `AuditProducer` | `service`, `instance_id`, `version`, `region` |
+| `AuditRequestSurface` | `surface`, `rpc_service`, `rpc_method`, `http_route`, `user_agent_class` |
+| `AuditCorrelation` | `trace_id`, `request_id`, `operation_id`, `parent_event_id`, `idempotency_key`, `activity_id`, `activity_trust` |
+| `AuditDataHandling` | `omitted`, `summarized`, `truncated`, `redacted`, `hashed`, `encrypted`, `content_ref_used` |
+
+## Local policy checks
+
+In-process Cedar evaluation is still available when an agent needs a fast, self-enforced decision. Local checks are opt-in — they require `start_policy_sync()` and a `control_plane_url`.
+
+```python
+client = dome.Client(
+    token="{{AGENT_TOKEN}}",
+    control_plane_url="https://api.domesystems.ai",
+)
+client.start_policy_sync()
+
+decision = client.evaluate(tool="database/query", action="mcp:call")
+if decision.allowed:
+    run_query()
+```
+
+For the two most common MCP decisions, use the typed shortcuts. Both wrap `evaluate()` with `resource_type="mcp_tool"` and the right action verb.
+
+| Method | Action | Use when |
+|--------|--------|----------|
+| `client.evaluate_tool_call(tool, *, context=None, act_as=None)` | `mcp:call` | Gating an `invoke`/`call` before running it |
+| `client.evaluate_tool_discovery(tool, *, context=None, act_as=None)` | `mcp:discover` | Filtering a `tools/list` response before showing it |
+
+```python
+decision = client.evaluate_tool_call("database/query", act_as=user)
+if not decision.allowed:
+    raise PermissionError(decision.reason)
+
+visible = [
+    tool for tool in catalog.tools
+    if client.evaluate_tool_discovery(tool.name, act_as=user).allowed
+]
+```
+
+The callback form mirrors the Go SDK:
+
+```python
+client.check(
+    tool="database/query",
+    action="mcp:call",
+    on_allow=lambda result: run_query(),
+    on_deny=lambda req, reason: log.warning("denied: %s", reason),
+)
+```
+
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `tool` | `str` | required | Resource being accessed |
+| `on_allow` | `Callable[[CheckResult], Any]` | required | Invoked on allow |
+| `on_deny` | `Callable[[CheckRequest, str], Any]` | required | Invoked with `(request, reason)` on deny |
+| `action` | `str` | `""` | Defaults to `mcp:call` if empty |
+| `context` | `dict[str, str] \| None` | `None` | Cedar attributes |
+| `act_as` | `ActAs \| str \| None` | `None` | End-user identity |
+| `resource_type` | `str` | `"mcp_tool"` | Cedar resource entity type |
+
+## Admin client
+
+`DomeAdminClient` is the workspace-scoped provisioning surface. Use it from orchestrator code or setup scripts to register agents, issue keys, deploy Cedar bundles, and configure gateway MCP and LLM connections. It authenticates with a workspace platform key (`dome_pk_...`) — not an agent token — and every call hits the control plane.
+
+`Client` and `DomeAdminClient` are separate on purpose: `Client` is the runtime agent surface (authorization, audit reads, gateway calls); `DomeAdminClient` is the admin surface that *creates* the agents `Client` runs as.
+
+```python
+from dome import DomeAdminClient, AgentActAsConfig
+
+with DomeAdminClient(
+    base_url="https://api.domesystems.ai",
+    platform_key="{{PLATFORM_KEY}}",
+    workspace_id="{{WORKSPACE_ID}}",
+) as admin:
+    agent = admin.register_agent(
+        name="incident-bot",
+        act_as_config=AgentActAsConfig(method="oidc", required=True),
+        allowed_tools=["github/list_issues"],
+        allowed_gateway_ids=["{{GATEWAY_ID}}"],
+    )
+    key = admin.ensure_agent_key(
+        agent_id=agent.id,
+        name="default",
+        gateway_id="{{GATEWAY_ID}}",
+    )
+    print(key.token, key.gateway_url)
+```
+
+### Constructor
+
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `base_url` | `str` | required | Control-plane URL |
+| `platform_key` | `str` | required | Workspace platform key (`dome_pk_...`) |
+| `workspace_id` | `str` | required | Workspace UUID the key is scoped to |
+| `timeout` | `float` | `30.0` | Per-request HTTP timeout |
+
+### Agent registry
+
+| Method | Description |
+|--------|-------------|
+| `register_agent(*, name, parent_id=None, metadata=None, act_as_config=None, allowed_pool_names=None, allowed_direct_model_names=None, allowed_tools=None, allowed_gateway_ids=None, actas_allowed_groups=None, actas_allowed_emails=None, actas_allowed_subjects=None) -> AgentRecord` | Create an agent record |
+| `list_agents(*, name_prefix="", ...) -> list[AgentRecord]` | List agents in the workspace |
+| `get_agent(*, agent_id) -> AgentRecord \| None` | Fetch a single agent |
+| `revoke_agent(*, agent_id, reason="")` | Revoke an agent without deleting it |
+| `delete_agent(*, agent_id, cascade=False, reason="")` | Hard-delete an agent |
+| `create_agent_key(*, agent_id, name="default", gateway_id=None) -> AgentKeyMaterial` | Issue a new bearer token and return the selected gateway endpoints |
+| `ensure_agent_key(*, agent_id, name="default", gateway_id=None) -> AgentKeyMaterial` | Create the named key, or rotate it if it already exists. Idempotent |
+| `rotate_agent_key(*, agent_id, key_name, gateway_id=None) -> AgentKeyMaterial` | Rotate an existing key and return the selected gateway endpoints |
+| `revoke_agent_key(*, agent_id, key_name)` | Revoke a single key |
+| `list_agent_keys(*, agent_id) -> list[dict]` | List key metadata. The bearer is never returned after issuance |
+| `exchange_token(*, api_key, gateway_id=None) -> TokenExchangeResult` | Exchange a `dome_*` key for a short-lived JWT and complete gateway endpoints |
+
+`AgentKeyMaterial.token` is the only place the bearer is ever returned. Persist it before discarding the response.
+
+### Workspace and gateway setup
+
+| Method | Description |
+|--------|-------------|
+| `current_identity() -> AdminIdentity` | Resolve the authenticated platform identity |
+| `list_workspaces(*, tenant_id=None) -> list[Workspace]` | List workspaces the key can see |
+| `get_workspace_runtime_capabilities(*, workspace_id=None) -> WorkspaceRuntimeCapabilities` | Customer-safe hosting and runtime capability traits |
+| `create_mcp_connection(*, name, transport, ...) -> MCPConnection` | Attach an MCP server to the workspace gateway |
+| `delete_mcp_connection(*, connection_id, workspace_id=None)` | Detach an MCP server |
+| `create_gateway(*, name, description="") -> Gateway` | Create a workspace-scoped [gateway](#gateways). Requires `gateways.manage` |
+| `list_gateways() -> list[Gateway]` | List workspace gateways and their complete endpoints |
+| `get_gateway(*, gateway_id) -> Gateway` | Get one gateway and all resource memberships |
+| `update_gateway(*, gateway_id, name, description="") -> Gateway` | Update gateway metadata |
+| `set_gateway_state(*, gateway_id, state) -> Gateway` | Set `active` or `disabled` |
+| `set_gateway_default(*, gateway_id) -> Gateway` | Set the non-enforcing workspace default marker |
+| `add_gateway_tool(*, gateway_id, tool_id)` | Add one discovered MCP tool |
+| `add_gateway_tool_source(*, gateway_id, connection_id)` | Expose every tool from an MCP connection through the gateway. Requires `gateways.manage` |
+| `add_gateway_llm_pool(*, gateway_id, llm_pool_id)` | Add an LLM pool |
+| `add_gateway_llm_model(*, gateway_id, llm_model_connection_id)` | Add a direct model connection |
+| `set_agent_gateway_access(*, agent_id, gateway_id, granted)` | Add or remove one agent's explicit gateway grant |
+| `set_gateway_all_agents_grant(*, gateway_id, granted)` | Toggle the gateway's grant for all workspace agents. Requires `gateways.manage` **and** `rules.deploy` |
+| `delete_gateway(*, gateway_id)` | Delete a gateway and remove its memberships; the underlying connections and pools are unchanged. Requires `gateways.manage` |
+| `deploy_bundle(*, scope_kind="workspace", scope_id=None, cedar_source, ...) -> BundleRecord` | Deploy a Cedar policy bundle |
+| `list_bundles(*, scope_kind="workspace", scope_id=None) -> list[BundleRecord]` | List deployed bundles |
+| `delete_rules(*, scope_kind="workspace", scope_id=None)` | Remove rules at a scope |
+| `create_llm_connection(*, name, provider, ...) -> LLMConnection` | Register an LLM provider connection |
+| `list_llm_connections() -> list[LLMConnection]` | List LLM provider connections |
+| `create_llm_pool(*, name, ...) -> LLMPool` | Create a model pool |
+| `list_llm_pools() -> list[LLMPool]` | List model pools |
+| `create_llm_pool_member(*, pool_id, ...) -> LLMPoolMember` | Add a model to a pool |
+| `list_llm_pool_members(*, pool_id) -> list[LLMPoolMember]` | List models in a pool |
+
+### Gateway admin
+
+Create a gateway, add tool sources, grant admission, and hand the resulting `/gateways/{id}` URL to agents.
+
+The admin client covers gateway CRUD, state/default selection, resource membership, per-agent access, and the all-agents grant. Gateway cost quotas live in the [CLI](/cli/build/gateway), dashboard, and [MCP tools](/reference/mcp/gateway).
+
+```python
+from dome import DomeAdminClient
+
+with DomeAdminClient(
+    base_url="https://api.domesystems.ai",
+    platform_key="{{PLATFORM_KEY}}",
+    workspace_id="{{WORKSPACE_ID}}",
+) as admin:
+    gateway = admin.create_gateway(
+        name="incident-response",
+        description="Tools + models for the incident-response agents",
+    )
+
+    # Expose every tool this MCP connection publishes through the Gateway.
+    admin.add_gateway_tool_source(
+        gateway_id=gateway.id,
+        connection_id="{{MCP_CONNECTION_ID}}",
+    )
+
+    # Admit every agent in the workspace.
+    admin.set_gateway_all_agents_grant(
+        gateway_id=gateway.id,
+        granted=True,
+    )
+
+    # The control plane returns complete call-ready endpoints.
+    print(gateway.gateway_url)
+    print(gateway.endpoints.mcp_url)
+```
+
+Deleting a gateway (`delete_gateway`) removes its memberships but leaves the underlying connections and pools unchanged. Callers still pointed at the deleted gateway's URL fail closed; repoint them first.
+
+### Admin errors
+
+Every admin RPC raises `AdminAPIError` on non-2xx responses. The exception carries `path`, `status_code`, and the full response `body`. `body` is truncated in the exception message so a verbose HTML error page does not produce an unreadable `str()`.
+
+```python
+from dome import AdminAPIError
+
+try:
+    admin.register_agent(name="incident-bot")
+except AdminAPIError as exc:
+    if exc.status_code == 409:
+        print("agent already exists")
+    else:
+        raise
+```
+
+## Bootstrap helpers
+
+Setup scripts can provision a development agent and issue a fresh gateway key with one call.
+
+```python
+agent = await dome.bootstrap.ensure_agent(
+    name="incident-bot-dev",
+    control_plane_url="https://api.domesystems.ai",
+    platform_key="dome_pk_...",
+    workspace_id="{{WORKSPACE_ID}}",
+    allowed_tools=["github/list_issues"],
+    gateway_id="{{GATEWAY_ID}}",
+    wait_gateway=True,
+)
+
+print(agent.gateway_url)
+```
+
+| Helper | Description |
+|--------|-------------|
+| `dome.bootstrap.ensure_agent(...)` | Async: find or create an agent and (optionally) issue a key |
+| `dome.bootstrap.ensure_agent_sync(...)` | Synchronous form |
+| `dome.wait_for_agent_key(gateway_url=..., token=..., timeout=30)` | Block until a freshly issued key shows up in the gateway's API-key snapshot |
+
+Pass an existing `DomeAdminClient` as `admin_client=`, or pass `control_plane_url`, `platform_key`, and `workspace_id` and let the helper construct one. The returned `BootstrapAgent` exposes `agent_id`, `token`, `gateway_id`, and the complete `gateway_url`, plus the underlying `AgentRecord` and `AgentKeyMaterial`.
+
+`ensure_agent` is idempotent. If an agent with the exact name exists, it is reused; if `create_key=True`, the named key is created or rotated and fresh key material is returned.
+
+Pass `wait_gateway=True` to block until the gateway has synced the new key. Select it with `gateway_id=`; `gateway_url=` is only an optional complete-URL override for the readiness probe and must name the same gateway.
+
+## Errors
+
+All error classes inherit from `dome.DomeError`.
+
+### Control-plane / lifecycle
+
+| Class | Raised When |
+|-------|-------------|
+| `DomeConfigurationError` | SDK configuration cannot support the requested operation |
+| `DomeGatewayConfigurationError` | `gateway_url` is missing, malformed, unscoped, protocol-suffixed, or conflicts with `gateway_id`. Subclass of `DomeConfigurationError`; carries `gateway_url` |
+| `NotInitializedError` | Method called before `start_policy_sync()` for local checks |
+| `AlreadyStartedError` | Lifecycle double-start |
+| `ShutdownError` | Methods called after `close()` |
+| `NoBundleLoadedError` | Local `check()` called with no Cedar bundle synced |
+| `DeniedError` | Typed deny used by callers who prefer exceptions from `on_deny` |
+| `GatewayNotReadyError` | `wait_ready()` did not observe a ready gateway in time |
+| `DomeMissingProviderDependency` | A lazy provider factory needs an uninstalled package |
+
+### Gateway data-plane
+
+All gateway errors inherit from `DomeGatewayError` and carry `status_code` plus the raw response when available. `request_id` and `activity_id` are populated when the gateway response exposes them. `gateway_id` is stamped from the client's configured endpoint, so every gateway error names the gateway the failing call was routed through.
+
+| Class | Raised When |
+|-------|-------------|
+| `DomeGatewayError` | Generic gateway-side failure not matched by a typed subclass |
+| `DomeGatewayUnavailable` | gateway is unreachable or reports a transient outage |
+| `DomeAuthorizationDenied` | Dome policy denies the operation. Carries `reason`, `reason_code`, `determining_policy` |
+| `DomeCredentialRequired` | Per-user credential must be connected. Carries `connection_name`, `provision_url`, `expires_at` |
+| `DomePolicyStale` | gateway reports stale policy state |
+| `DomeToolNotFound` | Requested MCP tool does not exist |
+| `DomeToolExecutionError` | JSON-RPC error or `isError=true` (when `raise_on_tool_error=True`) |
+| `DomeActAsRequired` | gateway requires a verified act-as identity |
+| `DomeRateLimited` | gateway or upstream provider rate-limits the request |
+| `DomeModelNotFound` | model or pool cannot be found |
+
+```python
+try:
+    client.gateway.tools.call("github/list_issues", {"repo": "dome"}, act_as=user)
+except dome.DomeCredentialRequired as exc:
+    print("connect", exc.connection_name, "at", exc.provision_url)
+except dome.DomeAuthorizationDenied as exc:
+    print("denied:", exc.reason_code, exc.determining_policy)
+```
+
+## Async client
+
+`dome.AsyncClient` has the same constructor and exposes the same surfaces with `await`-able methods.
+
+```python
+import asyncio
+import dome
+
+async def main() -> None:
+    async with dome.AsyncClient(
+        token="{{AGENT_TOKEN}}",
+        gateway_url="https://gateway.domesystems.ai/gateways/{{GATEWAY_ID}}",
+        act_as_method="none",
+    ) as client:
+        result = await client.gateway.tools.call(
+            "github/list_issues",
+            {"repo": "dome"},
+            act_as=dome.PlainActAs(email="alice@corp.com"),
+        )
+        print(result.structured_content or result.content)
+
+asyncio.run(main())
+```
+
+`client.audit.stream(...)` returns an async iterator on `AsyncClient`. `client.activity(...)` returns an `AsyncActivity` and supports `async with`.
+
+## Framework adapters
+
+Adapters are separate PyPI packages that wrap `Client` for a specific framework. Refer to [Adapters](/sdks/python/adapters) for the catalog and integration details.
+
+## Next steps
+
+Wrap the client for a framework, or wire credentials and Act-As from Develop:
+
+- [Adapters](/sdks/python/adapters) for framework wrappers
+- [Develop](/develop) for credentials, endpoints, and Act-As envelopes
+- [Delegated agents](/build/agents/delegated) when access depends on the person
+- [Examples](/tutorials/examples) for a governed agent pattern

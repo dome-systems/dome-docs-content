@@ -1,0 +1,9 @@
+{
+  "pages": [
+    "index",
+    "audit",
+    "observe",
+    "integrations",
+    "webhooks"
+  ]
+}

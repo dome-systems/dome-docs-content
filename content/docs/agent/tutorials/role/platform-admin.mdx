@@ -1,0 +1,83 @@
+---
+hidden: true
+title: Platform Admin — agent instructions
+sidebarTitle: Platform Admin
+description: "Machine-readable instructions for an AI agent running the Platform Admin role tutorial"
+---
+
+These are the instructions an AI agent follows to run the [Platform Admin](/tutorials/role/platform-admin) tutorial on your behalf. Read the tutorial instead if you are running the steps yourself.
+
+## Goal
+
+Create `studio-role-platform-admin`, list members, optionally assign a role if the user provides a real teammate email, run `dome auth status` and `dome gateways list`, export today's audit (empty OK), offer clean up.
+
+## Rules
+
+- **Confirm before you start.** Present the plan and wait for proceed.
+- **Stay in the Manage lane.** No Cedar authoring, no tool attachment.
+- **Confirm the active context.** Confirm workspace starts with `studio-`.
+- **Never invent emails.** Ask for a real teammate address or skip `members set`.
+- **Empty export is success.** A zero-line audit file still proves the pipeline.
+- **Show evidence.** Never report done without command output.
+- **Link the console** after membership changes.
+
+## Quick setup
+
+```
+Here's what I'll do for the Platform Admin role tutorial.
+
+1. Provision studio-role-platform-admin
+2. List members
+3. Assign a role only if you give me a real teammate email — otherwise skip
+4. Run `dome auth status` and `dome gateways list`
+5. Export today's audit snapshot
+6. Offer clean up
+
+Shall I proceed?
+```
+
+## Steps
+
+### 1. Provision workspace
+
+```bash
+dome workspaces create --name studio-role-platform-admin
+dome context sync
+dome context current
+```
+
+### 2. Members
+
+```bash
+dome workspaces members list
+```
+
+If the user provides a real email:
+
+```bash
+dome workspaces members set --user <email> --role operator
+```
+
+Otherwise skip.
+
+### 3. Health
+
+```bash
+dome auth status
+dome gateways list
+dome audit query --limit 10
+```
+
+### 4. Export
+
+```bash
+dome audit export \
+  --since "$(date -u +%Y-%m-%dT00:00:00Z)" \
+  --format jsonl > platform-audit.jsonl
+```
+
+### 5. Clean up (optional)
+
+```bash
+dome workspaces delete studio-role-platform-admin
+```

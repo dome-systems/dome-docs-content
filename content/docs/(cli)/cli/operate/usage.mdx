@@ -1,0 +1,70 @@
+---
+title: dome usage
+description: Show LLM token usage and estimated cost for the active workspace
+---
+
+`dome usage` prints LLM token consumption and a per-class cost estimate for the active workspace. Use it to spot-check spend, build budget alerts in scripts, or confirm token attribution matches what the dashboard and `dome_usage` MCP tool show.
+
+<Callout type="info">
+The estimated cost is a blended cross-model rate intended for trend-watching, not a billable figure. Refer to [Token Usage and Cost](/operate/observe#token-usage-and-cost) for the full token-class breakdown and pricing model.
+</Callout>
+
+## Usage
+
+```bash
+dome usage
+```
+
+Reads `GET /api/v1/metrics/summary` for the active workspace over the last 24 hours and renders the totals.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--json` | bool | Output as JSON for scripting |
+
+**Permission:** workspace `audit.view`
+
+**Prerequisite:** an active workspace selected with `dome context use <name>`.
+
+```bash
+dome usage
+```
+
+Output (table):
+
+```
+LLM token usage (last 24h)
+  Input tokens         412000
+  Cache read tokens    1820000
+  Cache write tokens   88000
+  Output tokens        64000
+  Reasoning tokens     12000
+  Total tokens         2396000
+  Token source         provider-reported
+  Estimated cost       $3.4521 (per-model estimate of your provider bill, not a Dome charge)
+```
+
+Calls for which the provider reported no usage add no tokens to this view. Dome derives tokens from wire bytes separately for billing; run [`dome models rates`](/cli/connect/models#model-rates) for that conversion table.
+
+Output (`--json`):
+
+```json
+{
+  "llm_input_tokens": 412000,
+  "llm_cache_read_tokens": 1820000,
+  "llm_cache_write_tokens": 88000,
+  "llm_output_tokens": 64000,
+  "llm_reasoning_tokens": 12000,
+  "llm_total_tokens": 2396000,
+  "estimated_cost_usd": 3.4521
+}
+```
+
+Pipe into `jq` to build budget guards:
+
+```bash
+# Fail if estimated 24h spend crosses $10
+cost=$(dome usage --json | jq '.estimated_cost_usd')
+awk "BEGIN { exit !($cost > 10) }" && echo "over budget" >&2
+```
+
+For per-agent, per-key, per-identity, or per-model attribution, see the [REST query surface](/operate/observe#token-usage-and-cost) — the dashboard and the [`dome_usage`](/reference/mcp/audit#audit-usage) MCP tool consume the same endpoints.

@@ -1,0 +1,32 @@
+---
+title: Sessions
+description: List and revoke your signed-in Dome sessions
+---
+
+Sessions belong to the signed-in person, not to a workspace. Platform API keys cannot use these tools.
+
+## dome_sessions_list
+
+List Dashboard, CLI, and hosted Dome MCP sessions, newest first. The session used by this MCP conversation is marked current.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `page_size` | number | No | Sessions per page; default 100, maximum 500 |
+| `page_token` | string | No | Cursor from the prior response |
+
+## dome_sessions_revoke
+
+Sign out of one session, or every session other than the one this MCP conversation uses. Revoking the current session ends this conversation's access.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `session_id` | string | Conditional | Session to revoke |
+| `others` | bool | Conditional | Revoke every other session instead |
+
+Pass exactly one of `session_id` or `others=true`.
+
+## Next steps
+
+- [Configure Dome via MCP](/manage/mcp#manage-your-sessions)
+- [`dome sessions`](/cli/session/sessions)
+

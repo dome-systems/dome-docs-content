@@ -1,0 +1,80 @@
+---
+title: Install
+description: Install the Dome CLI and authenticate
+---
+
+Install the Dome CLI to manage agents, deploy rules, and operate the platform. The CLI also hosts the MCP server for AI assistants.
+
+You need a Dome account. [Sign up](https://app.domesystems.ai) with Google, GitHub, or GitLab, or with your company SSO.
+
+## Install the CLI
+
+<Tabs items={["Homebrew (macOS and Linux)","Direct download"]}>
+  <Tab value="Homebrew (macOS and Linux)">
+    ```bash
+    brew trust dome-systems/tap
+    brew install dome-systems/tap/dome
+    ```
+
+    <Callout type="info">
+    Homebrew 6 requires you to trust a third-party tap before it loads its formulae. On older Homebrew, `brew trust` is unnecessary and harmless.
+    </Callout>
+  </Tab>
+  <Tab value="Direct download">
+    Set your platform, then extract the binary onto your `PATH`:
+
+    ```bash
+    VERSION=$(curl -fsSL https://api.github.com/repos/dome-systems/releases/releases/latest | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
+    OS=darwin       # or linux
+    ARCH=arm64      # or amd64
+
+    curl -sSL "https://github.com/dome-systems/releases/releases/download/v${VERSION}/dome_${VERSION}_${OS}_${ARCH}.tar.gz" | tar xz
+    sudo mv dome /usr/local/bin/dome
+    ```
+
+    Each release also publishes `checksums.txt` and a per-archive SPDX SBOM. Verify a download with `shasum -a 256 -c checksums.txt --ignore-missing`.
+  </Tab>
+</Tabs>
+
+Verify the installation.
+
+```bash
+dome version
+```
+
+## Authenticate
+
+Log in.
+
+```bash
+dome auth login
+```
+
+This opens a browser-based SSO flow. On success, the CLI stores a session token locally.
+
+## Select a Workspace
+
+List available workspaces and select an active context.
+
+```bash
+dome context list
+dome context use <workspace>
+```
+
+All subsequent commands operate within this workspace. Switch at any time with `dome context use`.
+
+## Verify
+
+Confirm your session and workspace:
+
+```bash
+dome auth status
+dome context current
+```
+
+## Next steps
+
+- [Quickstart](/quickstart) to register your first agent and verify governed traffic
+- [Setup AI assistant](/setup-ai-assistant) to connect an assistant through MCP
+- [Personas](/personas) to identify your role and find relevant docs
+- [CLI](/cli) for the full command reference

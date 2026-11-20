@@ -1,0 +1,30 @@
+---
+title: Managed agents
+description: Managed-agent configuration and run states
+---
+
+A managed agent is an agent whose execution worker Dome runs. An external agent runs its worker in your own runtime. A managed agent extends an [agent](/reference/entities/agents) with the configuration needed to execute its prompt through one gateway.
+
+| Field | Description |
+| --- | --- |
+| `agent` | Underlying agent identity, lifecycle, access grant, and rules |
+| `system_prompt` | Persistent instructions for each run |
+| `default_model` | model or pool the worker invokes |
+| gateway grant | Exactly one allowed gateway; it determines the models and tools the worker can reach |
+
+Managed agents cannot carry separate tool grants. Dome holds the runner credential and never returns it.
+
+## Runs
+
+| Field | Description |
+| --- | --- |
+| `trigger_source` | `manual`, `schedule`, or `webhook` |
+| `status` | `pending`, `running`, `succeeded`, `failed`, or `cancelled` |
+| `scheduled_for`, `started_at`, `finished_at` | Queue and execution timestamps |
+| `output_summary` | Final assistant text for a successful run |
+| `error` | Last failure reason when present |
+| `attempt`, `max_retries` | Attempt count and retry budget captured when the run was created |
+| `trigger_id` | Trigger that queued the run; empty for a manual run |
+| `cancel_reason` | Why pending work was withdrawn, when cancelled |
+
+Refer to [Managed agents](/build/agents/managed) for operations and [Triggers](/reference/entities/triggers) for the resource that starts runs.

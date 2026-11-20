@@ -1,0 +1,277 @@
+---
+title: dome audit
+description: Query, stream, get, export, catalog, and SIEM-stream audit events
+---
+
+`dome audit` reads the evidence Dome records for every governed action. Query or tail events, follow one activity chain end to end, browse the event catalog, and export to a file or a SIEM destination. Refer to [Audit](/operate/audit) for what each event carries.
+
+| Command | |
+|---------|---|
+| [Query events](#query-events) | `dome audit query` |
+| [Stream events](#stream-events) | `dome audit stream` |
+| [Get event](#get-event) | `dome audit get [event-id]` |
+| [Export events](#export-events) | `dome audit export` |
+| [Catalog](#catalog) | `dome audit catalog list` / `show` |
+| [SIEM](#siem) | `dome audit siem enable` / `disable` / `resume` / `status` / `list` |
+| [List chains](#list-chains) | `dome audit chains` |
+| [Show chain](#show-chain) | `dome audit chain [activity-id]` |
+
+<Callout type="info">
+  All commands scope the read to the active context, so the server checks the workspace-level `audit.view` permission. Switch workspaces with `dome context use <name>` before running the command. Tenant- or org-scoped API keys with no workspace selected fall back to the tenant-level `audit.view`.
+</Callout>
+
+## Query events
+
+```bash
+dome audit query
+```
+
+Query audit events with optional filters.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--types` | string[] | filter by event types |
+| `--classes` | string[] | `governing`, `state_change`, `security`, `audit_access` |
+| `--stages` | string[] | `attempted`, `completed` |
+| `--results` | string[] | `allowed`, `denied` |
+| `--deny-reasons` | string[] | Shared denial reasons such as `permission_denied`, `guard_blocked`, or `plan_limit` |
+| `--has-error` | bool | filter by error presence. Unset means no filter; `--has-error=false` selects events without errors. |
+| `--act-as-sub` | string | Select governed calls made for one verified end-user subject |
+| `--agent-id` | string | filter by agent ID |
+| `--agent-ids` | string[] | filter by agent IDs |
+| `--primary-resource-id` | string | filter by primary resource ID |
+| `--primary-resource-kind` | string | filter by primary resource kind |
+| `--trace-id` | string | filter by trace ID — events for one request |
+| `--activity-id` | string | filter by activity chain ID. Refer to [Activity chains](/reference/events/contracts#correlation) reference. |
+| `--operation-id` | string | filter by operation ID |
+| `--parent-event-id` | string | filter by parent event ID |
+| `--actor-kind` | string | filter by actor kind |
+| `--actor-id` | string | filter by actor ID |
+| `--producer-service` | string | filter by producer service |
+| `--producer-gateway-id` | string | filter by producer gateway ID |
+| `--request-surface` | string | filter by request surface |
+| `--caller-surface` | string | filter by caller application surface |
+| `--payload-filter` | string[] | `event.type:field` or `event.type:field=value` (repeatable). Refer to [Payload filters](/reference/events/contracts#payload-filters) reference. |
+| `--since` | string | Start time (RFC3339) |
+| `--until` | string | End time (RFC3339) |
+| `--limit` | int32 | Maximum results (default: 50) |
+| `--page-token` | string | Cursor from a previous query |
+| `--compact` | bool | Bounded investigation rows; use `audit get` for full payload |
+
+## Stream events
+
+```bash
+dome audit stream
+```
+
+Stream audit events in real-time via SSE. Accepts the same filters as [`query`](#query-events) except `--limit` and `--compact`.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--types` | string[] | filter by event types |
+| `--classes` | string[] | filter by event classes |
+| `--stages` | string[] | filter by operation stage |
+| `--results` | string[] | filter by operation verdict |
+| `--deny-reasons` | string[] | filter denied operations by shared denial reason |
+| `--has-error` | bool | filter by error presence |
+| `--agent-id` | string | filter by agent ID |
+| `--agent-ids` | string[] | filter by agent IDs |
+| `--primary-resource-id` | string | filter by primary resource ID |
+| `--primary-resource-kind` | string | filter by primary resource kind |
+| `--trace-id` | string | filter by trace ID |
+| `--activity-id` | string | Follow one activity chain live |
+| `--operation-id` | string | filter by operation ID |
+| `--parent-event-id` | string | filter by parent event ID |
+| `--actor-kind` | string | filter by actor kind |
+| `--actor-id` | string | filter by actor ID |
+| `--producer-service` | string | filter by producer service |
+| `--producer-gateway-id` | string | filter by producer gateway ID |
+| `--request-surface` | string | filter by request surface |
+| `--caller-surface` | string | filter by caller application surface |
+| `--payload-filter` | string[] | Payload filter (repeatable) |
+| `--since` | string | Start time (RFC3339) |
+| `--until` | string | End time (RFC3339) |
+| `--page-token` | string | Cursor from a previous stream |
+
+## Get event
+
+```bash
+dome audit get [event-id]
+```
+
+Get a single audit event by ID.
+
+Enum values — event class, result, actor kind, surface — render as short tokens (`governing`, `denied`, `gateway_mcp`) in both the table and `--format json` output, and the filter flags accept those same tokens. Refer to [Enum rendering](/reference/events/contracts#enum-rendering) reference.
+
+## Export events
+
+```bash
+dome audit export
+```
+
+Export audit events in JSON-lines, JSON, CSV, OCSF, or CEF format. The command pages to exhaustion up to `--limit`; it never formats only the first server page. It refuses an artifact when any page is incomplete, repeats a cursor, or would exceed the 10,000-event hard maximum. An unknown payload type is retained with an `@unresolved` marker and a compatibility warning instead of dropping the event.
+
+| Format | Output |
+|--------|--------|
+| `jsonl` (default) | One JSON object per line (NDJSON). |
+| `json` | Single pretty-printed JSON array. |
+| `csv` | Comma-separated rows. |
+| `ocsf` | OCSF v1.1.0 JSON array for Splunk, Sentinel, or Chronicle. |
+| `cef` | Common Event Format lines for ArcSight, QRadar, or generic syslog. |
+
+Accepts the same filters as [`query`](#query-events), plus:
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--limit` | int32 | Maximum results (default: 1000) |
+| `--format` | string | `jsonl`, `json`, `csv`, `ocsf`, `cef` (default: `jsonl`) |
+
+```bash
+# Export the last 24 hours as OCSF for a SIEM
+dome audit export \
+  --since 2026-05-26T00:00:00Z \
+  --format ocsf > audit.ocsf.json
+```
+
+
+## Catalog
+
+```bash
+dome audit catalog list
+```
+
+List every audit event type. Complete and unpaginated. Requires `audit.view`.
+
+```bash
+dome audit catalog show [event-type]
+```
+
+Show field detail for one event type.
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `event-type` | string | Yes | Event type name |
+
+## SIEM
+
+Continuous audit → SIEM streaming for Datadog or Grafana Loki. Distinct from [`dome audit stream`](#stream-events) (live tail) and from batch [`export`](#export-events).
+
+Use [`dome integrations list`](/cli/operate/integrations) to find the slug or instance ID of a connected destination.
+
+| Command | Permission |
+|---------|------------|
+| `dome audit siem list` | `audit.view` |
+| `dome audit siem status [slug-or-id]` | `audit.view` |
+| `dome audit siem enable [slug-or-id]` | `audit.export` |
+| `dome audit siem disable [slug-or-id]` | `audit.export` |
+| `dome audit siem resume [slug-or-id]` | `audit.export` |
+
+```bash
+dome audit siem list
+dome audit siem enable <slug-or-id>
+dome audit siem resume <slug-or-id> --skip-to-now --yes
+```
+
+Streaming is forward-only from enable time. `enable` creates a stream; if one exists, use `resume`. `disable` keeps the cursor. `--skip-to-now` abandons backlog permanently.
+
+`enabled` and delivery `state` are separate. A disabled stream retains its last health state, so `state=active` does not mean it is delivering unless `enabled=true`. The CLI combines both facts as `stopped`, `stopped (was erroring)`, or a corresponding paused label. A destination that has never been enabled is absent from `list`, and `status` returns not found.
+
+## Hash chains
+
+### List chains
+
+```bash
+dome audit chains
+```
+
+List activity chains in the active workspace. A chain is the set of audit events sharing one `activity_id` — a session, an LLM turn, a conversation thread, or a scripted run — computed at read time by grouping on `activity_id` within the workspace.
+
+A chain is listed when **any** of its events matches the filter. Per-chain counts always reflect the full chain. Drill into one chain's events with [`dome audit chain <activity-id>`](#show-chain). Refer to [Activity chains](/reference/events/contracts#correlation) reference for the model and trust labels.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--types` | string[] | Chain contains an event of these types |
+| `--classes` | string[] | Chain contains an event of these classes (`governing`, `state_change`, `security`, `audit_access`) |
+| `--stages` | string[] | Chain contains an event at one of these stages |
+| `--results` | string[] | Chain contains an event with one of these verdicts (`allowed`, `denied`) |
+| `--deny-reasons` | string[] | Chain contains a refusal with one of these reasons |
+| `--has-error` | bool | Chain contains an event matching error presence |
+| `--agent-id` | string | Chain contains an event for this agent |
+| `--agent-ids` | string[] | Chain contains an event for these agents |
+| `--actor-kind` | string | Chain contains an event with this actor kind |
+| `--actor-id` | string | Chain contains an event with this actor ID |
+| `--producer-service` | string | Chain contains an event from this producer service |
+| `--request-surface` | string | Chain contains an event from this request surface |
+| `--since` | string | Start time (RFC3339) |
+| `--until` | string | End time (RFC3339) |
+| `--limit` | int32 | Maximum chains (default: 50) |
+| `--page-token` | string | Cursor from a previous chains query |
+
+Per-event identity filters (`--trace-id`, `--operation-id`, `--parent-event-id`) and payload filters identify a single event, not a chain, and are not offered here.
+
+```bash
+# Recent chains in the active workspace
+dome audit chains --limit 20
+
+# Chains that contain a denied governing event in the last day
+dome audit chains \
+  --classes governing \
+  --results denied \
+  --since 2026-06-05T00:00:00Z
+```
+
+Each row reports the chain's `activity_id`, event count, last activity timestamp, outcome breakdown, trust label (`server-owned`, `caller-asserted`, or mixed — refer to [Activity trust](/reference/events/contracts#correlation) reference), and distinct event-type count.
+
+### Show chain
+
+```bash
+dome audit chain [activity-id]
+```
+
+Show one activity chain's events in order. A drill-in into `audit query` filtered by `activity_id`. Accepts the same per-event filters as `audit query` to narrow the chain's events further.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--types` | string[] | filter by event types |
+| `--classes` | string[] | filter by event classes |
+| `--stages` | string[] | filter by operation stage |
+| `--results` | string[] | filter by operation verdict |
+| `--deny-reasons` | string[] | filter by denial reason |
+| `--has-error` | bool | filter by error presence |
+| `--agent-id` | string | filter by agent ID |
+| `--actor-kind` | string | filter by actor kind |
+| `--actor-id` | string | filter by actor ID |
+| `--payload-filter` | string[] | Payload filter as `event.type:field` or `event.type:field=value` (repeatable) |
+| `--since` | string | Start time (RFC3339) |
+| `--until` | string | End time (RFC3339) |
+| `--limit` | int32 | Maximum events (default: 200) |
+| `--page-token` | string | Cursor from a previous query |
+
+```bash
+# Every event in one chain
+dome audit chain case-12345
+
+# Only the denied events in that chain
+dome audit chain case-12345 --results denied
+```
+
+### Emit events
+
+Set `--activity` (or `DOME_ACTIVITY_ID`) on the root command to assert a stable activity ID. Every Connect RPC the run makes carries `X-Dome-Activity-Id`, so the audit events all share one `activity_id` and form one chain.
+
+```bash
+# One run, many commands, one chain.
+export DOME_ACTIVITY_ID="case-12345"
+
+dome agents register --name worker
+dome rules apply ./rules
+dome audit query --limit 5
+
+# Inspect the chain you just emitted.
+dome audit chains --since 2026-06-05T00:00:00Z
+dome audit chain case-12345
+```
+
+`--activity` overrides `DOME_ACTIVITY_ID`. The ID is opaque to Dome — pick whatever maps to your unit of work. The header is first-party only and is never forwarded to third-party LLM or MCP backends.
+
+The `--activity` emit flag (root command) and the `--activity-id` filter flag (audit reads) are distinct: one stamps events, the other selects them.

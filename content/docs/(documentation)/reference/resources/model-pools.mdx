@@ -1,0 +1,102 @@
+---
+title: Pools
+sidebarTitle: Pools
+description: 'Routing strategies, failover limits, pool resolution order, and match_when dialect'
+---
+
+This page lists routing strategies, failover limits, resolution order, and the `match_when` predicate dialect.
+
+Refer to [Pools](/concepts/resources/model-pools) concept for how routing works. Configure on [Pools](/connect/pools).
+
+## Routing strategies
+
+| Strategy | Primary selection | Member fields it uses |
+|----------|-------------------|----------------------|
+| `priority_weighted` | Chooses by weight from the lowest priority tier | Priority and weight |
+| `round_robin` | Rotates through all members in order | Neither |
+| `least_loaded` | Chooses the member with the fewest in-flight requests and breaks ties randomly | Neither |
+| `most_quota_remaining` | Chooses the member with the most remaining per-model cost-quota headroom; unmetered members serve last | Neither |
+
+`strategy_scope`: `workspace` shares round-robin, least-loaded, and `most_quota_remaining` tiebreak state across agents; `caller` tracks per agent. Priority-weighted routing ignores `strategy_scope`. For `most_quota_remaining`, scope only affects the tiebreak rotation — primary ordering always follows remaining headroom.
+
+`most_quota_remaining` reads the same cost-quota signal that gates routing. Exhausted members are locked out first by the quota barrier; this strategy only orders the survivors. With no per-model quotas configured, every member ties and the strategy degrades to round-robin. Meter every member for the ordering to have effect.
+
+## Failover
+
+| Value | Runtime behavior |
+|-------|------------------|
+| No limit or `all` | Try every eligible member until one succeeds |
+| `0` | Try only the primary |
+| `N` | Try the primary and up to `N` additional members |
+
+Authorization and streaming failover rules are on [Pools](/connect/pools#failover).
+
+## Automatic pool selection
+
+Use a `match_when` rule to select a pool from request attributes when the
+request does not name a pool directly. This selects the pool; its routing
+strategy and failover settings then select a member inside that pool.
+
+Dome resolves a request's `model` value in this order:
+
+1. A pool with that exact name
+2. A direct model connection with that exact name
+3. A direct connection whose upstream model identifier matches
+4. The first pool in the configured order whose `match_when` predicate matches
+5. The workspace default pool
+
+Exact names beat conditional routes. When more than one `match_when` rule
+matches, the first pool in the configured pool order wins. Reorder pools to
+change that precedence.
+
+### Match rule syntax
+
+Enter one JSON predicate. By default, every condition in the object must match.
+An empty rule does not select the pool automatically.
+
+```json title="Route long prompts to this pool"
+{
+  "prompt_tokens": { "gt": 100000 }
+}
+```
+
+```json title="Route requests to a versioned endpoint"
+{
+  "endpoint": { "prefix": "/v1/enterprise/" }
+}
+```
+
+`match_when` accepts these request attributes:
+
+| Input | Supported matching |
+|-------|--------------------|
+| `prompt_tokens` | Estimated prompt size, characters ÷ 4, with numeric `gt`, `lt`, and `eq` |
+| `requested_max_tokens`, `tool_count` | Numeric `gt`, `lt`, and `eq` |
+| `endpoint` and `header.<name>` | Equality, `in`, `prefix`, `suffix`, and RE2 `regex` |
+| `principal.metadata.<key>` | String or numeric matching |
+| `principal.act_as.sub`, `.email`, and `.claims.<key>` | String or numeric matching |
+| `principal.act_as.roles` and `.groups` | `contains`, `containsAny`, and `containsAll` |
+| Nested predicates | `any`, `all`, and `not` |
+
+Use `any`, `all`, or `not` to combine conditions differently:
+
+```json title="Route requests that meet either condition"
+{
+  "any": [
+    { "prompt_tokens": { "gt": 100000 } },
+    { "endpoint": { "prefix": "/v1/batch/" } }
+  ]
+}
+```
+
+An unknown condition, missing value, or unverified act-as attribute never
+matches. Automatic pool selection does not replace authorization.
+
+## Next steps
+
+Create pools and attach them to gateways:
+
+- [Pools](/concepts/resources/model-pools) concept for members, routing, and reachability
+- [Pools](/connect/pools) to create pools, manage members, and attach gateways
+- [Models](/reference/resources/models) reference for provider and credential catalogs
+- [LLM gateway](/concepts/gateways/llm-gateway) concept for dispatch on the wire

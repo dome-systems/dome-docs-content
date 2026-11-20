@@ -1,0 +1,13 @@
+{
+  "pages": [
+    "index",
+    "settings",
+    "import-export",
+    "public-preview",
+    "access",
+    "environments",
+    "mcp",
+    "export",
+    "billing"
+  ]
+}

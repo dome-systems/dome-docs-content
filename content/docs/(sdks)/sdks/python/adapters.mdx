@@ -1,0 +1,194 @@
+---
+title: Adapters
+sidebarTitle: Adapters
+description: Framework adapters that wrap the Python SDK for specific AI frameworks
+---
+
+Adapters wrap `dome.Client` for a specific AI framework so tool execution and LLM calls flow through Dome with no extra glue. Install the adapter alongside the core `dome-sdk` package — adapters version and release independently.
+
+## Available adapters
+
+| Package | Install | Framework |
+|---------|---------|-----------|
+| `dome-langchain` | `pip install dome-langchain` | LangChain (`langchain-core`) |
+| `dome-langchain[openai]` | `pip install 'dome-langchain[openai]'` | + `DomeChatOpenAI` |
+| `dome-langchain[anthropic]` | `pip install 'dome-langchain[anthropic]'` | + `DomeChatAnthropic` |
+
+## LangChain
+
+`dome-langchain` exposes three surfaces over `dome.Client`:
+
+- **Gateway tools** — `DomeGatewayTool` / `gateway_tool` invoke MCP tools through the Dome gateway as native LangChain tools.
+- **Governed local tools** — `DomeGovernedTool` / `govern_tools` wrap existing LangChain tools so every call passes through a local `client.check()` before execution. Requires `client.start_policy_sync()`.
+- **Governed chat models** — `DomeChatOpenAI` and `DomeChatAnthropic` are provider subclasses that route every LLM call through the Dome gateway under an agent identity, with per-call `act_as`.
+
+### Install
+
+```bash
+pip install dome-langchain
+```
+
+The core package depends on `dome-sdk` and `langchain-core`. Install `dome-langchain[openai]` or `dome-langchain[anthropic]` to enable the chat-model classes.
+
+### Gateway tools
+
+Use `DomeGatewayTool` when the tool already lives behind the Dome gateway. The adapter calls `client.gateway.tools.call()` — authorization, credential resolution, and audit all happen server-side.
+
+`gateway_url` must include the `/gateways/{id}` segment naming the agent's [Gateway](/sdks/python/reference#gateways). A bare-root URL fails at `connect()` with `DomeGatewayConfigurationError`.
+
+```python
+import dome
+from dome_langchain import DomeGatewayTool
+
+client = dome.Client(
+    token="{{AGENT_TOKEN}}",
+    gateway_url="https://gateway.domesystems.ai/gateways/{{GATEWAY_ID}}",
+    act_as_method="none",
+)
+client.connect()
+
+search = DomeGatewayTool(
+    dome_client=client,
+    name="github/list_issues",
+    description="List GitHub issues",
+    act_as=dome.PlainActAs(email="alice@corp.com"),
+)
+```
+
+Build a list from the gateway catalog with `gateway_tools_from_catalog`:
+
+```python
+from dome_langchain import gateway_tools_from_catalog
+
+catalog = client.gateway.tools.list(act_as=user)
+tools = gateway_tools_from_catalog(client, catalog.tools, act_as=user)
+```
+
+| Symbol | Signature | Purpose |
+|--------|-----------|---------|
+| `DomeGatewayTool` | `DomeGatewayTool(*, dome_client, name, description="", gateway_tool_name=None, act_as=None, raise_on_tool_error=True)` | Wrap one gateway MCP tool as a LangChain `BaseTool` |
+| `gateway_tool` | Factory returning a `DomeGatewayTool` | Same args as the constructor |
+| `gateway_tools_from_catalog` | `(client, tools, *, act_as=None, raise_on_tool_error=True)` | Build a list from `client.gateway.tools.list()` results |
+
+Bind a per-user default with `tool.with_act_as(user)`. Pass `dome_act_as=` on a single invocation to override for that call.
+
+### Governed local tools
+
+Use `govern_tools` to wrap LangChain tools that run in-process. The wrapper calls `client.check()` (local Cedar) and either runs the inner tool or returns a denial string the agent sees as the tool's output.
+
+```python
+import dome
+from dome_langchain import govern_tools
+from langchain.agents import create_agent
+
+client = dome.Client(
+    token="{{AGENT_TOKEN}}",
+    control_plane_url="https://api.domesystems.ai",
+)
+client.connect()
+client.start_policy_sync()
+
+governed = govern_tools(client, [search_tool, db_tool])
+agent = create_agent(model, tools=governed)
+```
+
+| Symbol | Signature | Purpose |
+|--------|-----------|---------|
+| `DomeGovernedTool` | `DomeGovernedTool(*, tool, dome_client, action="mcp:call", resource_type="mcp_tool")` | Wrap one LangChain tool with a local pre-check |
+| `govern_tools` | `(dome_client, tools, *, action="mcp:call", resource_type="mcp_tool")` | Wrap a list of tools |
+
+For non-MCP tools, override `action` and `resource_type` to match the Cedar entity types in your rules.
+
+### Governed chat models
+
+`DomeChatOpenAI` and `DomeChatAnthropic` are subclasses of `ChatOpenAI` and `ChatAnthropic` whose requests flow through the Dome gateway. They `isinstance`-check, compose in LCEL, stream, tool-call, and produce structured output exactly like the upstream class.
+
+```python
+from dome_langchain import AgentIdentity, DomeChatOpenAI
+
+llm = DomeChatOpenAI.for_agent(
+    agent,                         # any object with .token and .gateway_url
+    model="prod-gpt",
+    act_as=dome.PlainActAs(email="alice@corp.com"),
+)
+
+llm.invoke("Summarize the open incidents")        # default act_as
+llm.invoke("Hello", act_as=other_user)             # per-call override
+per_user = llm.with_act_as(other_user)             # bind once, reuse
+```
+
+The construction-time `act_as` is a default; any `invoke` / `stream` / `batch` call may override it. The header rides on that one request only.
+
+The agent's `gateway_url` must be the complete `/gateways/{id}` URL returned by key creation or token exchange. A chat model's `base_url` is fixed for the life of the instance, so one chat instance maps to one gateway. A missing or unscoped value raises `DomeGatewayConfigurationError` at construction.
+
+```python
+import dome
+from dome_langchain import AgentIdentity, DomeChatOpenAI
+
+identity = AgentIdentity(
+    token="{{AGENT_TOKEN}}",
+    gateway_url="https://gateway.domesystems.ai/gateways/{{GATEWAY_ID}}",
+)
+llm = DomeChatOpenAI.for_agent(identity, model="prod-gpt")
+```
+
+| Symbol | Purpose |
+|--------|---------|
+| `DomeChatOpenAI` | `ChatOpenAI` subclass routed through the Dome LLM gateway |
+| `DomeChatAnthropic` | `ChatAnthropic` subclass routed through the Dome LLM gateway |
+| `broker_chat(...)` / `broker_chat_for(agent)` | Factory equivalents that return a `DomeChatOpenAI` |
+| `broker_chat_anthropic(...)` | Factory for `DomeChatAnthropic` |
+
+### Compose primitives
+
+`dome-langchain` also ships chain primitives for building governed topologies on top of Dome identity:
+
+| Symbol | Purpose |
+|--------|---------|
+| `Gate` | A `Runnable` that runs a Cedar check at a node boundary |
+| `mint_ephemeral` / `session` | Spawn short-lived agent identities for fan-out runs |
+| `causal` / `current_causal_run_id` | Bind a causal run ID to a chain |
+| `gate_edge` / `gate_command` / `fleet_send` | LangGraph shims that gate transitions between nodes |
+
+```python
+from dome_langchain import gate_edge
+
+g.add_conditional_edges(
+    "classifier",
+    gate_edge(
+        dome_client=client,
+        from_node="classifier",
+        to_node="retriever",
+        resource="chain.hop_allowed",
+    ),
+)
+```
+
+#### Scope spawned children to a Gateway
+
+`mint_ephemeral`, `session`, and `FleetSession.spawn` accept `gateway_id`. Key creation selects that gateway and returns its complete URL, so every child carries a call-ready `gateway_url` for `broker_chat_for(child)`.
+
+```python
+from dome_langchain import session
+
+with session(
+    platform=admin,
+    parent_agent_id=parent.id,
+    gateway_id="{{GATEWAY_ID}}",
+) as fleet:
+    children = fleet.spawn(count=4, template="analyst")
+    # Each child.gateway_url is complete and call-ready.
+```
+
+If a returned gateway ID or endpoint conflicts with the requested selection, the adapter fails closed with `DomeGatewayConfigurationError`. Refer to [Gateways](/sdks/python/reference#gateways).
+
+## Build a new adapter
+
+Adapters live alongside the core SDK in `packages/dome-<framework>/` within `sdk-dome-python`. Each is its own PyPI package depending on `dome-sdk` and the target framework. Use `packages/dome-langchain/` as the reference implementation.
+
+## Next steps
+
+- [Python reference](/sdks/python/reference) for Client, act-as, and gateway calls
+- [SDKs](/sdks) for when to use the SDK versus raw gateway calls
+- [Gateways](/build/gateways) to attach membership and grants
+- [Examples](/tutorials/examples) for working agents you can clone

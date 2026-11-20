@@ -1,0 +1,14 @@
+{
+  "name": "@dome/docs-content",
+  "version": "0.1.0",
+  "private": false,
+  "description": "Released, open-source documentation content for the Dome Developer Portal",
+  "files": [
+    "content",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "check": "node scripts/check-public-content.mjs"
+  }
+}

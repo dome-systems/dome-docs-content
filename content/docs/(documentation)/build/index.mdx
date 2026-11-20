@@ -1,0 +1,43 @@
+---
+title: Build
+sidebarTitle: Overview
+description: Create the agents, gateways, and triggers that make up your governed AI runtime
+---
+
+**Build** defines the runtime surface in Dome. An agent is the identity that Dome authenticates and audits. A [gateway](/build/gateways) is the governed endpoint that admits that agent and exposes the tools and models it can call.
+
+## What you build
+
+<Cards>
+  <Card title="Agents" href="/build/agents">
+    Register agents and manage their identity, lifecycle, and credentials.
+  </Card>
+  <Card title="Managed agents" href="/build/agents/managed">
+    Configure agents that Dome runs for you. <PreviewBadge />
+  </Card>
+  <Card title="Gateways" href="/build/gateways">
+    Create the governed runtime endpoint that admits agents and exposes connected tools and models.
+  </Card>
+  <Card title="Triggers" href="/build/triggers">
+    Start managed agents manually, on a schedule, or from signed webhooks. <PreviewBadge />
+  </Card>
+</Cards>
+
+External and managed agents use the same agent identity, gateway grants, rules, lifecycle, and audit trail. Choose between them based on where the worker runs: an external agent runs in your own runtime, while Dome runs a managed agent. Use [triggers](/build/triggers) to start managed agents manually, on a schedule, or from signed webhooks.
+
+The gateway connects this runtime surface to the resources in [Connect](/connect). It lets an admitted agent reach the tools and models you expose without holding their upstream credentials. [rules](/reference/glossary#rule), [guards](/reference/glossary#guard), and [quotas](/reference/glossary#quota) still determine what each request can do after admission.
+
+## Typical workflow
+
+1. Configure the [tools](/connect/tools), [models](/connect/models), and [pools](/connect/pools) that agents need to reach.
+2. Create a [gateway](/build/gateways) that exposes those resources.
+3. Register an [external agent](/build/agents/external), or create a [managed agent](/build/agents/managed) for a worker Dome runs.
+4. Add [triggers](/build/triggers) when a managed agent should start on a schedule or from a signed webhook.
+5. Continue to [Govern](/govern) to define what admitted agents may do.
+
+## Next steps
+
+- [Connect](/connect) to configure callers, tools, models, and pools.
+- [Govern](/govern) to authorize actions, inspect content, and cap spend.
+- [Operate](/operate) to investigate audit events, stream live activity, and subscribe external systems.
+- [Develop](/develop) to send credentials and gateway endpoints from your application.

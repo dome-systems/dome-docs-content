@@ -1,0 +1,438 @@
+---
+title: Audit event catalog
+sidebarTitle: Event catalog
+description: Every audit event type Dome emits, with its class, webhook delivery, and what it records
+---
+
+Dome writes one audit trail for configuration and runtime activity. This page is the complete list of event types on that trail, what each one records, and which are also delivered to webhook subscriptions.
+
+Use it to pick the types you want to query, subscribe to, or alert on. For the envelope fields, enum forms, and filter syntax those types share, refer to [Event contracts](/reference/events/contracts).
+
+## How an event type is named
+
+Every type is `entity.verb` in present tense: the entity the event is about, then the operation. `agent.register`, `bundle.deploy`, `connection.create`, `workspace.config.update`. Nested entities keep their path, as in `agent.key.rotate` and `verification.provider.update`.
+
+<Callout type="info">
+Event types name a single entity: `agent.register`, `bundle.deploy`, `quota.update`. [Permissions](/reference/permissions) name a collection: `agents.register`, `rules.deploy`, `gateways.manage`. The singular form is always the event; the plural form is always the permission.
+</Callout>
+
+## Event classes
+
+Every type belongs to exactly one class.
+
+| Class | Description |
+|-------|-------------|
+| `governing` | Authorization and runtime decisions |
+| `state_change` | Configuration mutations |
+| `security` | Authentication front door |
+| `audit_access` | Reads of the trail itself |
+
+Class is the coarse filter. Query `security` to review the authentication front door, `audit_access` to see who read the trail, `state_change` for configuration history, `governing` for runtime decisions.
+
+## Outcomes and phases
+
+A type's name never changes to describe its outcome. The same event carries the verdict.
+
+| Field | Meaning |
+|-------|---------|
+| `stage` | `attempted` or `completed`. Types with a two-phase profile emit both. |
+| `result` | `allowed` or `denied` on types that have a verdict. |
+| `denial` | Present exactly when `result` is `denied`, with the reason and deciding rule. |
+| `error` | Handling or dispatch failure, independent of `result`. |
+
+There is no separate denial event type and no `access.denied`. A refused operation is its own event with `stage=completed`, `result=denied`, and the `denial` block. To find refusals, filter any type on `result=denied`. Guard blocks leave the verdict on the enclosing call with `denial.reason=guard_blocked`.
+
+These five carry the most contract detail:
+
+| Type | Contract |
+|------|----------|
+| `tool.call` | One tool operation. Emits `stage=attempted` and `stage=completed`; the completed row carries `result=allowed` or `result=denied`, plus an independent `error` when handling or dispatch failed. |
+| `model.call` | One model operation with the same phase and verdict contract. Completed rows carry token, byte, latency, provider, connection, pool, and model fields when available. |
+| `authorization.evaluate` | Completed Cedar evaluation with `result=allowed` or `result=denied`. |
+| `guard.filter.evaluate` | Completed filter evaluation. The verdict is on the enclosing `tool.call` or `model.call`; this event has no `result`. Payload includes `direction`, `actions`, acting filter IDs, connection facts, and tool/model facts. |
+| `guard.validator.evaluate` | Completed validator evaluation. The verdict is on the enclosing `tool.call`; this event has no `result`. Payload includes `direction`, failed validator IDs, and failure reasons. |
+
+## Webhook delivery
+
+Webhook event types are the same strings as audit event types, byte for byte, so one fact carries one name on both. The delivered catalog is a subset: the **Webhook** column below marks which types reach subscriptions. `eventing.test` is webhook-only, a synthetic ping with no audit twin.
+
+The body differs even when the name matches. A webhook carries a slim public `data` projection with no PII, credentials, or raw tool payloads. Refer to [Event contracts](/reference/events/contracts#webhooks) for that envelope and the bundle presets.
+
+## Payload fields
+
+This page stops at the event type. Each type also has a typed payload whose fields are defined per type, and only catalog-marked fields are filterable.
+
+<Tabs items={["CLI","MCP","Dashboard"]}>
+  <Tab value="CLI">
+    ```bash
+    dome audit catalog list
+    dome audit catalog show tool.call
+    ```
+
+    <Callout icon="terminal">Reference: [`dome audit catalog`](/cli/operate/audit#catalog)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tools: `dome_audit_catalog_list`, `dome_audit_catalog_show`
+
+    <Callout icon="cpu">Reference: [`dome_audit_catalog_show`](/reference/mcp/audit#catalog-show)</Callout>
+  </Tab>
+  <Tab value="Dashboard">
+    Open **Settings → Eventing → Event Catalog** to browse payload fields, sample bodies, and JSON schemas.
+  </Tab>
+</Tabs>
+
+## Catalog
+
+{/* BEGIN GENERATED CATALOG */}
+
+223 event types, grouped by Connect, Govern, Operate, and Manage. The **Webhook** column marks the 49 types also delivered to webhook subscriptions.
+
+### Connect
+
+#### Agents
+
+| Event type | Class | Webhook | Description |
+|------------|-------|---------|-------------|
+| `agent.activate` | `state_change` | ✅ | An agent became active and may send traffic. |
+| `agent.delete` | `state_change` | ✅ | An agent identity was deleted. |
+| `agent.enroll` | `state_change` | ✅ | A device-bound agent completed enrollment. |
+| `agent.enrollmenttoken.create` | `state_change` | — | An enrollment token was issued for device binding. |
+| `agent.enrollmenttoken.read` | `governing` | — | Enrollment token metadata was read. |
+| `agent.enrollmenttoken.revoke` | `state_change` | — | An enrollment token was revoked. |
+| `agent.key.create` | `state_change` | ✅ | An API key was issued for an agent. |
+| `agent.key.read` | `governing` | — | agent key metadata was read. The key itself is never returned. |
+| `agent.key.revoke` | `state_change` | ✅ | An agent API key was revoked. |
+| `agent.key.rotate` | `state_change` | ✅ | An agent API key was rotated. |
+| `agent.list` | `governing` | — | agents were listed. |
+| `agent.reactivate` | `state_change` | ✅ | A suspended agent was returned to active. |
+| `agent.read` | `governing` | — | An agent record was read. |
+| `agent.register` | `state_change` | ✅ | An agent identity was registered. |
+| `agent.revoke` | `state_change` | ✅ | An agent was revoked and can no longer authenticate. |
+| `agent.suspend` | `state_change` | ✅ | An agent was suspended and its traffic blocked. |
+| `agent.token.issue` | `security` | — | An agent exchanged its API key for a short-lived access token. |
+| `agent.update` | `state_change` | ✅ | An agent record, access, or Act-As settings changed. |
+| `managedagent.create` | `state_change` | — | A managed agent was created. |
+| `managedagent.delete` | `state_change` | — | A managed agent was deleted. |
+| `managedagent.list` | `governing` | — | Managed agents or their run history were listed. |
+| `managedagent.read` | `governing` | — | A managed agent or run was read. |
+| `managedagent.run` | `state_change` | ✅ | A managed-agent run started or completed. |
+| `managedagent.run.cancel` | `state_change` | ✅ | A queued managed-agent run was cancelled before execution. |
+| `managedagent.run.schedule` | `state_change` | ✅ | A managed-agent run was queued. |
+| `managedagent.update` | `state_change` | — | A managed agent's prompt or model changed. |
+| `managedagent.webhook.create` | `state_change` | — | An agent-scoped webhook trigger was requested. |
+| `managedagent.webhook.read` | `governing` | — | agent-scoped webhook triggers were read. |
+| `managedagent.webhook.revoke` | `state_change` | — | An agent-scoped webhook trigger was revoked. |
+
+#### Triggers
+
+| Event type | Class | Webhook | Description |
+|------------|-------|---------|-------------|
+| `trigger.create` | `state_change` | — | A trigger was created. |
+| `trigger.delete` | `state_change` | — | A trigger was deleted. |
+| `trigger.list` | `governing` | — | Triggers were listed. |
+| `trigger.read` | `governing` | — | A trigger was read. |
+| `trigger.start` | `state_change` | — | A trigger was fired. |
+| `trigger.update` | `state_change` | — | A trigger or its targets changed. |
+
+#### Identity, sessions, and callers
+
+| Event type | Class | Webhook | Description |
+|------------|-------|---------|-------------|
+| `apikey.create` | `state_change` | ✅ | A platform API key was created. |
+| `apikey.read` | `governing` | — | Platform API key metadata was read. |
+| `apikey.revoke` | `state_change` | ✅ | A platform API key was revoked. |
+| `caller.identity.delete` | `state_change` | — | A projected caller record was erased. Audit evidence is untouched. |
+| `caller.identity.read` | `governing` | — | The Callers registry was read. |
+| `caller.identity.set` | `security` | — | A verified Act-As identity was observed and projected into the Callers registry. |
+| `impersonation.start` | `security` | — | A support impersonation session started. |
+| `impersonation.terminate` | `security` | — | An impersonation session ended. |
+| `interactivegrant.create` | `security` | — | An interactive OAuth grant was issued so a person could ride an agent. |
+| `interactivegrant.read` | `governing` | — | Interactive grants were read. |
+| `interactivegrant.revoke` | `security` | — | An interactive grant was revoked. |
+| `mcpclient.register` | `state_change` | — | An MCP client registered itself for interactive OAuth. |
+| `session.login` | `security` | — | A person signed in to the platform. |
+| `session.rotate` | `security` | — | A platform session token was refreshed. |
+| `session.switch` | `security` | — | A session switched organization, tenant, or workspace context. |
+| `session.terminate` | `security` | — | A platform session ended. |
+| `user.create` | `security` | — | A platform user record was created. |
+| `user.read` | `governing` | — | Platform user records were read. |
+
+#### Verification providers
+
+| Event type | Class | Webhook | Description |
+|------------|-------|---------|-------------|
+| `verification.provider.create` | `state_change` | ✅ | A verification provider was created. |
+| `verification.provider.delete` | `state_change` | ✅ | A verification provider was deleted. |
+| `verification.provider.secret.issue` | `security` | — | An HMAC secret was issued for a verification provider. |
+| `verification.provider.sync` | `state_change` | — | A verification provider was synced from an SSO connection. |
+| `verification.provider.update` | `state_change` | ✅ | A verification provider was updated. |
+
+#### Tools
+
+| Event type | Class | Webhook | Description |
+|------------|-------|---------|-------------|
+| `tool.call` | `governing` | ✅ | One tool operation through the tool gateway, from attempt to outcome. |
+| `tool.catalog.read` | `governing` | — | A tool catalog was read. |
+| `tool.catalog.sync` | `state_change` | ✅ | A tool catalog was refreshed from its upstream MCP server. |
+| `tool.list` | `governing` | — | An agent discovered the tools available to it. |
+| `tool.status.set` | `state_change` | ✅ | A tool was enabled or disabled. |
+| `tool.validator.read` | `governing` | — | validator assignments on a tool were read. |
+| `tool.validator.set` | `state_change` | — | A validator was assigned to a tool. |
+| `tool.validator.unset` | `state_change` | — | A validator was removed from a tool. |
+
+#### Models
+
+| Event type | Class | Webhook | Description |
+|------------|-------|---------|-------------|
+| `model.call` | `governing` | — | One model operation through the model broker, from attempt to outcome. |
+| `model.list` | `governing` | — | An agent listed the models available to it. |
+| `model.upstream.proxy` | `governing` | — | A request was proxied to an upstream model provider. |
+
+#### Model pools
+
+| Event type | Class | Webhook | Description |
+|------------|-------|---------|-------------|
+| `pool.create` | `state_change` | — | A model pool was created. |
+| `pool.default.set` | `state_change` | — | A pool was made the workspace default. |
+| `pool.delete` | `state_change` | — | A model pool was deleted. |
+| `pool.member.create` | `state_change` | — | A model connection was added to a pool. |
+| `pool.member.delete` | `state_change` | — | A model connection was removed from a pool. |
+| `pool.member.update` | `state_change` | — | A pool member's routing settings changed. |
+| `pool.move` | `state_change` | — | A pool was moved to another scope. |
+| `pool.read` | `governing` | — | model pools were read. |
+| `pool.update` | `state_change` | — | A pool's routing or failover settings changed. |
+
+#### Connections and credentials
+
+| Event type | Class | Webhook | Description |
+|------------|-------|---------|-------------|
+| `connection.consent.grant` | `state_change` | — | Consent was granted for an upstream connection. |
+| `connection.create` | `state_change` | ✅ | A connection to an upstream tool or model provider was created. |
+| `connection.credential.disconnect` | `state_change` | — | Stored upstream credentials were disconnected. |
+| `connection.credential.read` | `security` | — | Upstream credential metadata was read. |
+| `connection.credential.refresh` | `state_change` | — | An upstream OAuth credential was refreshed. |
+| `connection.credential.rotate` | `state_change` | — | Upstream credentials were rotated. |
+| `connection.credentiallink.consume` | `state_change` | — | A credential link was redeemed to attach upstream credentials. |
+| `connection.credentiallink.issue` | `state_change` | — | A credential link was issued for out-of-band credential entry. |
+| `connection.delete` | `state_change` | ✅ | A connection was deleted. |
+| `connection.oauth.client.register` | `state_change` | — | An OAuth client was registered for a connection. |
+| `connection.oauth.connect` | `security` | — | An OAuth authorization flow ran for a connection. |
+| `connection.read` | `governing` | — | Connections were read. |
+| `connection.update` | `state_change` | ✅ | A connection's configuration or egress settings changed. |
+
+#### Gateways
+
+| Event type | Class | Webhook | Description |
+|------------|-------|---------|-------------|
+| `gateway.allagentsgrant.set` | `state_change` | — | A workspace-wide agent grant on a gateway was set or cleared. |
+| `gateway.create` | `state_change` | ✅ | A gateway was created. |
+| `gateway.default.set` | `state_change` | — | A gateway was made the workspace default. |
+| `gateway.delete` | `state_change` | ✅ | A gateway was deleted and its endpoint stopped accepting traffic. |
+| `gateway.member.create` | `state_change` | ✅ | A resource was attached to a gateway. |
+| `gateway.member.delete` | `state_change` | ✅ | A resource was detached from a gateway. |
+| `gateway.read` | `governing` | — | gateways were read. |
+| `gateway.state.set` | `state_change` | — | A gateway was enabled or disabled. |
+| `gateway.update` | `state_change` | ✅ | A gateway's configuration changed. |
+
+### Govern
+
+#### Rules and policy
+
+| Event type | Class | Webhook | Description |
+|------------|-------|---------|-------------|
+| `assistant.run` | `governing` | — | The rules assistant drafted or refined a policy. |
+| `authorization.evaluate` | `governing` | — | Cedar evaluated a governed request and returned allow or deny. |
+| `authorization.simulate` | `governing` | — | A decision was simulated without affecting live traffic. |
+| `bundle.delete` | `state_change` | ✅ | A rule bundle was deleted. |
+| `bundle.deploy` | `state_change` | ✅ | A rule bundle was deployed and became effective policy. |
+| `bundle.read` | `governing` | — | A rule bundle was read. |
+| `bundle.rollback` | `state_change` | ✅ | A rule bundle was rolled back to an earlier version. |
+| `bundle.validate` | `governing` | — | A rule bundle was validated without deploying. |
+| `effectivepolicy.read` | `governing` | — | The merged effective policy for an agent was read. |
+| `simulation.read` | `audit_access` | — | A stored simulation result was read. |
+| `simulation.run` | `state_change` | — | A simulation batch was run against historical or supplied requests. |
+| `snapshot.apply` | `state_change` | — | A policy snapshot was applied. |
+
+#### Guards
+
+| Event type | Class | Webhook | Description |
+|------------|-------|---------|-------------|
+| `filter.assignment.set` | `state_change` | — | filter assignments on a connection changed. |
+| `filter.create` | `state_change` | — | A filter guard was created. |
+| `filter.delete` | `state_change` | — | A filter guard was deleted. |
+| `filter.read` | `governing` | — | filter guards were read. |
+| `filter.rollback` | `state_change` | — | A filter guard was rolled back to an earlier version. |
+| `filter.update` | `state_change` | — | A filter guard was updated. |
+| `guard.filter.evaluate` | `governing` | ✅ | A filter inspected request or response content. The verdict stays on the enclosing call. |
+| `guard.validator.evaluate` | `governing` | ✅ | A validator checked a tool call against its schema. The verdict stays on the enclosing call. |
+| `validator.create` | `state_change` | — | A validator guard was created. |
+| `validator.delete` | `state_change` | — | A validator guard was deleted. |
+| `validator.read` | `governing` | — | validator guards were read. |
+| `validator.rollback` | `state_change` | — | A validator guard was rolled back to an earlier version. |
+| `validator.update` | `state_change` | — | A validator guard was updated. |
+
+#### Quotas
+
+| Event type | Class | Webhook | Description |
+|------------|-------|---------|-------------|
+| `quota.create` | `state_change` | — | A quota was created. |
+| `quota.delete` | `state_change` | — | A quota was removed. |
+| `quota.read` | `governing` | — | quotas were read. |
+| `quota.update` | `state_change` | — | A quota's limit or scope changed. |
+
+### Operate
+
+#### Audit access and SIEM
+
+| Event type | Class | Webhook | Description |
+|------------|-------|---------|-------------|
+| `audit.event.read` | `governing` | — | A single audit event was fetched. |
+| `audit.export.create` | `audit_access` | — | An export job was created. |
+| `audit.export.run` | `audit_access` | ✅ | An export job ran and delivered records downstream. |
+| `audit.probe.run` | `audit_access` | — | An audit pipeline health probe ran. |
+| `audit.query` | `governing` | — | The audit trail was queried. |
+| `audit.stream.create` | `audit_access` | — | An audit stream was opened. |
+| `audit.stream.delete` | `audit_access` | — | An audit stream was closed. |
+| `siemstream.cursor.set` | `audit_access` | — | A SIEM forwarder cursor was moved. |
+| `siemstream.enabled.set` | `audit_access` | — | SIEM forwarding was turned on or off. |
+| `siemstream.status.set` | `audit_access` | ✅ | A SIEM forwarder reported a status change. |
+
+#### Metrics
+
+| Event type | Class | Webhook | Description |
+|------------|-------|---------|-------------|
+| `metric.create` | `governing` | — | A metric series was written. |
+| `metric.read` | `governing` | — | Metrics were read. |
+
+#### Webhooks
+
+| Event type | Class | Webhook | Description |
+|------------|-------|---------|-------------|
+| `delivery.bulkreplay.create` | `state_change` | — | A bulk replay of past deliveries was requested. |
+| `delivery.cancel` | `state_change` | — | A pending delivery was cancelled. |
+| `delivery.read` | `governing` | — | Delivery history was read. |
+| `delivery.replay` | `state_change` | — | One delivery was replayed. |
+| `destination.create` | `state_change` | ✅ | A webhook destination was created. |
+| `destination.delete` | `state_change` | ✅ | A webhook destination was deleted. |
+| `destination.read` | `governing` | — | Webhook destinations were read. |
+| `destination.rotate` | `security` | — | A destination's signing secret was rotated. |
+| `destination.test` | `state_change` | — | A test delivery was sent to a destination. |
+| `destination.update` | `state_change` | ✅ | A webhook destination was updated. |
+| `subscription.create` | `state_change` | ✅ | A webhook subscription was created. |
+| `subscription.delete` | `state_change` | ✅ | A webhook subscription was deleted. |
+| `subscription.enabled.unset` | `state_change` | ✅ | A webhook subscription was disabled. |
+| `subscription.read` | `governing` | — | Webhook subscriptions were read. |
+| `subscription.update` | `state_change` | ✅ | A webhook subscription's types or filters changed. |
+
+### Manage
+
+#### Import and export configuration
+
+| Event type | Class | Webhook | Description |
+|------------|-------|---------|-------------|
+| `export.read` | `governing` | — | Exportable configuration was listed. |
+| `export.create` | `governing` | — | A configuration export was created. |
+| `import.job.create` | `state_change` | — | An import or plan job was created. |
+| `import.job.read` | `governing` | — | An import job was read. |
+| `import.job.cancel` | `state_change` | — | Cancellation of an import job was requested. |
+| `import.job.run` | `state_change` | — | An import job reached a terminal result. |
+| `import.job.output.consume` | `security` | — | One-time outputs from an import job were revealed. |
+
+#### Workspaces
+
+| Event type | Class | Webhook | Description |
+|------------|-------|---------|-------------|
+| `workspace.actas.update` | `state_change` | — | The workspace Act-As floor or provider selection changed. |
+| `workspace.config.update` | `state_change` | ✅ | Workspace configuration changed. |
+| `workspace.create` | `state_change` | — | A workspace was created. |
+| `workspace.delete` | `state_change` | — | A workspace was deleted. |
+| `workspace.filterwindow.update` | `state_change` | — | The workspace filter window changed. |
+| `workspace.freshnesswindow.update` | `state_change` | ✅ | The workspace policy freshness window changed. |
+| `workspace.membership.set` | `state_change` | ✅ | A member's workspace role was assigned or changed. |
+| `workspace.membership.unset` | `state_change` | ✅ | A member was removed from the workspace. |
+| `workspace.physicalgateway.credential.move` | `state_change` | — | gateway credentials were moved between physical gateways. |
+| `workspace.physicalgateway.set` | `state_change` | — | The workspace's physical gateway assignment changed. |
+| `workspace.read` | `governing` | — | Workspace records were read. |
+| `workspace.update` | `state_change` | — | Workspace settings changed. |
+
+#### Tenants
+
+| Event type | Class | Webhook | Description |
+|------------|-------|---------|-------------|
+| `tenant.actas.update` | `state_change` | — | The tenant Act-As provider selection changed. |
+| `tenant.create` | `state_change` | — | A tenant was created. |
+| `tenant.defaultphysicalgateway.set` | `state_change` | — | The tenant's default physical gateway changed. |
+| `tenant.delete` | `state_change` | — | A tenant was deleted. |
+| `tenant.membership.set` | `state_change` | — | A member's tenant role was assigned or changed. |
+| `tenant.membership.unset` | `state_change` | — | A member was removed from the tenant. |
+| `tenant.read` | `governing` | — | Tenant records were read. |
+| `tenant.update` | `state_change` | — | Tenant settings changed. |
+
+#### Organization, SSO, and billing
+
+| Event type | Class | Webhook | Description |
+|------------|-------|---------|-------------|
+| `organization.actas.update` | `state_change` | — | The organization Act-As provider selection changed. |
+| `organization.billing.contact.update` | `state_change` | — | The billing contact changed. |
+| `organization.billing.credit.grant` | `state_change` | — | Account credit was granted. |
+| `organization.billing.read` | `governing` | — | Billing records were read. |
+| `organization.create` | `state_change` | — | An organization was created. |
+| `organization.defaultphysicalgateway.set` | `state_change` | — | The organization's default physical gateway changed. |
+| `organization.domain.create` | `state_change` | — | A verified email domain was added. |
+| `organization.domain.requiresso.set` | `state_change` | — | SSO enforcement for a domain was turned on or off. |
+| `organization.featureflags.read` | `governing` | — | Organization feature flags were read. |
+| `organization.membership.read` | `governing` | — | Organization memberships were read. |
+| `organization.membership.set` | `state_change` | — | A member's organization role was assigned or changed. |
+| `organization.membership.unset` | `state_change` | — | A member was removed from the organization. |
+| `organization.modelprice.delete` | `state_change` | — | A model rate was removed from the organization rate era. |
+| `organization.modelprice.read` | `governing` | — | Organization model rates were read. |
+| `organization.modelprice.set` | `state_change` | — | A model rate was set, opening or extending a rate era. |
+| `organization.modelprice.update` | `state_change` | — | An organization model rate changed. |
+| `organization.paymentmethod.default.set` | `state_change` | — | The default payment method changed. |
+| `organization.paymentmethod.delete` | `state_change` | — | A payment method was removed. |
+| `organization.paymentmethod.update` | `state_change` | — | A payment method was added or updated. |
+| `organization.previews.set` | `state_change` | — | An organization preview feature changed. |
+| `organization.quantity.set` | `state_change` | — | An organization workspace quantity changed. |
+| `organization.read` | `governing` | — | Organization records were read. |
+| `organization.seats.set` | `state_change` | — | The purchased seat count changed. |
+| `organization.sku.set` | `state_change` | — | The subscription SKU changed. |
+| `organization.sso.read` | `governing` | — | SSO configuration was read. |
+| `organization.sso.setup.start` | `state_change` | — | An SSO connection setup flow started. |
+| `organization.subscription.cancel` | `state_change` | — | The subscription was cancelled. |
+| `organization.subscription.reactivate` | `state_change` | — | A cancelled subscription was reactivated. |
+| `organization.subscription.update` | `state_change` | — | The subscription changed state. |
+| `organization.update` | `state_change` | — | Organization settings changed. |
+
+#### Integrations and catalogs
+
+| Event type | Class | Webhook | Description |
+|------------|-------|---------|-------------|
+| `integration.catalog.create` | `state_change` | — | A catalog integration was added. |
+| `integration.catalog.delete` | `state_change` | — | A catalog integration was removed. |
+| `integration.catalog.update` | `state_change` | — | A catalog integration was updated. |
+| `integration.instance.create` | `state_change` | — | An integration was connected for this workspace. |
+| `integration.instance.delete` | `state_change` | — | A connected integration was removed. |
+| `integration.instance.read` | `governing` | — | Connected integrations were read. |
+| `integration.instance.update` | `state_change` | — | A connected integration changed. |
+| `mcpcatalog.create` | `state_change` | — | An MCP catalog entry was added. |
+| `mcpcatalog.delete` | `state_change` | — | An MCP catalog entry was removed. |
+| `mcpcatalog.enabled.set` | `state_change` | — | An MCP catalog entry was enabled or disabled. |
+
+#### Scheduled jobs
+
+| Event type | Class | Webhook | Description |
+|------------|-------|---------|-------------|
+| `job.create` | `state_change` | — | A scheduled job was created. |
+| `job.delete` | `state_change` | — | A scheduled job was deleted. |
+| `job.read` | `governing` | — | Scheduled jobs were read. |
+| `job.run` | `state_change` | — | A scheduled job ran. |
+| `job.update` | `state_change` | — | A scheduled job was updated. |
+
+{/* END GENERATED CATALOG */}
+
+## Next steps
+
+- [Event contracts](/reference/events/contracts) for the envelope, enum forms, correlation, and filter syntax
+- [Audit events](/concepts/audit) concept for how the one trail works
+- [Audit events](/operate/audit) to query events and follow activity chains
+- [Subscribe to Events](/operate/webhooks) to send the marked types to a destination

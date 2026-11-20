@@ -1,0 +1,59 @@
+---
+hidden: true
+title: Deploy an always-on agent — agent instructions
+sidebarTitle: Always-on agent
+description: "Machine-readable instructions for deploying the always-on agent lab"
+---
+
+These are the instructions an AI agent follows for [Deploy an always-on agent](/tutorials/production/deploy-your-agent/always-on).
+
+## Goal
+
+Build the documented FastAPI incident-desk service, give it a one-tool Dome identity, run it locally, then deploy it as a private Cloud Run service using an immutable container image and a Secret Manager reference. Invoke it and correlate the Cloud Run request with Dome Audit.
+
+## Rules
+
+- Show the active Dome context, Google account, project, and region before changing anything. Require a Dome workspace and non-production Google Cloud project.
+- Create `app.py`, `requirements.txt`, `Dockerfile`, and `.dockerignore` exactly as published on the human tutorial page.
+- Never print or commit `DOME_AGENT_API_KEY`. Read it silently, pipe it into Secret Manager, then unset it.
+- Never put the key in source, a Docker build argument, image layer, ordinary Cloud Run environment variable, log, or chat.
+- Keep the service private. Do not use `--allow-unauthenticated`.
+- Keep `/health` local: it must not exchange a token, call Dome, or call the upstream tool.
+- Use an immutable image tag from the current Git commit; do not deploy `latest`.
+- Do not widen Cedar. The agent may call only `demo-ops/it/get_incidents`.
+- Show command output for every completed step, excluding secret values.
+- Do not delete resources until the user confirms.
+
+## Plan to present
+
+1. Build and run the request-serving process locally
+2. Create `studio-deploy-http`, `demo-ops`, and `incident-desk-api`
+3. Deploy and simulate the one-tool Cedar boundary
+4. Create the API key and store it in Secret Manager
+5. Build and push an immutable image
+6. Deploy the private Cloud Run service
+7. Invoke `/health` and `/incidents`
+8. Correlate Cloud Run logs with Dome Audit
+9. Show revision rollback and offer cleanup
+
+Wait for confirmation before step 1.
+
+## Required evidence
+
+Before reporting completion, show:
+
+- `dome context current` naming `studio-deploy-http`
+- one `ALLOW` for `demo-ops/it/get_incidents` and one `DENY` for another tool
+- local `/health` and `/incidents` responses
+- the immutable Artifact Registry image URI
+- the Cloud Run service account and secret reference, without secret content
+- a private Cloud Run service URL
+- one authenticated `/incidents` response
+- the corresponding `tool.call` in Dome Audit
+- the previous revision and exact rollback command
+
+## Interpretation
+
+Explain that “always-on” means a request-serving contract, even when Cloud Run scales to zero. The application listens on `$PORT`, may handle concurrent requests, and lives across many requests. Cloud Run, Artifact Registry, and Secret Manager are implementation choices; the HTTP process, externalized credential, stable Dome identity, and one-tool rule transfer to equivalent platforms.
+
+Do not claim the event-driven lab could use this image unchanged. A Lambda function needs a handler and runtime interface rather than a web server.

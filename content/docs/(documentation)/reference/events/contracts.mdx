@@ -1,0 +1,307 @@
+---
+title: Audit event contracts
+sidebarTitle: Event contracts
+description: Envelope fields, enum forms, correlation, filter operators, and the webhook wire format
+---
+
+This page is the wire contract shared by every audit event: the envelope fields, how enums render on each surface, how events correlate, and what a webhook body looks like. For the list of event types and what each records, refer to the [Event catalog](/reference/events/catalog).
+
+Typed `payload` and `data` field schemas are defined per event type, not here; the product API and dashboard catalog carry them.
+
+For how the one trail works, see the [Audit events](/concepts/audit) concept. To query and reconstruct events, see [Audit events](/operate/audit).
+
+| Contract | Schema | Surfaces |
+|----------|--------|----------|
+| Audit v1 | Full envelope + typed `payload` | Query, stream, export, ingest |
+| Webhooks | `dome.webhook.v1` envelope + `data` | Signed HTTP delivery |
+| OpenTelemetry / product telemetry | Separate models | Observability only; not compliance evidence |
+
+## Audit v1
+
+Audit v1 is the public envelope and service version. Its current event registry is the schema-v4 catalog. Every query, stream, export, and ingest record uses this envelope and catalog.
+
+### Envelope
+
+Every audit event uses this envelope. Envelope fields are filterable without inspecting `payload`. The shape is identical across CLI, MCP, SDK, dashboard, stream, query, and export.
+
+A denied `tool.call`, with the optional blocks populated:
+
+```json
+{
+  "event_id": "3f9a1c74-8e2b-4d51-9f0a-7c6b2e5d8a13",
+  "event_type": "tool.call",
+  "event_class": "governing",
+  "stage": "completed",
+  "result": "denied",
+  "denial": {
+    "reason": "policy_denied",
+    "detail": "no rule grants tools.invoke on this connection",
+    "required_permission": "tools.invoke",
+    "deciding_bundle_id": "…",
+    "default_deny": true
+  },
+  "occurred_at": "2026-08-19T14:02:11.442Z",
+  "accepted_at": "2026-08-19T14:02:11.518Z",
+  "scope": {
+    "kind": "workspace",
+    "organization_id": "…",
+    "tenant_id": "…",
+    "workspace_id": "…",
+    "agent_id": "…"
+  },
+  "actor": { "kind": "agent", "id": "…", "display": "checkout-worker", "auth_method": "agent" },
+  "identity_chain": {
+    "hops": [
+      { "kind": "agent", "id": "…" },
+      { "kind": "end_user", "id": "u_8842", "verification_method": "oidc", "roles": ["support"] }
+    ]
+  },
+  "primary_resource": { "kind": "tool_connection", "id": "…", "name": "prod-postgres" },
+  "related_resources": [{ "kind": "tool", "id": "…", "name": "database-query" }],
+  "request_surface": { "surface": "gateway_mcp", "source_ip": "203.0.113.42", "source_ip_class": "public" },
+  "correlation": {
+    "trace_id": "0af7651916cd43dd8448eb211c80319c",
+    "activity_id": "case-12345",
+    "activity_trust": "caller_asserted"
+  },
+  "operation_id": "…",
+  "parent_event_id": "…",
+  "payload": {
+    "@type": "type.googleapis.com/dome.audit.v1.ToolCallV1",
+    "toolName": "database-query"
+  },
+  "data_handling": { "redacted": true }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `event_id` | UUID | Globally unique event identifier |
+| `event_type` | string | Concrete operation (for example `tool.call`) |
+| `event_class` | enum | `governing`, `state_change`, `security`, `audit_access` |
+| `stage` | enum | Operation phase: `attempted` or `completed` |
+| `result` | enum | Operation verdict: `allowed` or `denied` |
+| `denial` | object | Shared refusal detail: `reason`, `detail`, `required_permission`, deciding rule/bundle, `default_deny`, and bounded `context` |
+| `error` | object | Handling or dispatch failure, independent of `result` |
+| `occurred_at` | timestamp | When the event happened at the producer |
+| `accepted_at` | timestamp | When the audit pipeline durably accepted it |
+| `scope` | object | `organization_id`, `tenant_id`, `workspace_id`, `agent_id` |
+| `actor` | object | `kind`, `id`, `display`, `email`, plus [caller authentication context](#caller-authentication-context) |
+| `identity_chain` | object | `hops[]` of delegation; act-as hops carry [end-user attributes](#act-as-end-user-attributes) |
+| `primary_resource` | object | `kind` + `id` of the resource the event is about |
+| `related_resources` | object[] | Additional resources referenced by the event |
+| `request_surface` | object | Origin surface and [network context](#network-and-transport-context); unset on many runtime authorization decisions |
+| `correlation` | object | `trace_id`, `activity_id`, `activity_trust`, `idempotency_key` — refer to [Correlation](#correlation) |
+| `operation_id` | UUID | Stable ID for a multi-event operation |
+| `parent_event_id` | UUID | The event that caused this one |
+| `payload` | object | Event-specific typed payload (`dome.audit.v1.<TypeName>V1`) |
+| `data_handling` | object | Flags: `omitted`, `summarized`, `truncated`, `redacted`, `hashed`, `encrypted` |
+
+The fields above are the complete customer envelope. Internal pipeline metadata is not returned.
+
+### Enum rendering
+
+Enum fields (`event_class`, `result`, `actor.kind`, `scope.kind`, `primary_resource.kind`, `request_surface.surface`) render in one of two forms. Filters use the same form the surface returns.
+
+| Surface | Enum form |
+|---------|-----------|
+| CLI (table and `--format json`), MCP tool results, dashboard, exports (`json`, `jsonl`, `csv`, `ocsf`, `cef`) | Short tokens: `governing`, `denied`, `gateway_mcp`, `rule_bundle` |
+| gRPC / Connect API and generated SDK clients | Full constants: `EVENT_CLASS_GOVERNING`, `RESULT_DENIED`, `INITIATOR_SURFACE_GATEWAY_MCP` |
+
+A short token is the constant with its type prefix stripped and lowercased. CLI flags and MCP arguments take short tokens. API request fields take full constants or their integer values.
+
+### Network and transport context
+
+Configuration events carry network origin under `request_surface`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `source_ip` | string | Caller IP from the inbound connection, resolved through the trusted-hops boundary |
+| `user_agent` | string | Raw `User-Agent` header, capped at 512 bytes (`data_handling.truncated` when clipped) |
+| `http_method` | string | HTTP verb (`GET`, `POST`, …) for HTTP-surfaced requests |
+| `source_ip_class` | string | Derived zone: `private`, `vpc`, `public`, `unknown` |
+
+OCSF exports map `source_ip` to `src_endpoint.ip`; `user_agent` and `http_method` are carried under `unmapped`. CEF exports map them to `src`, `requestClientApplication`, and `requestMethod`.
+
+`source_ip` is the **rightmost trusted** entry of `X-Forwarded-For + [connecting peer]`. `DOME_TRUSTED_HOPS` on the api-server and gateway is the number of appending reverse-proxy hops in front of Dome.
+
+| Value | Topology | Trusted entry |
+|-------|----------|---------------|
+| `0` | Dome exposed directly to clients | Connecting peer (XFF ignored) |
+| `1` *(default)* | Single fronting ALB in XFF `append` mode | Entry the ALB appended |
+| `2` | `CDN → ALB → Dome` | Entry the inner hop appended |
+| `N` | N appending hops | Nth from the right |
+
+<Callout type="warning">
+Set `DOME_TRUSTED_HOPS` to match your actual edge. Over-trusting lets a caller forge `source_ip` by injecting headers; under-trusting records the proxy IP instead of the client. Spoofed values reach audit events, OCSF/CEF exports, the dashboard Authority card, and the credential-provision rate-limiter key. The resolver clamps to the leftmost entry when fewer hops are present — it never reads past the boundary.
+</Callout>
+
+The default `1` assumes one AWS ALB in XFF `append` mode. The ALB appends the connecting client on the right without stripping a caller-supplied `X-Forwarded-For`, so the rightmost entry is the only edge-guaranteed value.
+
+### Caller authentication context
+
+`actor` includes how the immediate principal authenticated.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `auth_method` | string | `session`, `api_key`, `agent`, `gateway`, `admin_token` |
+| `session_id` | string | Browser session ID when session-backed |
+| `api_key_id` | string | Platform or agent API key ID when key-backed |
+| `api_key_scope_kind` | string | `workspace`, `tenant`, `org`, or `platform` |
+| `api_key_scope_id` | string | ID of the key's scope |
+| `assurance_level` | string | Authentication assurance level (for example `aal1`, `aal2`) when surfaced by the IdP |
+
+### Act-as end-user attributes
+
+When an agent acts on behalf of an end user, the corresponding `identity_chain` hop carries these fields. Producers cap each list at 32 entries.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `roles` | string[] | End-user roles supplied by the caller |
+| `groups` | string[] | End-user groups |
+| `claims` | `map<string, string>` | Additional verified claims |
+| `verification_method` | string | `oidc`, `hmac`, or `none` |
+
+### Correlation
+
+Three IDs stitch events together, each at a different width. Pick the one that matches the question you are asking.
+
+| Field | Scope |
+|-------|-------|
+| `operation_id` | One operation's `attempted` → `completed` phase pair |
+| `correlation.trace_id` | One HTTP request cascade |
+| `correlation.activity_id` | One session, LLM turn, or scripted run across planes |
+
+An activity chain is the set of audit events that share one `activity_id` within a workspace. Chains are computed at read time; there is no stored chain object.
+
+`correlation.activity_trust` records where that `activity_id` came from:
+
+| Value | Meaning |
+|-------|---------|
+| `server_owned` | Dome set the id. A caller cannot forge this label. |
+| `caller_asserted` | The id arrived on the `X-Dome-Activity-Id` header. |
+| `unspecified` | No `activity_id` on this event. |
+
+`activity_id` can be set by a CLI run (`--activity` or `DOME_ACTIVITY_ID`), an SDK session, an agent request header, or Dome for browser and assistant threads. Chain reads return only the active workspace's slice, so human-meaningful IDs (`case-12345`) are safe to use. `activity_trust` is provenance metadata, not a grouping key.
+
+### Decision provenance
+
+Runtime operation and authorization payloads stamp policy snapshot fields when a bundle was loaded. Use the event catalog to confirm the fields available on a specific type.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `payload.bundle_etag` | string | Content hash of the effective policy at decision time |
+| `payload.contributing_bundles` | object[] | Bundles merged into the effective policy (`bundle_id`, `name`, `scope_kind`, `scope_id`, `sequence`) |
+| `payload.rule_id` | string | File identifier of the matched rule |
+
+Events with no loaded bundle omit these fields. The dashboard decision explainer deep-links contributing bundles to `/rules/bundles?scope=<kind>&scopeId=<id>`; the same fields are available on `dome audit get`, `dome_audit_get_event`, and `QueryEvents`.
+
+### Payload filters
+
+Payload filters match fields inside the event-specific payload (for example `tool.call:toolName=database-query`). Each filter is scoped to one `event_type` and one catalog-marked field. Non-filterable fields return a validation error.
+
+| Operator | Behavior |
+|----------|----------|
+| `equals` | Default when a value is provided. Payload field matches any of the supplied values. |
+| `exists` | Payload field is present and non-empty. |
+
+Stream and query share this vocabulary.
+
+### Ingest
+
+Producers write events to the trail on these routes, using the same envelope readers get back.
+
+| Path | Description |
+|------|-------------|
+| `POST /api/v1/audit/events` | gateway batch upload to Dome |
+| `POST /v1/audit/events` | Programmatic ingestion (SDKs) |
+
+Delivery semantics: at-least-once.
+
+## Webhooks
+
+Webhooks deliver a signed public projection of selected events for automation.
+
+Webhook event types are audit event types. The strings match Audit schema-v4 operation names byte for byte, so one product fact carries one name on both surfaces, and there is no separate webhook catalog to learn. Two things differ:
+
+- **Coverage.** The delivered set is a subset of the audit catalog. Types that exist only on the trail, including `model.call`, are never delivered, and `eventing.test` is the one webhook type with no audit twin. The [Event catalog](/reference/events/catalog) marks delivery per type.
+- **Body.** A webhook carries a slim envelope plus a public `data` projection. PII, credentials, raw tool payloads, and forensic fields are omitted.
+
+Operating limits and retry status handling are on [Webhooks](/concepts/audit/webhooks#operating-limits).
+
+### Envelope
+
+Every delivery body uses this envelope, whatever the event type. A suspended agent, delivered to a subscription:
+
+```json
+{
+  "schema": "dome.webhook.v1",
+  "event_id": "0b9c1e2a-6f4d-4c3b-9a1e-2f5d7c8b0a11",
+  "event_type": "agent.suspend",
+  "event_version": 1,
+  "occurred_at": "2026-07-14T10:30:00.000Z",
+  "stage": "completed",
+  "result": "allowed",
+  "scope": { "kind": "workspace", "tenant_id": "…", "workspace_id": "…" },
+  "actor": { "kind": "platform_user", "id": "…" },
+  "resource": { "type": "agent", "id": "…" },
+  "correlation": { "trace_id": "0af7651916cd43dd8448eb211c80319c", "operation_id": "…" },
+  "data": {
+    "agent_id": "…",
+    "status": "suspended",
+    "agent_name": "checkout-worker",
+    "reason": "policy_violation"
+  }
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `schema` | Always `dome.webhook.v1` |
+| `event_id` | Delivery source event ID (random UUID; order by `occurred_at`) |
+| `event_type` | Audit schema-v4 operation name |
+| `event_version` | Public contract version for `data` |
+| `occurred_at` | Event time |
+| `stage` | `attempted` or `completed` |
+| `result` | `allowed` or `denied` when the operation has a verdict |
+| `error` | Present when Dome accepted the operation and then failed to complete it |
+| `denial` | Present exactly when `result` is `denied` |
+| `scope` | Scope object |
+| `actor` | `kind` + `id` only (no email or display name) |
+| `resource` | `type` + `id` |
+| `correlation` | Correlation object |
+| `data` | Typed public payload (no PII, credentials, or raw tool payloads) |
+
+### Delivery headers
+
+The lowercase `webhook-*` headers are the [Standard Webhooks](https://www.standardwebhooks.com/) signature set, so any off-the-shelf verifier works; check the signature before trusting the body. Providers that authenticate with a credential in the body receive no `webhook-signature`. The `Dome-*` headers let you route and dedupe without parsing JSON.
+
+| Header | Description |
+|--------|-------------|
+| `webhook-id` | Unique ID of this delivery. Stable across retry attempts; a replay gets a fresh one. |
+| `webhook-timestamp` | Unix seconds when the body was signed. |
+| `webhook-signature` | Space-delimited `v1,<base64-hmac>` tokens over `<webhook-id>.<webhook-timestamp>.<body>`. |
+| `Dome-Event-Id` | Source event ID; dedupe key (stable across retries and replays). |
+| `Dome-Event-Type` | Event type. |
+| `Dome-Event-Version` | Contract version of the payload. |
+| `Dome-Subscription-Id` | Subscription that produced the delivery. |
+| `Dome-Attempt` | 1-based attempt counter. |
+
+### Bundles
+
+Subscriptions accept any combination of the types the [Event catalog](/reference/events/catalog) marks as delivered. Bundles are presets over that list. A bundle selects event types, so it cannot mean "any denial"; add `result=denied` when that is the question.
+
+| Bundle | Types |
+|--------|-------|
+| agent lifecycle | `agent.register`, `agent.update`, `agent.enroll`, `agent.activate`, `agent.suspend`, `agent.reactivate`, `agent.revoke`, `agent.delete` |
+| Governance changes | `bundle.deploy`, `bundle.rollback`, `bundle.delete`, `workspace.config.update`, `workspace.freshnesswindow.update`, `workspace.membership.set`, `workspace.membership.unset`, `connection.create`, `connection.update`, `connection.delete`, `gateway.create`, `gateway.update`, `gateway.delete`, `gateway.member.create`, `gateway.member.delete`, `tool.status.set`, `tool.catalog.sync`, `verification.provider.create`, `verification.provider.update`, `verification.provider.delete` |
+| Security signals | `guard.filter.evaluate`, `guard.validator.evaluate`, `agent.key.create`, `agent.key.rotate`, `agent.key.revoke`, `apikey.create`, `apikey.revoke` |
+| Incidents | `agent.suspend`, `agent.revoke`, `audit.export.run`, `siemstream.status.set` |
+
+## Next steps
+
+- [Event catalog](/reference/events/catalog) for every event type, its class, and webhook delivery
+- [Audit events](/concepts/audit) concept for how the one trail works
+- [Webhooks](/concepts/audit/webhooks) concept for the signed delivery model, limits, and retries
+- [Audit events](/operate/audit) to query events and follow activity chains
+- [Export Data](/manage/export) for forwarders and ingest

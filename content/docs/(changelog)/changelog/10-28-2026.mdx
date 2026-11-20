@@ -1,0 +1,38 @@
+---
+title: October 28, 2026
+description: 'Hosted MCP sign-in, sessions, and managed agents updates released October 28, 2026.'
+date: '2026-10-28'
+---
+
+## MCP sign-in and sessions
+
+- Connect Claude and other MCP clients to the hosted Dome MCP server by signing in with your Dome account instead of a platform API key.
+- Switch between your organizations, tenants, and workspaces in each signed-in conversation. The hosted server also answers on `/mcp`.
+- As an organization admin, turn MCP sign-in off for your members with `dome orgs mcp-sign-in set` or the MCP tools.
+- See everywhere you're signed in to Dome, including dashboard browsers, CLI installs, and MCP clients, and sign out of any session or all but your current one.
+- Manage sessions in Settings → Sessions, from the user menu, with `dome sessions`, or through the MCP tools. MCP sign-in now explains where new conversations start.
+- The dashboard no longer occasionally signs you out while your session is still valid.
+
+## Managed agents
+
+- Managed agent runs now open with a "Run context (from Dome)" block giving the time, what started the run, its schedule, and last successful run. Preview on all plans.
+- Reference run variables such as `{{dome.now}}`, `{{dome.today}}`, and `{{dome.last_successful_run}}` in system prompts and trigger or Run now input, using the Insert variable menu. Preview on all plans.
+- Rotate the key Dome holds for a managed agent from its Security tab, `dome managed-agents rotate-runner-key`, or the MCP tools. Runs in progress keep running. Preview on all plans.
+- Run managed agents on any Gateway, including ones that list tools as `connection/tool`, without turning on safe tool names. Preview on all plans.
+- Retry a failed managed agent create: creation is now all-or-nothing and no longer leaves an unusable agent holding the name. Preview on all plans.
+- Filter audit events on `permission_escalation` to include managed agent creates refused for needing `rules.deploy`. Preview on all plans.
+
+## Tools, models, and OAuth
+
+- Add tools from more MCP servers, including GitHub, Datadog, Airtable, and Google Workspace, with OAuth settings filled in once you pick OAuth.
+- Leave and return to adding a tool without losing your service pick, so a REST adapter still installs as a managed connection.
+- Rely on OAuth connections: disconnecting removes the stored credential, tokens refresh once per lifetime, and per-user credential changes show in the tool list right away.
+- Pick Kimi K3.1 Pro and GPT-6.1 Terra in the model picker. GPT-4.1 nano is removed, and new Fireworks connections prefill `glm-5p3-flash`.
+
+## Verification, rules, and plans
+
+- Required claims on OIDC verification providers are now enforced on every data plane. Data planes that can't check them refuse act-as; upgrade them or remove the claims.
+- Register agents as a workspace developer in workspaces that require act-as. An agent's own act-as setting no longer changes with the workspace requirement.
+- See a Retry on the workspace Verification tab when its settings can't load, instead of defaults you could save.
+- Use rules page toolbar buttons such as Simulate and Add rule without overlap, including on narrow screens. Gateways now follows Callers in the sidebar.
+- See directory sync (SCIM) marked Coming soon for Team and Enterprise on the Plans page and in CLI and MCP plan listings. The seat limit row is labeled Users again.

@@ -1,0 +1,80 @@
+---
+title: Quotas
+description: Why Dome caps governed LLM spend over a window at scoped subjects
+---
+
+import { quota } from '@/snippets/glossary';
+
+<p>{quota}</p>
+
+## High-level overview
+
+A quota is a budget attached to one **subject** inside a workspace: the workspace itself, one agent, one verified end user, one gateway, one pool, one model, one tool, or one tool connection. The quota names a limit and a window (`daily` or `monthly`). Depending on its dimension, it can measure Dome USD, estimated provider USD, tokens, or calls. Dome adds matching governed usage to every applicable budget and checks those budgets before the next call proceeds.
+
+Setting a quota and exhausting it looks like this:
+
+1. An operator sets a monthly workspace quota of \$5,000.
+2. Agents keep calling models through a gateway.
+3. Each completed call adds priced spend to the workspace counter for the current UTC month.
+4. While spend stays under \$5,000, calls continue. The first call that would push the counter over the cap receives HTTP `429`.
+5. The same call can also hit an agent quota, a gateway quota, and a model quota. Every matching budget must still have room.
+
+Pick who owns the budget and how often it resets. Dome refuses or reroutes when the money is spent.
+
+### When a Quota change takes effect
+
+The **limit** you set (subject, amount, window, enabled) is workspace config. Dome loads that config on a poll interval (default about 10 seconds), the same tick that picks up model, pool, and guard config. A new or updated quota may not shape enforcement until the next successful sync. After that sync, the new limit is live. If one workspace cannot be refreshed, its last applied configuration keeps serving while Dome retries; the failure does not block configuration updates for other workspaces.
+
+**Spend** moves when priced calls complete. Edit the quota form and the raw usage already recorded in the window does not disappear. Raise a limit and enforcement still accounts for that full usage. Disable a quota and that budget stops being checked. Other quotas that still apply keep their own counters.
+
+### Every matching Quota must pass
+
+Subjects carve different slices of the same traffic. A single model call can touch several quotas at once: the workspace total, the calling agent, a verified Act-As user, the gateway in the URL, the pool that routed the call, and the model that served it.
+
+Dome allows the call only when every applicable enabled quota still has remaining budget. An agent quota with room left cannot override an exhausted workspace quota. Subject types and what each rejects are on the [Quotas](/reference/controls/quotas#subjects) reference.
+
+### Windows reset spend, not the Quota
+
+A window is the calendar period the counter covers. `daily` resets at UTC midnight. `monthly` resets at the start of each UTC calendar month. The default on create is `monthly`.
+
+You can keep both a daily and a monthly quota on the same subject. They are separate budgets. When the window rolls over, spend for that window starts at zero again. The quota itself stays until you update or remove it. Details are on the [Quotas](/reference/controls/quotas#windows) reference.
+
+### Organization and tenant allowances
+
+An organization or tenant can also have a usage allowance: a daily or monthly cap on all governed traffic, LLM traffic, or tool traffic at that scope. Unlike a workspace quota, it does not name a resource subject. It is a shared ceiling for the organization or tenant context.
+
+Use a workspace quota to constrain a particular workspace, agent, route, model, or tool. Use an allowance when the limit must apply across the organization or tenant. The [Quotas](/govern/quotas#set-an-organization-or-tenant-usage-allowance) how-to shows how to create one.
+
+### Exhaustion: reject or spill inside a pool
+
+Most quotas reject affected calls with HTTP `429` when the budget is gone. Model quotas inside a pool can behave differently. The resolver skips the exhausted member. If another eligible pool member remains, the caller never sees the exhaustion. If every member is unavailable or exhausted, the gateway returns HTTP `429` with `subject_type: all_members`.
+
+Direct calls to an exhausted model (no pool spillover path) return HTTP `429` with `subject_type: model`. Quota enforcement is a barrier applied before the pool's routing strategy runs, so spillover composes with `priority_weighted`, `round_robin`, and `least_loaded` alike. Refer to [Pools](/concepts/resources/model-pools) concept and [model Quotas](/reference/controls/quotas#model-quotas) reference.
+
+### What counts toward a Gateway Quota
+
+A gateway quota follows the gateway in the request path, not a fixed membership snapshot. Usage accrues when a call is routed through that gateway, whichever pool or model member serves it. Membership can change during the window. Spend still lands on the same gateway quota.
+
+Passthrough LLM calls are still checked against quotas, but they do not add priced spend. The opaque body carries no token usage to meter.
+
+### A Quota is also a billing promise
+
+Distributed enforcement can serve a straddling call or a small amount of traffic beyond a cap before every gateway sees the updated total. For units Dome bills — Dome USD, tokens, and calls — Dome records the excess when usage is folded and excludes it from billing. Overlapping quotas do not create duplicate credits for the same usage.
+
+The usage shown for those units is the billable amount and never exceeds the configured limit. Raising, deleting, or recreating a quota later does not make previously written-off usage billable. Enforcement remains conservative: it continues to use full usage, including the excess that Dome wrote off.
+
+`provider_usd` is different. It estimates the organization's upstream provider bill, which Dome does not invoice. Dome therefore reports that estimate without clamping or writing it off; the quota controls future routing or rejection but cannot change a provider charge already incurred.
+
+### What you see in audit
+
+Completed model calls emit `model.call` with `stage=completed` and token counts. Exhaustion is the refused operation itself with `result=denied` and `denial.reason=quota_exceeded`. Create, update, and delete emit their own lifecycle events. Event names are on the [Quotas](/reference/controls/quotas#observability) reference.
+
+## Next steps
+
+With the quotas spend-cap model in mind, continue with:
+
+- [Architecture](/concepts/architecture#quotas) concept for where quotas sit in the request path
+- [Rules](/concepts/controls/rules) concept for allow and deny before spend metering
+- [Guards](/concepts/controls/guards) concept for content inspection after authorization
+- [Quotas](/reference/controls/quotas) reference for subjects, windows, and event names
+- [Set Usage Limits](/govern/quotas) to create, update, list, and remove quotas

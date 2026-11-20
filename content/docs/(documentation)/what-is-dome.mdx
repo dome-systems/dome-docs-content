@@ -1,0 +1,33 @@
+---
+title: What is Dome?
+sidebarTitle: Intro to Dome
+description: How Dome governs agent access to tools and models
+---
+
+Dome is the governance layer between AI agents and the tools and models they use. It gives each agent an identity, controls what it can reach and do, protects credentials and sensitive data, and records activity.
+
+## How does Dome work?
+
+An agent sends each request to a gateway, a named endpoint that exposes a selected group of tools and models. Dome identifies the agent, checks gateway access, evaluates authorization rules and quotas, applies request guards, calls the resource with protected backend credentials, applies response guards, and records what happened.
+
+![AI agents access tools and models through Dome, which connects, governs, operates, and manages the request path](/images/diagrams/what-is-dome-flow.svg)
+
+Refer to [Architecture](/concepts/architecture) concept for the component model and the stage-by-stage request pipeline.
+
+Dome's pillars support this flow:
+
+1. **[Connect](/connect).** Configure agents, tools, models, and gateways so workloads can reach resources under governance.
+2. **[Govern](/govern).** Control which resources agents can reach and what actions they may perform. Set quotas, protect credentials, and apply guards.
+3. **[Operate](/operate).** Investigate audit events, stream live events, and subscribe to events.
+
+**[Manage](/manage)** and **[Develop](/develop)** support those pillars. Manage administers the platform around them (access, environments, integrations, settings, and export). Develop wires an agent into product code: authenticate, call tools and models through a gateway, and handle denials.
+
+## Next steps
+
+Once you know what Dome is, pick a path in:
+
+- [Install](/install) the CLI and select a workspace
+- [Quickstart](/quickstart) to register an agent and verify governed traffic
+- [Personas](/personas) to identify your role and find relevant docs
+- [Architecture](/concepts/architecture) concept for the component model and request path
+- [Develop](/develop) when you are ready to wire the application

@@ -1,0 +1,147 @@
+---
+title: Permissions
+sidebarTitle: Permissions
+description: 'Platform RBAC role and permission catalogs across organization, tenant, and workspace scopes'
+---
+
+Field and catalog reference for platform RBAC. Agent runtime authorization uses Cedar and is separate from this catalog.
+
+Refer to [Permissions](/concepts/platform/permissions) concept for how platform RBAC works. Assign members and keys on [Manage Access](/manage/access).
+
+## Workspace roles
+
+Every workspace member has one of six roles.
+
+| Role | Description | Key capabilities |
+|------|-------------|------------------|
+| **admin** | Full workspace management | All workspace operations including member management, configuration, and workspace deletion |
+| **operator** | Day-to-day workspace operations | Register, suspend, revoke, and delete agents. Manage agent and API keys. Deploy and roll back rules. Manage gateway and integrations. Export audit. Cannot delete the workspace or change the admin roster. |
+| **security** | Authorization rules and audit | Deploy and roll back rules, simulate, suspend agents, query and export audit |
+| **developer** | agent integration work | Register and update agents, manage agent keys, view rules, audit, gateway, and integrations (no deploy, no export) |
+| **viewer** | Read-only access | List agents, view rules, gateway, audit, and integrations |
+| **impersonator** | Reserved for impersonation flows | No standing permissions. Used by sessions impersonating another user. |
+
+### Workspace-scoped permissions
+
+✅ means the role has the permission. ❌ means it does not.
+
+| Permission | admin | operator | security | developer | viewer |
+|-----------|:-----:|:--------:|:--------:|:---------:|:------:|
+| `agents.view` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `agents.register` | ✅ | ✅ | ❌ | ✅ | ❌ |
+| `agents.suspend` | ✅ | ✅ | ✅ | ✅ | ❌ |
+| `agents.revoke` | ✅ | ✅ | ❌ | ✅ | ❌ |
+| `agents.delete` | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `agentkeys.manage` | ✅ | ✅ | ❌ | ✅ | ❌ |
+| `managedagents.view` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `managedagents.manage` | ✅ | ✅ | ❌ | ✅ | ❌ |
+| `managedagents.invoke` | ✅ | ✅ | ❌ | ✅ | ❌ |
+| `deviceenroll.manage` | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `rules.view` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `rules.deploy` | ✅ | ✅ | ✅ | ❌ | ❌ |
+| `rules.rollback` | ✅ | ✅ | ✅ | ❌ | ❌ |
+| `gateways.view` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `gateways.manage` | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `audit.view` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `audit.export` | ✅ | ✅ | ✅ | ❌ | ❌ |
+| `workspaces.manage` | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `workspaces.delete` | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `workspaces.manage_admin` | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `apikeys.manage` | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `config.manage` | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `integrations.view` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `integrations.manage` | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `eventing.view` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `eventing.manage` | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `eventing.replay` | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `guards.view` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `guards.manage` | ✅ | ✅ | ❌ | ❌ | ❌ |
+
+`eventing.*` gates [Subscribe to Events](/operate/webhooks). `guards.*` gates both guard kinds, filters and validators, and the legacy `filters.view` / `filters.manage` aliases still satisfy it during the cutover. See those how-tos for operation detail.
+
+`workspaces.manage_admin` is the workspace-direct admin marker. It gates adding, removing, or changing the role of any user to or from workspace admin. It distinguishes workspace `admin` from workspace `operator`. The latter operates the workspace end-to-end but cannot reshape its admin roster. The distinction collapses at the tenant scope. Tenant `admin` and tenant `operator` cascades both grant `workspaces.manage_admin` across every workspace in the tenant. Org `owner` and `admin` cascades grant it as well.
+
+## Tenant roles
+
+Tenant roles grant tenant-scoped permissions and cascade workspace permissions into every workspace in the tenant.
+
+| Role | Description | Workspace cascade |
+|------|-------------|-------------------|
+| **admin** | Full tenant management, including tenant deletion | Full workspace `admin` permissions in every workspace, including `workspaces.delete` and `workspaces.manage_admin` |
+| **operator** | Tenant operations end-to-end except tenant deletion | Identical to tenant `admin` cascade |
+| **security** | Security review across the tenant | Workspace `security` permissions in every workspace |
+| **member** | Tenant membership without standing management permissions | None |
+| **impersonator** | Reserved for impersonation flows | None |
+| **unprivileged** | Cross-domain workspace invitee in an org with at least one verified domain. No tenant-scoped permissions. Access is limited to workspaces they were explicitly invited to. | None |
+
+### Tenant-scoped permissions
+
+✅ means the role has the permission. ❌ means it does not.
+
+| Permission | admin | operator | security | member | unprivileged |
+|-----------|:-----:|:--------:|:--------:|:------:|:------------:|
+| `tenants.view` | ✅ | ✅ | ✅ | ✅ | ❌ |
+| `tenants.manage` | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `tenants.delete` | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `apikeys.manage` | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `audit.view` | ✅ | ✅ | ✅ | ❌ | ❌ |
+| `config.manage` | ✅ | ✅ | ❌ | ❌ | ❌ |
+
+Tenant admin, operator, and security inherit workspace permissions across every workspace in the tenant. Tenant member receives no workspace cascade. Assign a workspace role separately to grant workspace access.
+
+`tenants.delete` is the admin-only marker at the tenant-direct scope, analogous to `workspaces.delete`. Tenant operators run the tenant end-to-end but cannot delete it. Org `owner` and `admin` cascade `tenants.delete` across every tenant.
+
+## Organization roles
+
+Organization roles cascade into every tenant and workspace in the org.
+
+| Role | Description | Cascade |
+|------|-------------|---------|
+| **owner** | Full org management. Create and delete tenants. Manage org members. | Full tenant admin and workspace admin grants across every tenant, including `tenants.delete` |
+| **admin** | Tenant management. Create workspaces. Assign workspace roles. | Same as owner |
+| **member** | Org membership without standing permissions | None |
+| **unprivileged** | Cross-domain workspace invitee in an org with at least one verified domain. No org-scoped permissions and no auto-enrollment into open tenants. Access is limited to workspaces they were explicitly invited to. | None |
+
+### Org-scoped permissions
+
+✅ means the role has the permission. ❌ means it does not.
+
+| Permission | owner | admin | member | unprivileged |
+|-----------|:-----:|:-----:|:------:|:------------:|
+| `org.view` | ✅ | ✅ | ✅ | ❌ |
+| `tenants.manage` | ✅ | ✅ | ❌ | ❌ |
+| `apikeys.manage` | ✅ | ✅ | ❌ | ❌ |
+| `audit.view` | ✅ | ✅ | ❌ | ❌ |
+| `billing.manage` | ✅ | ✅ | ❌ | ❌ |
+| `modelrates.manage` | ✅ | ✅ | ❌ | ❌ |
+| `config.manage` | ✅ | ✅ | ❌ | ❌ |
+
+`org.view` gates "I'm a real participant in this org" reads. The `ListJoinableTenants` endpoint requires it, so unprivileged invitees cannot enumerate the org's open tenants.
+
+`tenants.manage` at the org scope also gates org-membership management (`ListOrgMembers`, `AssignOrgRole`, `RemoveOrgMember`). Only an org `owner` may grant or remove the `owner` role — admins cannot self-escalate. A last-owner guard prevents removing the final owner: the request returns `FailedPrecondition` so an org can never reach zero owners. Grants require the target user to already exist on the platform; there is no implicit user creation.
+
+`audit.view` at the org scope widens audit reads across every tenant and workspace in the org. Owner and admin only; platform-user sessions or org-scoped API keys. See [Query events across an organization](/operate/audit#query-events-across-an-organization).
+
+`billing.manage` covers the organization's commercial relationship with Dome: plan, seats, payment methods, invoices, and billing status. `modelrates.manage` is separate: it covers the organization's upstream provider rate card, including reads because those rates are contract terms. Neither permission cascades from a workspace or tenant role.
+
+## Permission combinations
+
+Some operations change both an object and the authorization rules derived from it. Registering or updating an agent with any access or delegation field requires `agents.register` and `rules.deploy`. This includes ID-based pool grants (`allowed_pool_ids`) as well as pool names, direct models, tools, gateways, act-as allow-lists, and required act-as settings. An identity-only agent registration or update does not require `rules.deploy`.
+
+## Grantable permission discovery
+
+Platform API keys take an explicit permission list. Discover what the caller may grant with:
+
+- CLI: [`dome platform-keys permissions`](/cli/settings/platform-keys)
+- MCP: [`dome_platform_keys_available_permissions`](/reference/mcp/platform)
+- API: [`GetGrantablePermissions`](/api/tag/access-control/get-grantable-permissions), [`ResolvePermissions`](/api/tag/access-control/resolve-permissions)
+
+## Next steps
+
+Grant these from Manage Access. Agent runtime auth is Cedar:
+
+- [Permissions](/concepts/platform/permissions) concept for how platform RBAC relates to agent authorization
+- [Manage Access](/manage/access) to assign members and create platform keys
+- [Scopes](/concepts/platform/scopes) concept for the org → tenant → workspace hierarchy
+- [Authorization Model](/concepts/architecture/authorization-model) concept for Cedar agent authorization
+- [Rules](/reference/controls/rules) reference for the entity, action, and attribute catalogs

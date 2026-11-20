@@ -1,0 +1,46 @@
+---
+title: dome auth
+description: Authentication management
+---
+
+`dome auth` signs the CLI in to a Dome Platform host through browser-based SSO and reports who the current session belongs to. Logging in creates a [context](/cli/session/context); every other command runs against the active one.
+
+| Command | |
+|---------|---|
+| [Login](#login) | `dome auth login` |
+| [Logout](#logout) | `dome auth logout` |
+| [Status](#status) | `dome auth status` |
+
+## Login
+
+```bash
+dome auth login
+```
+
+Authenticate with the Dome Platform.
+
+Opens your default browser for authentication. After login, an identity session is created and all available org/tenant contexts are synced.
+
+```bash
+dome auth login
+```
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--token` | string | API token for CI/headless environments |
+
+## Logout
+
+```bash
+dome auth logout
+```
+
+Sign out and remove stored credentials.
+
+## Status
+
+```bash
+dome auth status
+```
+
+Show authentication status including active context, server, org, tenant, and role.

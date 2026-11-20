@@ -1,0 +1,53 @@
+---
+title: dome export
+description: Export reviewed Dome configuration from the active scope
+---
+
+Export Dome configuration from the active workspace, tenant, or organization. Use the reviewed file as input to [`dome import`](/cli/manage/import) in a compatible target scope.
+
+Refer to [Import and export configuration](/manage/import-export) for supported resource families, scope coverage, and portability permissions.
+
+## Requirements
+
+Before you begin:
+
+- Authenticate the CLI and select the source scope.
+- Hold `export.manage` and the view permission for each resource family you export.
+
+## List exportable resources
+
+```bash
+dome export --list
+```
+
+List the resource families and resource IDs available to export from the active scope. Families you cannot view are omitted and reported separately.
+
+## Export configuration
+
+```bash
+dome export --all [flags]
+```
+
+Export every resource in the active scope, or narrow the export with `--include` or `--resource`.
+
+| Flag | Type | Description |
+| --- | --- | --- |
+| `--all` | bool | Export every exportable resource in the active scope. |
+| `--include` | string[] | Export one or more resource families. Repeat the flag or provide comma-separated values. |
+| `--resource` | string[] | Export one or more resource IDs from `dome export --list`. Repeat the flag or provide comma-separated values. |
+| `--with-dependencies` | bool | Include resources the selected resources reference. |
+| `--output`, `-o` | string | Write the export to this file instead of standard output. |
+
+```bash title="Export all configuration"
+dome export --all --output dome.tf
+```
+
+```bash title="Export a family with its dependencies"
+dome export --include gateways --with-dependencies --output gateways.tf
+```
+
+Secrets and environment-specific values become variables in the export. Review the generated file before committing or sharing it.
+
+## Import the export
+
+Plan every export before you apply it to another scope. See [`dome import`](/cli/manage/import) for variable values, plan results, job status, and one-time outputs.

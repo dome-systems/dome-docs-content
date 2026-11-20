@@ -1,0 +1,99 @@
+---
+hidden: true
+title: Developer — agent instructions
+sidebarTitle: Developer
+description: "Machine-readable instructions for an AI agent running the Developer role tutorial"
+---
+
+These are the instructions an AI agent follows to run the [Developer](/tutorials/role/developer) tutorial on your behalf. Read the tutorial instead if you are running the steps yourself.
+
+## Goal
+
+Stand up `role-dev-agent` in `studio-role-developer`, attach `demo-hr`, deploy a directory-only Cedar allowlist, then hand the user curl or Python calls that prove allow (`list_employees`) and deny (`get_salary`), plus audit.
+
+## Rules
+
+- **Confirm before you start.** Present the plan below and wait for proceed.
+- **Narrate as you go.** One or two sentences before each step.
+- **Confirm the active context.** Confirm `dome context current` workspace starts with `studio-`.
+- **Never print the agent token.** Write it to a gitignored `.env`.
+- **Hand off verify.** Do not call governed tools yourself to demo outcomes. Give the user the curl/Python commands from the tutorial.
+- **Link the console.** After create/grant/deploy, link using `dome auth status` → `Server`.
+- **Show evidence.** Never report done without command output.
+
+## Quick setup
+
+```
+Here's what I'll do for the Developer role tutorial.
+
+1. Provision studio-role-developer and switch into it
+2. Register role-dev-agent and mint a key (token into .env only)
+3. Attach demo-hr to Default and grant gateway access
+4. Deploy Cedar: allow directory tools, deny salary
+5. Hand you curl and Python verify commands (allow + deny)
+6. Show audit, then offer clean up
+
+Shall I proceed?
+```
+
+## Steps
+
+### 1. Provision workspace
+
+```bash
+dome workspaces create --name studio-role-developer
+dome context sync
+dome context current
+```
+
+Confirm workspace is `studio-role-developer`.
+
+### 2. Register agent
+
+```bash
+dome agents register --name role-dev-agent --if-not-exists
+dome agents create-key role-dev-agent --name service
+```
+
+Write token to `.env` as `DOME_TOKEN=...`. Do not print it. Link `<Server>/agents`.
+
+### 3. Attach tools and grant
+
+```bash
+dome tools add \
+  --name demo-hr \
+  --url https://demo-mcp.domesystems.ai/mcp \
+  --protocol streamable-http \
+  --auth-method none \
+  --gateway Default
+dome gateways access grant Default role-dev-agent
+```
+
+Link `<Server>/tools` and `<Server>/gateways`.
+
+### 4. Deploy rules
+
+Write and apply `role-dev-agent.cedar` exactly as in the human tutorial (directory allowlist + forbid unless). Then simulate allow and deny.
+
+```bash
+dome rules apply role-dev-agent.cedar --agent role-dev-agent --name role-dev-agent
+```
+
+### 5. Hand off verify
+
+Collect `DOME_GATEWAY_URL` from `dome context current` + `dome gateways list`. Tell the user to run the **API via curl** or **Python** tab from [Verify allow and deny](/tutorials/role/developer#verify-allow-and-deny). Do not execute those calls yourself unless the user asks.
+
+### 6. Audit
+
+```bash
+dome audit query --limit 20
+dome audit query --results denied --limit 10
+```
+
+### 7. Clean up (optional)
+
+```bash
+dome workspaces delete studio-role-developer
+```
+
+Point next at [Security](/tutorials/role/security) or [Govern your first agent](/tutorials/get-started/govern-your-first-agent).

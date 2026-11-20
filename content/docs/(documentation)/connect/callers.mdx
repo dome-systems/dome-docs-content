@@ -1,0 +1,447 @@
+---
+title: Callers
+sidebarTitle: Callers
+description: Configure how Dome verifies the people agents act for, then inspect the callers observed behind delegated traffic
+---
+
+import { caller } from '@/snippets/glossary';
+
+<p>{caller}</p>
+
+## Overview
+
+An agent is the workload. A caller is the person that workload acts for. Callers are the human side of [delegated agents](/build/agents/delegated): your application sends the person's identity in `X-Dome-Act-As`, Dome verifies it against a verification provider, and rules, quotas, egress, and audit read the verified claims.
+
+This page covers both halves of that entity:
+
+- **Verification.** Create the OIDC and HMAC providers that prove who a caller is, and set the workspace floor that decides whether verified identity is required and which methods are allowed.
+- **The registry.** Inspect the callers Dome has actually observed, and erase a projected record when a person must be forgotten.
+
+Callers are projected from audit evidence, so a caller appears only after Dome accepts delegated traffic carrying a verified identity. Nothing here creates a caller by hand.
+
+Interactive OAuth users are not added to the registry. Their identity and revocable access belong to the interactive grant that lets a person ride an agent through an MCP client. Refer to [Identity Patterns](/concepts/identity-patterns).
+
+### Provider hierarchy
+
+Verification providers can belong to an organization, tenant, or workspace. A workspace can see its own providers plus providers inherited from its tenant and organization.
+
+Dome resolves one effective provider for each non-bound agent:
+
+1. A **required provider** pins the method and provider and forces Act-As on. The broadest configured scope wins: organization, then tenant, then workspace.
+2. Otherwise, an agent's explicit provider reference wins.
+3. Otherwise, the agent's inline OIDC or HMAC material wins.
+4. Otherwise, a **default provider** supplies missing material. The nearest configured scope wins: workspace, then tenant, then organization.
+
+A nearest default with the wrong method fails closed. Dome does not fall through to a farther provider. Bound agents bypass this hierarchy because enrollment already established their identity.
+
+Use required providers for enforceable baselines. Use defaults to reduce repeated configuration without overriding an explicit agent choice.
+
+## Requirements
+
+Before you begin, authenticate to Dome and select a workspace.
+
+### Permissions
+
+| Default roles | Permission | Grants |
+|---------------|------------|--------|
+| `admin`, `operator` | Workspace `config.manage` | Manage workspace providers, workspace Act-As enforcement, and caller erasure |
+| Tenant `admin`, `operator` | Tenant `config.manage` | Read tenant providers and set tenant default or required providers |
+| Org `owner`, `admin` | Org `config.manage` | Read org providers and set org default or required providers |
+| `admin`, `operator`, `security`, `developer` | `audit.view` | Read the Callers registry |
+
+Per-agent Act-As configuration uses agent register permissions instead. Refer to [External agents](/build/agents/external#change-end-user-identity).
+
+## Create a verification provider
+
+Create a workspace-scoped verification provider that agents with delegated identity can share. Assign the returned provider ID when registering or updating an agent with `--actas-provider` / `actas_provider_id`. Agents can instead use an inherited provider or inline OIDC/HMAC material.
+
+The method you pick here must match what your application puts in `X-Dome-Act-As`. Refer to [Verification methods](/build/agents/delegated#verification-methods). How to send the header is on [Pass identity for delegated agents](/develop#pass-identity-for-delegated-agents).
+
+In the dashboard, open **Callers → Verification** and add a provider.
+
+<Callout icon="key">Requires `config.manage`.</Callout>
+
+### OIDC
+
+Use OIDC when end users sign in through an IdP and your application sends their JWT as `X-Dome-Act-As`.
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome workspaces verification-providers create \
+      --name workforce-oidc \
+      --method oidc \
+      --oidc-discovery-url https://auth.example.com \
+      --oidc-expected-audience {{YOUR_APP_CLIENT_ID}}
+    ```
+
+    <Callout icon="terminal">Reference: [`dome workspaces verification-providers create`](/cli/settings/workspace#create-provider)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_verification_providers_create`
+
+    ```json
+    {
+      "name": "workforce-oidc",
+      "method": "oidc",
+      "oidc_discovery_url": "https://auth.example.com"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_verification_providers_create`](/reference/mcp/verification#verification-providers-create)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /v1/workspaces/<workspace-uuid>/verification-providers
+    Content-Type: application/json
+
+    {
+      "name": "workforce-oidc",
+      "method": "oidc",
+      "oidc_discovery_url": "https://auth.example.com"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`CreateVerificationProvider`](/api/tag/workspaces/create-verification-provider)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Create an OIDC verification provider"
+    Create an OIDC verification provider named "workforce-oidc" using the issuer https://auth.example.com.
+    ```
+  </Tab>
+</Tabs>
+
+Dome appends `/.well-known/openid-configuration` to the issuer base URL.
+
+### Harden OIDC verification
+
+Pin the audience, require tenant claims, and map non-standard IdP claims before accepting caller tokens. These checks prevent a token for another application or tenant from becoming a verified Act-As identity.
+
+Use the scope-aware command when you need the full OIDC configuration:
+
+```bash
+dome verification-providers create \
+  --name workforce-oidc \
+  --method oidc \
+  --oidc-url https://auth.example.com \
+  --oidc-expected-audience {{YOUR_APP_CLIENT_ID}} \
+  --oidc-required-claim tenant_id={{YOUR_TENANT_ID}} \
+  --oidc-claim-map 'app_groups=groups' \
+  --oidc-claim-map 'app_roles=roles'
+```
+
+`--oidc-expected-audience` requires the JWT's `aud` claim to name your application. Set it to the client ID or another audience your IdP issues only for the application that sends Act-As assertions.
+
+Use `--oidc-required-claim name=value` for each exact claim that establishes the token's tenant or domain. Google issuers require `--oidc-required-claim hd={{YOUR_GOOGLE_WORKSPACE_DOMAIN}}`; without it, any Google account could satisfy the shared issuer.
+
+Use `--oidc-claim-map` when your IdP stores group, role, or custom authorization data outside Dome's built-in claim locations. The format is `CLAIM=TARGET[;type=set][;split=SEP]`:
+
+- Map to `groups` or `roles` to populate those verified attributes. A mapping replaces Dome's built-in lookup for that attribute.
+- Map to a custom target, such as `department`, to expose `principal.act_as.claims.department` to rules.
+- Add `;type=set;split=,` when one string claim contains a comma-separated set.
+
+For example:
+
+```bash
+dome verification-providers update {{PROVIDER_ID}} \
+  --oidc-claim-map 'https://example.com/groups=groups' \
+  --oidc-claim-map 'teams=teams;type=set;split=,'
+```
+
+Update flags replace the complete required-claim or claim-mapping set. Include every value you want to keep. Use `--clear-oidc-required-claims` or `--clear-oidc-claim-maps` only when you intend to remove the respective checks.
+
+### HMAC
+
+Use HMAC when a trusted service constructs and signs the Act-As envelope with a shared secret.
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome workspaces verification-providers create \
+      --name internal-signer \
+      --method hmac \
+      --hmac-secret <shared-secret>
+    ```
+
+    <Callout icon="terminal">Reference: [`dome workspaces verification-providers create`](/cli/settings/workspace#create-provider)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_verification_providers_create`
+
+    ```json
+    {
+      "name": "internal-signer",
+      "method": "hmac",
+      "hmac_secret": "<shared-secret>"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_verification_providers_create`](/reference/mcp/verification#verification-providers-create)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /v1/workspaces/<workspace-uuid>/verification-providers
+    Content-Type: application/json
+
+    {
+      "name": "internal-signer",
+      "method": "hmac",
+      "hmac_secret": "<shared-secret>"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`CreateVerificationProvider`](/api/tag/workspaces/create-verification-provider)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Create an HMAC verification provider"
+    Create an HMAC verification provider named "internal-signer" with my shared secret.
+    ```
+  </Tab>
+</Tabs>
+
+## List verification providers
+
+List the verification providers in the workspace. Widen the result to the visible organization and tenant chain when selecting an inherited provider.
+
+<Callout icon="key">Requires `config.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","API"]}>
+  <Tab value="CLI">
+    ```bash
+    dome workspaces verification-providers list
+    dome verification-providers list --include-chain
+    ```
+
+    <Callout icon="terminal">Reference: [`dome workspaces verification-providers list`](/cli/settings/workspace#list-providers)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_verification_providers_list`
+
+    ```json
+    {
+      "name": "dome_verification_providers_list",
+      "arguments": {}
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_verification_providers_list`](/reference/mcp/verification#verification-providers-list)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    GET /v1/workspaces/<workspace-uuid>/verification-providers
+    ```
+
+    <Callout icon="code">Reference: [`ListVerificationProviders`](/api/tag/workspaces/list-verification-providers)</Callout>
+  </Tab>
+</Tabs>
+
+## Delete a verification provider
+
+Delete a verification provider when you no longer need it. Dome clears direct references to the provider and moves affected agents and scope defaults to the next applicable default provider.
+
+<Callout icon="key">Requires `config.manage`.</Callout>
+
+<Callout type="warning">
+Review the agents and workspace, tenant, and organization defaults that use the provider before deleting it. If no applicable default remains after deletion, delegated requests that need a provider can no longer verify.
+</Callout>
+
+<Tabs items={["CLI","MCP","API"]}>
+  <Tab value="CLI">
+    ```bash
+    dome workspaces verification-providers delete <provider-id>
+    ```
+
+    <Callout icon="terminal">Reference: [`dome workspaces verification-providers delete`](/cli/settings/workspace#delete-provider)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_verification_providers_delete`
+
+    ```json
+    {
+      "provider_id": "<provider-id>"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_verification_providers_delete`](/reference/mcp/verification#verification-providers-delete)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    DELETE /v1/workspaces/<workspace-uuid>/verification-providers/<provider-id>
+    ```
+
+    <Callout icon="code">Reference: [`DeleteVerificationProvider`](/api/tag/workspaces/delete-verification-provider)</Callout>
+  </Tab>
+</Tabs>
+
+## Require verified identity
+
+Update the workspace Act-As floor so every agent must present a verified end-user identity (every agent in the workspace uses delegated identity at the edge), and optionally restrict which verification methods are allowed.
+
+When the workspace requires verified Act-As:
+
+- Every request must include a valid identity envelope.
+- The verification method must be allowed by the workspace.
+- An agent configured with `actas_method=none` is rejected.
+- Invalid, expired, malformed, or unverifiable identity fails closed before authorization.
+
+Agent settings can be stricter than the workspace floor, but cannot weaken it. An agent can require Act-As when the workspace does not, or narrow which verified identities it may present by group, email, or subject. Set per-agent options on [External agents](/build/agents/external#change-end-user-identity).
+
+<Callout icon="key">Requires `config.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome workspaces actas update --required
+    ```
+
+    ```bash
+    dome workspaces actas update --allowed-methods oidc,hmac
+    ```
+
+    <Callout icon="terminal">Reference: [`dome workspaces actas update`](/cli/settings/workspace#update-act-as-config)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_workspaces_actas_update`
+
+    ```json
+    {
+      "actas_required": true,
+      "actas_allowed_methods": ["oidc", "hmac"]
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_workspaces_actas_update`](/reference/mcp/workspaces#workspace-actas-update)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    PATCH /v1/workspaces/<workspace-uuid>/actas
+    Content-Type: application/json
+
+    {
+      "actas_required": true,
+      "actas_allowed_methods": ["oidc", "hmac"]
+    }
+    ```
+
+    <Callout icon="code">Reference: [`UpdateWorkspaceActAs`](/api/tag/workspaces/update-workspace-act-as)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Require verified identity"
+    Require verified Act-As on every request in this workspace and allow only oidc and hmac.
+    ```
+  </Tab>
+</Tabs>
+
+Read the current floor with `dome workspaces actas get`, `dome_workspaces_actas_get`, or [`GetWorkspaceActAs`](/api/tag/workspaces/get-workspace-act-as).
+
+Tightening allowed methods can strand agents that already use an excluded method. The dashboard's **Verification** tab previews which agents would start failing at the gateway before you save. Review the configured method with `dome agents get` first when you change the floor from the CLI, MCP, or API.
+
+### Select default and required providers
+
+Set provider selections independently at each scope. Update commands use full-replace semantics: an omitted selection clears that field.
+
+```bash
+# Nearest default wins: workspace > tenant > organization
+dome workspaces actas update --default-provider {{PROVIDER_ID}}
+dome tenant actas update --default-provider {{PROVIDER_ID}}
+dome orgs actas update --default-provider {{PROVIDER_ID}}
+
+# Broadest requirement wins: organization > tenant > workspace
+dome orgs actas update --required-provider {{PROVIDER_ID}}
+```
+
+Tenant selections accept tenant- or org-scoped providers. Organization selections accept org-scoped providers. Workspace selections accept any provider visible in the workspace's scope chain.
+
+Provider reads are scope-aware:
+
+```bash
+dome verification-providers list --scope workspace --include-chain
+dome verification-providers get {{PROVIDER_ID}} --scope org
+dome verification-providers list --scope tenant
+```
+
+CLI and MCP provider writes currently target workspace scope. The dashboard's **Callers → Verification** tab manages workspace providers and workspace policy, and shows inherited tenant and organization policy read-only. Manage organization providers from **Settings → Single Sign-On**; an active SSO connection can create a matching org-scoped OIDC provider that Act-As can reuse. Tenant provider creation is not exposed in those customer surfaces yet.
+
+## Inspect callers
+
+In the dashboard, open **Callers**. Search by subject or email, or filter by group, claim, or verification provider. Select a row to inspect:
+
+- identity claims and every observed verification method
+- first-seen and last-seen timestamps
+- agents, models, and tools attributed to the caller
+- lifetime and current-month activity
+
+Current-month sections appear only when the caller had activity during the current UTC calendar month. Lifetime totals remain available independently.
+
+<Callout icon="key">Requires `audit.view`.</Callout>
+
+You can read the same projection from the CLI or MCP:
+
+<Tabs items={["CLI","MCP"]}>
+  <Tab value="CLI">
+    ```bash
+    # List callers in the active workspace
+    dome callers list
+
+    # Filter by a group and an exact claim
+    dome callers list --group support --attribute region=us
+
+    # Inspect one caller
+    dome callers get {{CALLER_ID}}
+    ```
+
+    Use a caller record UUID when the same subject appears under more than one verification provider.
+
+    <Callout icon="terminal">Reference: [`dome callers`](/cli/connect/callers)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Use `dome_callers_list` to find caller records and `dome_callers_get` to inspect one record.
+
+    ```json title="Inspect one caller"
+    {
+      "name": "dome_callers_get",
+      "arguments": {
+        "caller": "{{CALLER_ID}}"
+      }
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [Caller MCP tools](/reference/mcp/callers)</Callout>
+  </Tab>
+</Tabs>
+
+## Erase a projected caller record
+
+Caller erasure is a CLI and MCP compliance operation; the dashboard does not expose a delete action.
+
+<Callout icon="key">Requires `config.manage`.</Callout>
+
+<Tabs items={["CLI","MCP"]}>
+  <Tab value="CLI">
+    ```bash
+    dome callers delete {{CALLER_ID}}
+    ```
+
+    The CLI asks for confirmation. Pass `--yes` for non-interactive use.
+  </Tab>
+  <Tab value="MCP">
+    ```json title="Erase one caller projection"
+    {
+      "name": "dome_callers_delete",
+      "arguments": {
+        "caller": "{{CALLER_ID}}"
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+Erasure removes the projected identity record and its per-agent activity rows. It does not delete the underlying audit evidence. If later delegated traffic carries the same verified identity, Dome creates the projection again.
+
+## Next steps
+
+- [delegated agents](/build/agents/delegated) to configure an agent to act for a caller and write claim-aware rules
+- [Configure Act-As on an agent](/build/agents/external#change-end-user-identity) for method, required flag, provider, and allow-lists
+- [Pass identity for delegated agents](/develop#pass-identity-for-delegated-agents) from your application
+- [Identity Patterns](/concepts/identity-patterns) to compare delegated Act-As with interactive OAuth
+- [Audit events](/operate/audit) to investigate the retained evidence behind caller activity

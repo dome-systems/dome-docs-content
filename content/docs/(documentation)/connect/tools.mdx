@@ -1,0 +1,976 @@
+---
+title: Tools
+sidebarTitle: Tools
+description: Attach MCP servers, configure upstream authentication, and publish governed tools
+keywords: ['mcp', 'mcp servers']
+---
+
+import { tool } from '@/snippets/glossary';
+
+<p>{tool}</p>
+
+## Overview
+
+Tools are one of the resource types Dome makes available to agents, alongside [models](/connect/models). When you add a tool, Dome stores its server endpoint, credentials, and egress headers. Dome records the operations the server exposes once the gateway connects to it.
+
+The typical workflow is:
+
+1. [Add a tool](#add-tool) for the upstream MCP server.
+2. If the server requires credentials, configure [upstream authentication](#upstream-authentication).
+3. [Attach the tool to a gateway](#attach-to-a-gateway) to make it available through a Dome endpoint.
+4. Allow the gateway on the [external agent](/build/agents/external#allowed-resources).
+5. [Verify discovery](#verify-discovery) to confirm which operations the agent can use.
+
+### Upstream authentication
+
+The gateway authenticates to the upstream with credentials you configure on the tool. Agent API keys authenticate inbound requests to Dome and never pass through as upstream credentials. Dome stores upstream secrets and injects them only at egress.
+
+Two settings control which credential the gateway sends.
+
+1. The authentication method defines how the server verifies a request.
+
+| Auth method | When the upstream |
+|-------------|-------------------|
+| `none` | Requires no credential |
+| `api-key` | Accepts a static API key or bearer token |
+| `oauth` | Supports OAuth 2.0 or 2.1 |
+
+2. The credential type defines whose credential the gateway sends.
+
+With shared credentials, every request reaches the upstream under the same service account. With per-user credentials, each request uses a credential linked to the verified end user, so the upstream applies that user's permissions.
+
+| Credential type | What the gateway sends |
+|-----------------|------------------------|
+| `none` | No credential |
+| `shared` | One workspace-managed credential for every call |
+| `per-user` | One credential per verified act-as subject |
+
+The two settings are not independent. The `none` method accepts only the `none` credential type, and `api-key` and `oauth` each require `shared` or `per-user`. When you omit the credential type, Dome pairs it with the method: `none` with `none`, `api-key` with `shared`, and `oauth` with `per-user`. OAuth also requires the `streamable-http` protocol, so a stdio tool cannot use it.
+
+You can set authentication when you [add a tool](#add-tool) or [change it later](#change-upstream-authentication).
+
+### Secret handling
+
+Connection secrets are write-only. Dome stores their values for egress, but never returns them from a tool read, list, or header listing.
+
+When you update a tool, `--authorization` and `--secret-value` change only the keys you name. Omitted stored secrets keep their values. To remove a secret-sourced header and its stored value, use `dome tools header remove`.
+
+### Egress headers
+
+Egress headers are values the gateway adds on the outbound request to the upstream. A header can be a literal string, a stored secret, or the verified act-as identity from the inbound request. Only a Streamable HTTP tool can carry them, because a stdio tool has no HTTP request to attach them to.
+
+An act-as header forwards the end-user assertion that the workspace admitted.
+The gateway does not apply a second strength ranking at egress: configure the
+accepted methods or required provider in the workspace Act-As policy. The call
+fails closed when no raw assertion is available, including bound and interactive
+session identity. An act-as header is not valid on a tool that authenticates
+with OAuth.
+
+You can set headers when you [add a tool](#add-tool), [change them on update](#change-egress-headers), or [manage them individually](#manage-egress-headers).
+
+### Discovered tools
+
+After the gateway connects to an upstream server, every operation that server exposes appears in the tool's catalog. You can change the status of one operation without removing the entire tool. For example, you can block `delete_page` while keeping `create_page` available to agents.
+
+| Status | Behavior |
+|--------|----------|
+| `active` | Discoverable and callable when rules allow |
+| `deprecated` | Callable, with a catalog warning |
+| `blocked` | Hidden from discovery and denied on invocation |
+
+Blocking an operation denies it even if another rule would permit it. Status persists when the gateway observes the operation again. Only a restore returns it to `active`. Refer to [Manage discovered tools](#manage-discovered-tools) for the operations that change these statuses.
+
+## Requirements
+
+Before you begin:
+
+- Authenticate to Dome and select a workspace
+- Have the upstream MCP endpoint (URL for Streamable HTTP, or a local command for stdio)
+- Have upstream credentials when the server requires them
+- Have a [Gateway](/build/gateways) ready when you want the tool reachable
+
+### Permissions
+
+Tool connection operations require platform permissions. Each operation states its required permission inline.
+
+| Default roles | Permission | Grants |
+|---------------|------------|--------|
+| All workspace roles | `gateways.view` | List tools and inspect discovered operations |
+| `admin`, `operator` | `gateways.manage` | Add, update, and remove tools and manage discovered operations |
+
+## Add tool
+
+Add a tool for one upstream MCP server. Use Streamable HTTP for a remote server or stdio for a local process. You can set [upstream authentication](#upstream-authentication), [egress headers](#egress-headers), and gateway membership in the same call.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome tools add \
+      --name notion \
+      --url "https://mcp.notion.com/mcp" \
+      --protocol streamable-http \
+      --gateway prod-tools
+    ```
+
+    If you do not define `--gateway`, the tool stays unreachable until you attach it.
+
+    Add `--auth-method`, `--credential-type`, and header flags if the upstream needs them.
+
+    <Callout icon="terminal">Reference: [`dome tools add`](/cli/connect/tools#add-connection)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_tools_add`
+
+    ```json
+    {
+      "name": "notion",
+      "url": "https://mcp.notion.com/mcp",
+      "protocol": "streamable-http",
+      "gateways": ["prod-tools"]
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_tools_add`](/reference/mcp/tools#dome_tools_add)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    POST /v1/tools
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "name": "notion",
+      "protocol": "streamable-http",
+      "protocol_config": {
+        "url": "https://mcp.notion.com/mcp"
+      }
+    }
+    ```
+
+    The endpoint returns the new tool's UUID, which every other management call uses to address it.
+
+    <Callout icon="code">Reference: [`CreateMCPServerConnection`](/api/tag/tools/create-mcp-server-connection)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Attach an MCP server"
+    Add a Streamable HTTP tool named "notion" at https://mcp.notion.com/mcp. Attach it to the "prod-tools" Gateway.
+    ```
+  </Tab>
+</Tabs>
+
+A tool remains unavailable to agents until you attach it to a gateway. You can configure authentication and headers before attaching it.
+
+## Install a catalog adapter
+
+Install a Dome-managed REST adapter — Slack, GitHub, Notion, and other bundled integrations — as a workspace tool. The catalog hides the REST→MCP mapping: pick a slug, name the connection, and supply the upstream credential.
+
+Use catalog install when an adapter exists for your upstream. Direct creation with `protocol=rest` is rejected; the install RPC is the only path that produces a catalog-backed connection. For upstreams that already speak MCP, use [Add tool](#add-tool) with `streamable-http` or `stdio`.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["Dashboard","API"]}>
+  <Tab value="Dashboard">
+    1. Open **tools → Add tool**.
+    2. Browse **Popular** (top adapters by popularity) or **All**, or search by name.
+    3. Pick an adapter, or choose the pinned **Custom MCP server** row for a direct MCP connection.
+    4. Name the connection, paste the upstream token, and choose **shared** or **per-user** credentials when the adapter supports both.
+    5. Optionally narrow the exposed tools with the tool filter.
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /dome.mgmt.v1.Management/InstallCatalogConnection
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "slug": "github",
+      "name": "github-prod",
+      "secret_values": { "Authorization": "Bearer {{GITHUB_TOKEN}}" },
+      "credential_type": "shared",
+      "tool_filter": ["create_issue", "list_pull_requests"]
+    }
+    ```
+
+    | Field | Description |
+    |-------|-------------|
+    | `slug` | Catalog adapter slug. The latest enabled version is installed and pinned. |
+    | `name` | Connection name (unique within the workspace). |
+    | `secret_values` | Map of Vault secret key → value. Empty for adapters with `auth_method=none`. |
+    | `credential_type` | `shared` (default) or `per-user`. Only honored when the adapter advertises `supports_per_user`. |
+    | `tool_filter` | Optional subset of adapter tools to expose. Empty exposes all. |
+
+    Browse adapters with [`ListCatalogServices`](/api/tag/tool-catalog/list-catalog-services). Each entry advertises `slug`, `auth_method`, the managed `auth_header_name`, and whether `supports_per_user` is allowed.
+  </Tab>
+</Tabs>
+
+### Catalog adapter lifecycle
+
+| Operation | RPC | Effect |
+|-----------|-----|--------|
+| Install | `InstallCatalogConnection` | Copies the latest catalog row onto a new `protocol=rest` connection, writes the credential to Vault, and pins the slug for upgrades. |
+| Upgrade | `UpgradeCatalogConnection` | Re-copies the adapter definition from the latest catalog version. Preserves the connection name, tool filter, and stored credential. |
+| Uninstall | `UninstallCatalogConnection` | Removes the connection and its Vault credential bundle. |
+
+## Update tool
+
+Update a tool to change its connection or security settings. You can change its URL, protocol, authentication, headers, or the operations Dome treats as writes. Switching between `api-key` and `oauth` clears the previously stored credentials.
+
+A header list always replaces the existing list rather than merging into it. How the other fields merge depends on the interface you use.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome tools update notion \
+      --url "https://mcp.notion.com/mcp"
+    ```
+
+    Only the flags you pass change.
+
+    <Callout icon="terminal">Reference: [`dome tools update`](/cli/connect/tools#update-connection)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_tools_update`
+
+    ```json
+    {
+      "name": "notion",
+      "url": "https://mcp.notion.com/mcp"
+    }
+    ```
+
+    Only the parameters you send change.
+
+    <Callout icon="cpu">Reference: [`dome_tools_update`](/reference/mcp/tools#dome_tools_update)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    PATCH /v1/tools/{{CONNECTION_ID}}
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "protocol": "streamable-http",
+      "protocol_config": {
+        "url": "https://mcp.notion.com/mcp"
+      }
+    }
+    ```
+
+    Send the record's full state. The endpoint overwrites `protocol`, `protocol_config`, `field_classifications`, and `write_tools` with whatever the request carries, so omitting `protocol_config` clears the URL and headers. Read the tool with `GetMCPServerConnection` first and send back everything you want to keep. `auth_method`, `credential_type`, `auth_config`, and `name` are the exceptions, where an empty value preserves the stored one.
+
+    <Callout icon="code">Reference: [`UpdateMCPServerConnection`](/api/tag/tools/update-mcp-server-connection)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Update a tool"
+    Update the "notion" tool URL to https://mcp.notion.com/mcp.
+    ```
+  </Tab>
+</Tabs>
+
+### Change upstream authentication
+
+You can change how the gateway authenticates to the upstream. Refer to [Upstream authentication](#upstream-authentication) for the methods and credential types.
+
+#### Shared API key
+
+Use a shared bearer token when every call should present the same upstream credential. Dome stores the secret and injects it at egress. Agents never receive the raw upstream credential.
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome tools update internal-search \
+      --auth-method api-key \
+      --credential-type shared \
+      --authorization "Bearer $SEARCH_TOKEN"
+    ```
+
+    On create, the same flags work with `dome tools add`.
+
+    Rotate a shared credential by sending its replacement value:
+
+    ```bash
+    dome tools update internal-search \
+      --authorization "Bearer $NEW_SEARCH_TOKEN"
+    ```
+
+    The stored value is never shown again. Other stored secrets keep their values.
+
+    <Callout icon="terminal">Reference: [`dome tools update`](/cli/connect/tools#update-connection)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_tools_update`
+
+    ```json
+    {
+      "name": "internal-search",
+      "auth_method": "api-key",
+      "credential_type": "shared",
+      "authorization": "Bearer {{SEARCH_TOKEN}}"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_tools_update`](/reference/mcp/tools#dome_tools_update)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    PATCH /v1/tools/{{CONNECTION_ID}}
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "auth_method": "api-key",
+      "credential_type": "shared",
+      "secret_values": {
+        "Authorization": "Bearer {{SEARCH_TOKEN}}"
+      }
+    }
+    ```
+
+    Send `protocol` and `protocol_config` alongside these fields, as described in [Update tool](#update-tool).
+
+    <Callout icon="code">Reference: [`UpdateMCPServerConnection`](/api/tag/tools/update-mcp-server-connection)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Set shared API-key authentication"
+    Set the "internal-search" tool to shared API-key authentication with my bearer token.
+    ```
+  </Tab>
+</Tabs>
+
+#### Shared OAuth
+
+Configure the OAuth client on the tool, then [connect OAuth](#connect-oauth) to complete admin consent.
+
+When the upstream publishes RFC 8414 metadata, the gateway discovers its OAuth endpoints. Otherwise, you can provide the authorization, token, revocation, and registration URLs. The gateway supports manual and dynamic client registration.
+
+#### Per-user credentials
+
+You can set credential type to `per-user` when upstream authorization must follow the end user. Each request must include a verified act-as identity. Configure runtime act-as authentication in [Develop](/develop).
+
+When an end user has no credential yet, Dome returns `401` with a short-lived `provision_url`. The user opens that URL to enter an API key or complete OAuth consent, and the call succeeds on retry. Discovery flags the tool as needing credentials until provisioning finishes. Refer to [Errors and denials](/develop#errors-and-denials) for how a runtime should surface the prompt and retry.
+
+For per-user tools, [sync the catalog](#sync-catalog) after the admin attaches a per-user credential, so observed operations appear before agent traffic.
+
+### Change egress headers
+
+You can change which egress headers the gateway sends, including an act-as header when the upstream needs the verified end user. Refer to [Egress headers](#egress-headers). An act-as header is not valid on a tool that authenticates with OAuth, and the update fails when you combine them.
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome tools update crm \
+      --header-actas X-Verified-User
+    ```
+
+    To append without replacing the full list, use [Add headers](#add-headers).
+
+    <Callout icon="terminal">Reference: [`dome tools update`](/cli/connect/tools#update-connection)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_tools_update`
+
+    ```json
+    {
+      "name": "crm",
+      "headers": [
+        {"name": "X-Verified-User", "source": "actas"}
+      ]
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_tools_update`](/reference/mcp/tools#dome_tools_update)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    PATCH /v1/tools/{{CONNECTION_ID}}
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "protocol": "streamable-http",
+      "protocol_config": {
+        "url": "https://crm.example.com/mcp",
+        "headers": [
+          {"name": "X-Verified-User", "source": "actas"}
+        ]
+      }
+    }
+    ```
+
+    Headers live inside `protocol_config`, which the endpoint overwrites, so send the URL and any headers you want to keep in the same call.
+
+    <Callout icon="code">Reference: [`UpdateMCPServerConnection`](/api/tag/tools/update-mcp-server-connection)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Forward verified act-as identity"
+    Update the "crm" tool to forward verified act-as identity in X-Verified-User.
+    ```
+  </Tab>
+</Tabs>
+
+## Get tool
+
+Retrieve a tool by name to inspect its endpoint, protocol, authentication, and gateway membership. This information helps you verify its configuration before an update or troubleshoot why agents cannot reach it.
+
+<Callout icon="key">Requires `gateways.view`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome tools get notion
+    ```
+
+    <Callout icon="terminal">Reference: [`dome tools get`](/cli/connect/tools#get-connection)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_tools_get`
+
+    ```json
+    {
+      "name": "notion"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_tools_get`](/reference/mcp/tools#dome_tools_get)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    GET /v1/tools/{{CONNECTION_ID}}?workspace_id={{WORKSPACE_ID}}
+    ```
+
+    The management API addresses a tool by UUID rather than by name. Call `ListMCPServerConnections` to resolve a name to its ID.
+
+    <Callout icon="code">Reference: [`GetMCPServerConnection`](/api/tag/tools/get-mcp-server-connection)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Get a tool"
+    Get the "notion" tool and confirm its auth method and Gateway membership.
+    ```
+  </Tab>
+</Tabs>
+
+## List tools
+
+Retrieve the tools in a workspace with their protocols and authentication methods. Use the list to find the tool you want to update or remove.
+
+<Callout icon="key">Requires `gateways.view`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome tools list
+    ```
+
+    <Callout icon="terminal">Reference: [`dome tools list`](/cli/connect/tools#list-connections)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_tools_list`
+
+    ```json
+    {}
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_tools_list`](/reference/mcp/tools#dome_tools_list)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    GET /v1/tools?workspace_id={{WORKSPACE_ID}}
+    ```
+
+    <Callout icon="code">Reference: [`ListMCPServerConnections`](/api/tag/tools/list-mcp-server-connections)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="List tools"
+    List the tools in this workspace.
+    ```
+  </Tab>
+</Tabs>
+
+## Remove tool
+
+Remove a tool to delete its upstream record from the workspace, along with the authentication and header configuration stored on it.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Callout type="warning">
+  Removing a tool disconnects every agent currently routing through it. Update or re-route agents first.
+</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome tools remove notion
+    ```
+
+    <Callout icon="terminal">Reference: [`dome tools remove`](/cli/connect/tools#remove-connection)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_tools_remove`
+
+    ```json
+    {
+      "name": "notion"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_tools_remove`](/reference/mcp/tools#dome_tools_remove)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    DELETE /v1/tools/{{CONNECTION_ID}}?workspace_id={{WORKSPACE_ID}}
+    ```
+
+    <Callout icon="code">Reference: [`DeleteMCPServerConnection`](/api/tag/tools/delete-mcp-server-connection)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Remove a tool"
+    Remove the "notion" tool after confirming no agents still depend on it.
+    ```
+  </Tab>
+</Tabs>
+
+## Manage discovered tools
+
+Catalog status lets you block or deprecate individual operations without removing the entire tool. Status persists when the gateway observes the operation again. Only a restore returns it to `active`. Refer to [Discovered tools](#discovered-tools) for the behavior of each status.
+
+You can block, deprecate, and restore operations through the CLI and MCP. The API reference documents catalog sync only.
+
+### List catalog
+
+Retrieve the operations Dome has recorded for a tool. Because Dome stores the catalog, you can inspect it when the upstream server is unavailable. The result covers everything Dome discovered on the server, not what one agent can call.
+
+<Callout icon="key">Requires `gateways.view`.</Callout>
+
+<Tabs items={["CLI","MCP","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome tools catalog list notion --seen-since 7d
+    ```
+
+    Blocked entries are hidden unless you pass `--show-blocked`. Use `--with-schema` when you need input schemas.
+
+    <Callout icon="terminal">Reference: [`dome tools catalog list`](/cli/connect/tools#list-tools)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_tools_for_connection`
+
+    ```json
+    {
+      "name": "notion",
+      "with_schema": false
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_tools_for_connection`](/reference/mcp/tools#dome_tools_for_connection)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="List discovered operations"
+    List the operations Dome has discovered on the "notion" tool.
+    ```
+  </Tab>
+</Tabs>
+
+### Sync catalog
+
+Sync the catalog to discover operations on a per-user tool before agent traffic begins. The gateway calls upstream `tools/list` with the administrator's per-user credential, so that credential must already be attached. Shared tools sync when the gateway starts and reject manual sync.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","API"]}>
+  <Tab value="CLI">
+    ```bash
+    dome tools catalog sync notion
+    ```
+
+    <Callout icon="terminal">Reference: [`dome tools catalog sync`](/cli/connect/tools#sync-tools)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    POST /v1/tools/{{CONNECTION_ID}}/catalog/sync
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}"
+    }
+    ```
+
+    Add `act_as_sub` when the administrator's act-as subject is not their email. Dome resolves the credential by that subject, and the call fails when no credential is stored for it.
+
+    <Callout icon="code">Reference: [`SyncMCPServerConnectionTools`](/api/tag/tools/sync-mcp-server-connection-tools)</Callout>
+  </Tab>
+</Tabs>
+
+### Block
+
+Block a discovered operation to hide it from agents and deny calls to it. A block overrides any rule that would otherwise permit the operation. A blocked operation drops out of the catalog listing, so confirming a block means asking for blocked entries as well.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome tools catalog block notion delete_page \
+      --message "Use archive_page instead"
+    ```
+
+    <Callout icon="terminal">Reference: [`dome tools catalog block`](/cli/connect/tools#block-tool)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_tools_block`
+
+    ```json
+    {
+      "connection": "notion",
+      "tool": "delete_page",
+      "message": "Use archive_page instead"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_tools_block`](/reference/mcp/tools#dome_tools_block)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Block a discovered tool"
+    Block "delete_page" on the "notion" tool and recommend "archive_page".
+    ```
+  </Tab>
+</Tabs>
+
+### Deprecate
+
+Deprecate a discovered operation to keep it callable while directing users to a replacement. The deprecation message appears in the dashboard, and the catalog lists the operation as `deprecated`.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome tools catalog deprecate notion create_page \
+      --message "use create_page_v2"
+    ```
+
+    <Callout icon="terminal">Reference: [`dome tools catalog deprecate`](/cli/connect/tools#deprecate-tool)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_tools_deprecate`
+
+    ```json
+    {
+      "connection": "notion",
+      "tool": "create_page",
+      "message": "use create_page_v2"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_tools_deprecate`](/reference/mcp/tools#dome_tools_deprecate)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Deprecate a discovered tool"
+    Deprecate "create_page" on the "notion" tool and recommend "create_page_v2".
+    ```
+  </Tab>
+</Tabs>
+
+### Restore
+
+Restore a discovered operation to make it available again when rules permit. Restoring clears its block or deprecation. When no blocked operations remain, Dome removes the managed denies.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome tools catalog restore notion delete_page
+    ```
+
+    <Callout icon="terminal">Reference: [`dome tools catalog restore`](/cli/connect/tools#restore-tool)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_tools_restore`
+
+    ```json
+    {
+      "connection": "notion",
+      "tool": "delete_page"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_tools_restore`](/reference/mcp/tools#dome_tools_restore)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Restore a discovered tool"
+    Restore "delete_page" on the "notion" tool to active.
+    ```
+  </Tab>
+</Tabs>
+
+## Attach to a Gateway
+
+Attach a tool to a gateway to expose its operations through the gateway's MCP endpoint. Attaching the entire tool also exposes operations discovered later. Membership makes the tool reachable but does not authorize an agent to call it. The agent must allow the gateway, and rules must permit the call.
+
+You can attach a tool when you [add it](#add-tool) or later from either the tool or gateway. Refer to [Gateways](/build/gateways) for membership and grants.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome tools gateways add notion prod-tools
+    ```
+
+    The gateway side of the same membership is `dome gateways tool-sources add`.
+
+    <Callout icon="terminal">Reference: [`dome tools gateways`](/cli/connect/tools#gateway-membership)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_gateways_tool_source_add`
+
+    ```json
+    {
+      "gateway": "prod-tools",
+      "connection": "notion"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_gateways_tool_source_add`](/reference/mcp/gateway#dome_gateways_tool_source_add)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Publish a tool"
+    Add the entire "notion" tool to the "prod-tools" Gateway.
+    ```
+  </Tab>
+</Tabs>
+
+### Verify discovery
+
+Call `tools/list` on the gateway endpoint with an agent's API key. The response applies gateway membership and rules, so it shows what that one agent can use. The stored catalog in [List catalog](#list-catalog) applies neither check.
+
+```bash
+curl -X POST "https://{{GATEWAY_HOST}}/gateways/{{GATEWAY_ID}}/mcp" \
+  -H "Authorization: Bearer {{DOME_AGENT_KEY}}" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+If an operation is missing, check the tool's health, catalog status, gateway membership, the agent's allowed resources, and rules.
+
+## Manage OAuth
+
+With shared OAuth, an administrator completes consent once after configuring the OAuth client. With per-user OAuth, each end user completes consent on their first call.
+
+### Register a manual OAuth client
+
+Register Dome's exact callback URI with your authorization server before you configure a manually registered OAuth client. Ask the connected Dome server for that URI instead of constructing it yourself:
+
+```bash
+dome tools oauth-redirect-uri
+```
+
+Then configure the tool with the registered client ID and secret:
+
+```bash
+dome tools update {{TOOL_NAME}} \
+  --auth-method oauth \
+  --credential-type shared \
+  --oauth-client-origin manual \
+  --oauth-client-id {{OAUTH_CLIENT_ID}} \
+  --oauth-client-secret {{OAUTH_CLIENT_SECRET}}
+```
+
+The client secret is write-only. A later update can leave it unchanged by omitting `--oauth-client-secret`.
+
+### Connect OAuth
+
+Connect OAuth to begin the admin consent flow. The response includes a one-shot URL valid for about ten minutes. Open it and complete consent at the upstream authorization server. Dome stores the resulting OAuth tokens.
+
+On a shared tool, those tokens serve every call. On a per-user tool, the flow attaches the calling administrator's own credential, which [Sync catalog](#sync-catalog) then reads to discover operations before agent traffic starts. End users still complete their own consent on their first call.
+
+<Callout icon="key">Requires `gateways.manage`. The tool must use `auth_method=oauth`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome tools oauth-connect notion
+    ```
+
+    The CLI and the MCP tool accept shared tools only. To attach an administrator's per-user credential, call the API with that administrator's act-as subject.
+
+    <Callout icon="terminal">Reference: [`dome tools oauth-connect`](/cli/connect/tools#connect-oauth)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_tools_oauth_connect`
+
+    ```json
+    {
+      "name": "notion"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_tools_oauth_connect`](/reference/mcp/tools#dome_tools_oauth_connect)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    POST /v1/tools/{{CONNECTION_ID}}/oauth/connect
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}"
+    }
+    ```
+
+    On a per-user tool, add `act_as_sub` to name the administrator whose credential this flow attaches. It defaults to the calling administrator's email, and it is required when the workspace's act-as verifier issues opaque subjects.
+
+    <Callout icon="code">Reference: [`BeginMCPServerOAuthConnect`](/api/tag/tools/begin-mcp-server-oauth-connect)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Connect shared OAuth"
+    Start shared OAuth consent for the "notion" tool.
+    ```
+  </Tab>
+</Tabs>
+
+### Disconnect OAuth
+
+Disconnect shared OAuth to revoke its stored tokens. The OAuth client configuration remains, so you can reconnect without configuring the client again. Disconnecting an already disconnected tool has no effect.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome tools oauth-disconnect notion
+    ```
+
+    <Callout icon="terminal">Reference: [`dome tools oauth-disconnect`](/cli/connect/tools#disconnect-oauth)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_tools_oauth_disconnect`
+
+    ```json
+    {
+      "name": "notion"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_tools_oauth_disconnect`](/reference/mcp/tools#dome_tools_oauth_disconnect)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    POST /v1/tools/{{CONNECTION_ID}}/oauth/disconnect
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`DisconnectMCPServerOAuth`](/api/tag/tools/disconnect-mcp-server-oauth)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Disconnect shared OAuth"
+    Disconnect shared OAuth credentials for the "notion" tool.
+    ```
+  </Tab>
+</Tabs>
+
+## Manage egress headers
+
+You can add or remove individual headers without replacing the full list. These operations are available only through the CLI. MCP and API callers change headers through [Update tool](#update-tool), which replaces the whole list.
+
+### List headers
+
+Retrieve the outbound headers configured on a tool.
+
+<Callout icon="key">Requires `gateways.view`.</Callout>
+
+<Tabs items={["CLI"]}>
+  <Tab value="CLI">
+    ```bash
+    dome tools header list notion
+    ```
+
+    <Callout icon="terminal">Reference: [`dome tools header list`](/cli/connect/tools#list-headers)</Callout>
+  </Tab>
+</Tabs>
+
+### Add headers
+
+Add one or more outbound headers without replacing the headers already configured on a tool.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI"]}>
+  <Tab value="CLI">
+    ```bash
+    dome tools header add crm --header-actas X-Verified-User
+    ```
+
+    You can combine literal, secret, and act-as header flags in one call.
+
+    <Callout icon="terminal">Reference: [`dome tools header add`](/cli/connect/tools#add-header)</Callout>
+  </Tab>
+</Tabs>
+
+### Remove headers
+
+Remove outbound headers by name from a tool.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI"]}>
+  <Tab value="CLI">
+    ```bash
+    dome tools header remove crm --name X-Verified-User
+    ```
+
+    <Callout icon="terminal">Reference: [`dome tools header remove`](/cli/connect/tools#remove-header)</Callout>
+  </Tab>
+</Tabs>
+
+## Next steps
+
+- [Tools](/concepts/resources/tools) concept for how connections and catalogs work and [Tools](/reference/resources/tools) reference for auth methods and catalog statuses
+- [Register external agents](/build/agents/external) and allow the resources they need
+- Manage gateway membership and grants in [Gateways](/build/gateways)
+- Authenticate and route runtime traffic in [Develop](/develop#authenticate)

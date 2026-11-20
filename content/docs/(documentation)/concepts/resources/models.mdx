@@ -1,0 +1,74 @@
+---
+title: Models
+description: Why Dome connects LLM providers as model connections agents call without holding provider credentials
+---
+
+import { modelConnection } from '@/snippets/glossary';
+
+<p>{modelConnection}</p>
+
+## High-level overview
+
+A model connection represents one upstream model. The connection stores provider, model identifier, credentials, trusted attributes, and an optional filter window. An agent selects it by putting the connection name in the request's `model` field, or by naming a pool that includes it.
+
+For an agent to use a model:
+
+1. Choose a provider and model identifier.
+2. Add the model with its upstream credentials.
+3. Attach it directly to a gateway, or add it to a [pool](/concepts/resources/model-pools) attached to one.
+4. Allow that gateway on the agent.
+5. Verify the route with the agent's key.
+
+Adding a model and calling it looks like this:
+
+1. An operator adds `claude-prod` for Anthropic with a shared API key, attaches it to `prod-llms`, and grants an agent access.
+2. The agent calls `/gateways/<id>/v1/chat/completions` with `model: "claude-prod"`.
+3. Dome admits the gateway, resolves the connection, evaluates rules, injects the Anthropic key, filters the stream, and audits the call.
+
+The agent never sees the provider key.
+
+A model connection is one provider endpoint. Prefer a [pool](/concepts/resources/model-pools) when the client name should stay stable across failover or traffic shifts.
+
+### Providers
+
+The provider determines how Dome translates requests and where it places the upstream credential. You cannot change the provider after create. Native providers, hosted OpenAI-compatible providers, and bring-your-own endpoints (`openai_compatible`, `custom`) are listed on the [Models](/reference/resources/models#providers) reference.
+
+### Credentials
+
+Agent API keys authenticate inbound requests to Dome. Model credentials authenticate Dome's outbound requests to the provider. Authentication method and credential type must form a valid pair. Per-user credentials select the provider credential from the verified act-as identity and may return a `provision_url` when the user has not connected yet. Pairings and workload-identity notes are on the [Models](/reference/resources/models#credentials) reference.
+
+### Attributes
+
+Attributes are trusted metadata on the connection for [Rules](/concepts/controls/rules) concept to evaluate, such as `region=eu` or `data_class=restricted`. They do not change how Dome calls the provider. Derived fields such as `resolved_model` and `pool` are set server-side and cannot be spoofed through attributes. Refer to [LLM gateway](/concepts/gateways/llm-gateway#authorization) concept.
+
+### Filter window
+
+A model can raise how much streamed output Dome buffers before applying outbound guards. The effective window is the max of workspace floor, connection override, and per-request override. A model can increase coverage but cannot reduce the workspace minimum. Bounds are on the [Models](/reference/resources/models#filter-window) reference and [Guards](/reference/controls/guards#streaming-window) reference.
+
+### Model rates and estimated provider cost
+
+Dome estimates the upstream provider cost of model traffic from token counts and a time-windowed rate book. The default book combines Dome's baseline rates with current published provider data. An organization can layer its own negotiated provider rates over that book. These figures estimate what the provider charges the organization; they are separate from what Dome bills for governed usage.
+
+Each rate has an effective window. Historical usage is priced using the rate in effect during that usage, so a rate change today does not rewrite an earlier period. If a provider reports no token counts, Dome estimates tokens from observed request and response bytes before applying the rate, making that cost estimate less precise.
+
+Use [`dome models rates`](/cli/connect/models#model-rates) to inspect the default book and conversion assumptions. `dome models rates --effective` resolves the organization's own rates over the default book.
+
+### When configuration changes take effect
+
+Model connections, pool membership, and the rate card used for live quota enforcement reach hosted gateways through periodic configuration sync. A change normally appears on the next successful poll. If one workspace cannot be refreshed, gateways keep that workspace's last applied configuration and retry without blocking updates for other workspaces. A newly assigned workspace waits for its first successful configuration rather than being admitted with a partial configuration.
+
+### Direct attach vs pool
+
+Attach a model directly when that name should always route to one connection. Add it to a pool when you need weighted distribution, failover, or a stable alias while you change members. A model can belong to more than one pool and more than one gateway.
+
+## Next steps
+
+With the model connection model in mind, continue with:
+
+- [Resources](/concepts/resources) concept for how models sit among resource types
+- [Pools](/concepts/resources/model-pools) concept for routing and failover
+- [LLM gateway](/concepts/gateways/llm-gateway) concept for the model ingress under a gateway
+- [Gateways](/concepts/gateways) concept for membership and reachability
+- [Guards](/concepts/controls/guards) concept for text filters on prompts and completions
+- [Models](/reference/resources/models) reference for providers, credentials, and filter windows
+- [Models](/connect/models) to add models, rotate credentials, and attach gateways

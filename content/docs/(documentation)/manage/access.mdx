@@ -1,0 +1,253 @@
+---
+title: Access
+sidebarTitle: Manage access
+description: 'Assign built-in or custom roles and manage scoped platform API keys'
+---
+
+import { access } from '@/snippets/glossary';
+
+<p>{access}</p>
+
+## Overview
+
+Dome separates platform administration from runtime agent access. A workspace role or platform API key governs CLI commands, API endpoints, and MCP management tools. [Rules](/govern/rules) govern what a registered agent may do at the gateway. Refer to [Permissions](/concepts/platform/permissions) concept for the two-layer model.
+
+Memberships attach people to a scope with one role. Platform API keys attach automation to a `workspace`, `tenant`, or `org` scope with an explicit permission list. Agent API keys authenticate agent runtimes and use a separate lifecycle. Refer to [create an agent API key](/build/agents/external#create-key) for agent credentials.
+
+The typical workflow is:
+
+1. [Assign a workspace member](#manage-workspace-members) a role that matches their job.
+2. [Manage organization members](#manage-organization-members) when someone needs org-wide standing grants.
+3. [Create a custom role](#custom-roles) when the built-in roles do not fit.
+4. [Create a platform API key](#manage-platform-api-keys) for CI/CD or user automation that must call the Dome API.
+5. Revoke keys and remove memberships when access is no longer needed.
+
+Apply least privilege to memberships and platform API keys.
+
+The sections below explain the roles you can assign and how platform API keys are scoped.
+
+### Workspace roles
+
+Assign one role per member in each workspace. Roles apply per workspace. The same user can hold different roles across workspaces.
+
+| Role | Access |
+|------|--------|
+| `admin` | Full workspace management. |
+| `operator` | agent and gateway operations. |
+| `security` | Authorization rules and audit. |
+| `viewer` | Read-only access. |
+
+You set the role when you [assign a workspace member](#manage-workspace-members).
+
+### Custom roles
+
+Custom roles are named, user-defined permission sets. Create them at workspace, tenant, or organization scope, then assign them by name through the normal membership flow. Their permissions apply at that scope and cascade to scopes below it, just like built-in roles.
+
+Creating a custom role is an Enterprise capability. Existing custom roles continue to work and can be updated or removed after a plan change. You can only include permissions you already hold, so a custom role cannot grant more authority than its creator has.
+
+```bash
+# Create a workspace role, then assign it to a workspace member.
+dome roles create audit-reader \
+  --scope workspace \
+  --permissions audit.view,rules.view \
+  --description "Read audit evidence and deployed Rules"
+dome workspaces members set --user analyst@example.com --role audit-reader
+```
+
+Use `dome roles list`, `dome roles get <name>`, and `dome roles update <name>` to inspect and maintain definitions. Before deleting an assigned role, choose whether to reassign or remove its holders. Dome refuses a delete if membership changed while you were reviewing its holders.
+
+### Platform API keys
+
+Platform API keys authenticate automation against the Dome API. Scope a key to `workspace`, `tenant`, or `org`. Set expiration for temporary automation and revoke unused keys immediately.
+
+Agent credentials use a separate lifecycle. For agent authentication, [create an agent API key](/build/agents/external#create-key).
+
+You create, list, and revoke keys when you [manage platform API keys](#manage-platform-api-keys).
+
+## Requirements
+
+Before you begin, authenticate the Dome CLI and select a workspace context.
+
+### Permissions
+
+Member and platform API key management require elevated roles. Each operation states the permission it requires.
+
+For exhaustive flags, tool parameters, and endpoint contracts, refer to the [CLI](/cli/settings/workspace#members), [MCP](/reference/mcp/workspaces#members), and [API](/api/tag/workspaces/set-workspace-membership) references.
+
+| Default roles | Permission | Grants |
+|---------------|------------|--------|
+| Workspace `admin` (or equivalent cascade) | Workspace admin membership | Assign and remove workspace members and roles |
+| Org `owner` or `admin` | Org `tenants.manage` | List, assign, and remove organization members |
+| `admin`, `operator` (at the target scope) | `apikeys.manage` | Create, list, and revoke platform API keys |
+
+To let a person or automation move configuration, grant `export.manage` at the source scope and `import.manage` at the target scope. The role or API key also needs the permissions required by the resources it exports or imports. Refer to [Import and export configuration](/manage/import-export#permissions) for the complete requirements.
+
+## Manage workspace members
+
+Assign one role per member in each workspace. Choose from the [workspace roles](#workspace-roles) above.
+
+<Callout icon="key">Requires workspace `admin` (or an equivalent cascaded role).</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+<Tab value="CLI">
+```bash
+dome workspaces members list
+dome workspaces members set --user user@example.com --role operator
+dome workspaces members remove --user user@example.com --revoke-all-keys
+```
+
+| Flag | Applies to | Description |
+|------|------------|-------------|
+| `--user` | set, remove | User email address. |
+| `--role` | set | `admin`, `operator`, `security`, or `viewer`. |
+| `--revoke-keys` | remove | API key IDs to revoke during removal. |
+| `--revoke-all-keys` | remove | Revokes every API key created by the user. |
+
+<Callout icon="terminal">Reference: [`dome workspaces members`](/cli/settings/workspace#members)</Callout>
+</Tab>
+<Tab value="MCP">
+Tools: `dome_workspaces_members_list`, `dome_workspaces_members_set`, `dome_workspaces_members_remove`
+
+<Callout icon="cpu">Reference: [`dome_workspaces_members_set`](/reference/mcp/workspaces#workspace-members-set)</Callout>
+</Tab>
+<Tab value="API">
+RPCs: `ListWorkspaceMemberships`, `SetWorkspaceMembership`, `RemoveWorkspaceMembership`
+
+```http
+PUT /v1/workspaces/{{WORKSPACE_ID}}/members
+Content-Type: application/json
+
+{
+  "tenant_id": "{{TENANT_ID}}",
+  "user_email": "user@example.com",
+  "role": "operator"
+}
+```
+
+<Callout icon="code">Reference: [`SetWorkspaceMembership`](/api/tag/workspaces/set-workspace-membership)</Callout>
+</Tab>
+<Tab value="Agent">
+```text title="Assign a workspace role"
+Set member "user@example.com" to the operator role.
+```
+</Tab>
+</Tabs>
+
+## Manage organization members
+
+Grant or change org-level roles (`owner`, `admin`, `member`) for an existing platform user, or remove an org membership. Org membership is separate from workspace membership — a user can hold an org role without a workspace seat, and a workspace invitee can lack org standing grants.
+
+<Callout icon="key">Requires org-level `tenants.manage` (org `owner` or `admin`). Only an org `owner` may grant or remove the `owner` role.</Callout>
+
+Rules:
+
+- The target user must already exist on the platform — grants do not create users
+- Removing the last `owner` returns `FailedPrecondition`
+- Successful assigns emit `organization.membership.set`; removals emit `organization.membership.unset`
+
+<Tabs items={["API","Agent"]}>
+  <Tab value="API">
+    List members:
+
+    ```http
+    POST /dome.mgmt.v1.Management/ListOrgMembers
+    Content-Type: application/json
+
+    { "org_id": "{{ORG_ID}}" }
+    ```
+
+    Assign or change a role:
+
+    ```http
+    POST /dome.mgmt.v1.Management/AssignOrgRole
+    Content-Type: application/json
+
+    {
+      "org_id": "{{ORG_ID}}",
+      "user_email": "admin@example.com",
+      "role": "admin"
+    }
+    ```
+
+    Remove a member:
+
+    ```http
+    POST /dome.mgmt.v1.Management/RemoveOrgMember
+    Content-Type: application/json
+
+    {
+      "org_id": "{{ORG_ID}}",
+      "user_email": "admin@example.com"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`ListOrgMembers`](/api/tag/dome-mgmt-v1-management/list-org-members) · [`AssignOrgRole`](/api/tag/dome-mgmt-v1-management/assign-org-role) · [`RemoveOrgMember`](/api/tag/dome-mgmt-v1-management/remove-org-member)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Manage organization members"
+    List organization members for the active org, then assign admin@example.com the admin role.
+    ```
+  </Tab>
+</Tabs>
+
+Org `owner` and `admin` also hold org-scoped `audit.view` for [org-wide audit queries](/operate/audit#query-events-across-an-organization). Role matrices are on the [Permissions](/reference/permissions#organization-roles) reference.
+
+## Manage platform API keys
+
+Create scoped keys for CI/CD pipelines and user automation. Agent credentials use a separate lifecycle.
+
+<Callout icon="key">Requires `apikeys.manage` at the scope where you create the key.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+<Tab value="CLI">
+```bash
+dome platform-keys list
+dome platform-keys create \
+  --name "ci-deploy" \
+  --permissions rules.deploy,agent.register \
+  --expires-at 2026-12-31T00:00:00Z
+dome platform-keys revoke ci-deploy
+```
+
+<Callout icon="terminal">Reference: [`dome platform-keys`](/cli/settings/platform-keys)</Callout>
+</Tab>
+<Tab value="MCP">
+Tools: `dome_platform_keys_list`, `dome_platform_keys_create`, `dome_platform_keys_revoke`
+
+<Callout icon="cpu">Reference: [`dome_platform_keys_create`](/reference/mcp/platform#platform-keys-create)</Callout>
+</Tab>
+<Tab value="API">
+RPCs: `ListAPIKeys`, `CreateAPIKey`, `RevokeAPIKey`
+
+```http
+POST /v1/platform-keys
+Content-Type: application/json
+
+{
+  "name": "ci-deploy",
+  "permissions": ["rules.deploy", "agent.register"],
+  "expires_at": "2026-12-31T00:00:00Z",
+  "scope_kind": "workspace",
+  "scope_id": "{{WORKSPACE_ID}}"
+}
+```
+
+<Callout icon="code">Reference: [`CreateAPIKey`](/api/tag/platform-keys/create-api-key)</Callout>
+</Tab>
+<Tab value="Agent">
+```text title="Create a platform API key"
+Create a platform API key named "ci-deploy" with permissions rules.deploy and agent.register.
+```
+</Tab>
+</Tabs>
+
+Scope keys to `workspace`, `tenant`, or `org`. Set expiration for temporary automation and revoke unused keys immediately.
+
+For agent authentication, [create an agent API key](/build/agents/external#create-key).
+
+## Next steps
+
+- [Configure Platform](/manage/settings)
+- [Import and export configuration](/manage/import-export) to grant portability access for people and automation
+- [Permissions](/concepts/platform/permissions) concept
+- [create an agent API key](/build/agents/external#create-key)

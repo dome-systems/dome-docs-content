@@ -1,0 +1,95 @@
+---
+title: Data plane
+sidebarTitle: Data plane
+description: Why Dome puts a fail-closed runtime between agents and their tools and models
+---
+
+import { dataPlane } from '@/snippets/glossary';
+
+<p>{dataPlane}</p>
+
+## High-level overview
+
+The data plane is the process that enforces traffic to gateway surfaces. A gateway is the named access surface you configure (membership and grants).
+
+Two **ingresses** share one engine, credential store, and audit pipeline. Both require a gateway prefix on the wire:
+
+- [Tools gateway](/concepts/gateways/tools-gateway) concept — MCP and related tool traffic at `/gateways/<id>/mcp`
+- [LLM gateway](/concepts/gateways/llm-gateway) concept — OpenAI- and Anthropic-shaped model traffic at `/gateways/<id>/v1/...`
+
+A request through the data plane looks like this:
+
+1. An agent sends a request to `/gateways/<id>/...` with a Dome credential.
+2. The data plane resolves the gateway, authenticates the agent, and checks admission.
+3. It evaluates rules (and quotas on metered calls) and applies request guards.
+4. It calls the backend with Dome-injected credentials, applies response guards, and writes an audit event.
+
+The agent never receives the backend secrets.
+
+The data plane is fail-closed. Stale policy, missing rules, unknown gateways, and evaluation errors deny the request rather than forwarding ungoverned traffic.
+
+### Why the data plane exists
+
+Without a shared enforcement runtime, each agent integration would need its own way to authn, authz, inject credentials, filter content, and audit. The data plane centralizes that:
+
+- **One hot path** for tools and models, so rules, escalations, guards, quotas, and audit mean the same thing on both protocols
+- **Server-side credentials** so agents authenticate to Dome, not to every upstream
+- **Fail closed** when policy or gateway config cannot be trusted
+- **Deploy the same engine** as hosted, dedicated, or in-process SDK without changing rules
+
+### How a request moves
+
+Each call walks the same stages on the hot path. Audit records the outcome at the end:
+
+![Data plane pipeline: Agent → Ingress → Evaluate → Egress → Filter → Backend, with Audit below](/images/diagrams/gateway-pipeline.svg)
+
+| Stage | What happens |
+|-------|----------------|
+| **Ingress** | Resolve the gateway from the URL, validate the agent credential, check gateway admission, verify act-as when present, apply kill switches and rate limits |
+| **Evaluate** | Load the workspace's effective Cedar policy and decide allow or deny. Stale policy denies. [quotas](/concepts/controls/quotas) can stop metered calls here |
+| **Egress** | Resolve the backend or model, inject stored credentials, forward over the configured protocol |
+| **filter** | Apply [guards](/concepts/controls/guards) and related content controls before the agent sees the response |
+| **Audit** | Emit an event for allowed, denied, filtered, and errored outcomes into the shared trail |
+
+Protocol details for MCP live on the [Tools gateway](/concepts/gateways/tools-gateway) concept. Model ingress behavior lives on the [LLM gateway](/concepts/gateways/llm-gateway) concept. Connections and routing live on the [Models](/concepts/resources/models) concept and [Pools](/concepts/resources/model-pools) concept. How Cedar decides a call is on the [rules](/concepts/controls/rules) concept and [Authorization Model](/concepts/architecture/authorization-model) concept.
+
+### Credentials stay server-side
+
+Backends declare an auth method (`none`, `api-key`, `oauth`) and a credential type:
+
+- **Shared** uses one credential for the connection. Every allowed caller reuses it.
+- **Per-user** gives each verified end user their own credential. First use can prompt provisioning (magic link / OAuth consent)
+
+Dome stores runtime secrets and injects them on egress. Agents present Dome credentials only. Configure connections on [Tools](/connect/tools) and [Models](/connect/models).
+
+### Policy sync and fail-closed
+
+The hosted data plane polls the control plane for gateway membership, grants, rules, and related config (about every 10 seconds by default). Each workspace has a **freshness window**. If policy has not synced inside that window, requests deny with staleness rather than using an untrusted cache.
+
+Widen the window when rule changes are rare and brief sync gaps are acceptable. Narrow it when policy changes must bite quickly.
+
+### Deployment shapes
+
+The same engine runs wherever your infrastructure demands. Behavior matches. Only where the control plane and data plane run changes:
+
+| Control plane | Data plane | Best for |
+|---------------|------------|----------|
+| Dome-hosted | SDK in your code | Minimal footprint, in-process evaluation |
+| Dome-hosted | Hosted data plane (Dome-managed) | Fastest setup, fully managed |
+| Dome-hosted | Sidecar or self-hosted data plane (you run) | Control over the data path |
+| Self-hosted | Self-hosted | Full isolation, air-gapped environments |
+
+All combinations run the same Cedar evaluation engine and produce the same audit events.
+
+## Next steps
+
+With the data-plane hot-path model in mind, continue with:
+
+- [Architecture](/concepts/architecture) concept for where the data plane sits on the request path
+- [gateways](/concepts/gateways) concept for the access surfaces the data plane serves
+- [Tools gateway](/concepts/gateways/tools-gateway) concept for MCP ingress
+- [LLM gateway](/concepts/gateways/llm-gateway) concept for model ingress
+- [rules](/concepts/controls/rules) concept for authorization after admission
+- [guards](/concepts/controls/guards) concept for content inspection on the path
+- [Audit events](/concepts/audit) concept for the evidence trail
+- [Develop](/develop#errors-and-denials) for denial and credential wire shapes

@@ -1,0 +1,157 @@
+---
+title: Verification
+description: Configure OIDC and HMAC providers that verify act-as identity for delegated agents
+---
+
+import { verificationProvider } from '@/snippets/glossary';
+
+<p>{verificationProvider}</p>
+
+Refer to [Delegated agents](/build/agents/delegated) for how provider hierarchy and Act-As enforcement resolve. Reads target workspace, tenant, or organization scope. Provider writes currently target the active workspace.
+
+## Providers
+
+### dome_verification_providers_list
+
+List verification providers at a scope. The default is the active workspace.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `scope_kind` | string | No | `workspace` (default), `tenant`, or `org` |
+| `org_id` | string | No | Organization ID for org scope; defaults to active context |
+| `include_chain` | boolean | No | At workspace scope, include visible tenant and org providers |
+
+<Callout icon="key">tool visibility requires `config.manage` at the target scope.</Callout>
+
+Returns each provider with its ID, name, verification method, and configuration details.
+
+```json title="Example tool call"
+{
+  "name": "dome_verification_providers_list"
+}
+```
+
+### dome_verification_providers_get
+
+Get one provider at its owning scope.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `provider_id` | string | Yes | Provider ID |
+| `scope_kind` | string | No | `workspace` (default), `tenant`, or `org` |
+| `org_id` | string | No | Organization ID for org scope; defaults to active context |
+
+### dome_verification_providers_create
+
+Create a new provider in the active workspace.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Provider name |
+| `method` | string | Yes | Verification method: `oidc` or `hmac` |
+| `oidc_discovery_url` | string | Conditional | OIDC issuer base URL (required when method is `oidc`; Dome appends the well-known path) |
+| `hmac_secret` | string | Conditional | HMAC shared secret (required when method is `hmac`) |
+
+<Callout icon="key">Requires `config.manage`.</Callout>
+
+```json title="Example — OIDC provider"
+{
+  "name": "dome_verification_providers_create",
+  "arguments": {
+    "name": "google-workspace",
+    "method": "oidc",
+    "oidc_discovery_url": "https://accounts.google.com"
+  }
+}
+```
+
+```json title="Example — HMAC provider"
+{
+  "name": "dome_verification_providers_create",
+  "arguments": {
+    "name": "internal-signer",
+    "method": "hmac",
+    "hmac_secret": "your-shared-secret"
+  }
+}
+```
+
+<Callout type="info">
+  After creating a provider, reference it in agent registration with the `actas_method` and provider ID to enable act-as verification for that agent.
+</Callout>
+
+### dome_verification_providers_delete
+
+Delete a provider from the active workspace.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `provider_id` | string | Yes | Provider ID to delete |
+
+<Callout icon="key">Requires `config.manage`.</Callout>
+
+<Callout type="warning">
+  Deleting a provider breaks act-as verification for any agents referencing it. Update or remove agent verification configs before deleting the provider.
+</Callout>
+
+## Provider selections
+
+Default providers fill missing verifier material. The nearest scope wins: workspace, tenant, then organization.
+
+Required providers pin every non-bound agent to that provider and force Act-As. The broadest scope wins: organization, tenant, then workspace.
+
+### dome_tenant_actas_get
+
+Get tenant default and required provider selections.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `tenant_id` | string | No | Tenant ID; defaults to the active tenant |
+
+Requires tenant `config.manage`.
+
+### dome_tenant_actas_update
+
+Replace tenant provider selections. Omitted values clear their fields.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `tenant_id` | string | No | Tenant ID; defaults to the active tenant |
+| `actas_default_provider_id` | string | No | Tenant- or org-scoped default provider |
+| `actas_required_provider_id` | string | No | Tenant- or org-scoped required provider |
+
+Requires tenant `config.manage`.
+
+### dome_orgs_actas_get
+
+Get organization default and required provider selections.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `org_id` | string | No | Organization ID; defaults to the active context |
+
+Requires organization `config.manage`.
+
+### dome_orgs_actas_update
+
+Replace organization provider selections. Omitted values clear their fields.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `org_id` | string | No | Organization ID; defaults to the active context |
+| `actas_default_provider_id` | string | No | Organization-scoped default provider |
+| `actas_required_provider_id` | string | No | Organization-scoped required provider |
+
+Requires organization `config.manage`.
+
+<Callout type="warning">
+  MCP provider writes are workspace-only. Manage organization providers from Settings → Single Sign-On. Tenant provider writes are not exposed yet.
+</Callout>
+
+## Next steps
+
+Configure providers on delegated agents, then pass Act-As from the app:
+
+- [Delegated agents](/build/agents/delegated)
+- [Identity Patterns](/concepts/identity-patterns) concept
+- [Pass identity for delegated agents](/develop#pass-identity-for-delegated-agents)

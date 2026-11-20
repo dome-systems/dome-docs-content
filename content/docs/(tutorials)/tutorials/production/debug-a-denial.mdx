@@ -1,0 +1,323 @@
+---
+hidden: true
+title: Debug a tool call denial
+sidebarTitle: Debug a tool call denial
+description: "Read a rejected call back to the gate that produced it, using the error, the audit trail, and simulation"
+---
+
+An agent reports that a tool call failed. The message it repeats to you came from a model paraphrasing an error, so it is not evidence. Dome recorded the actual decision, and several different gates could have produced it.
+
+The skill worth having is narrowing quickly: which gate answered, and what would change the answer.
+
+<Prompt
+  description="Hand this to an AI agent. It plants three different failures and walks you through diagnosing each one."
+  icon="sparkles"
+  actions={["copy", "cursor"]}
+>
+Teach me to diagnose Dome denials by planting three different failures in my workspace and walking me through each one.
+
+First, show me this plan and ask me to confirm before running anything:
+
+1. Confirm the workspace from the first tutorial is still active
+2. Reproduce a Cedar denial and show me how to attribute it to a rule
+3. Reproduce a gateway access denial and show me how it differs from Cedar authorization
+4. Reproduce a malformed endpoint error and show me how it differs from an authorization error
+5. Show me the audit evidence and the simulation for each
+6. Restore everything you changed
+
+Follow the commands at https://developer.domesystems.ai/agent/tutorials/production/debug-a-denial.md exactly.
+
+Non-negotiable rules:
+
+- Narrate as you go. For each failure, tell me what you are breaking, what error I should expect, and which gate produced it. Do not silently run the whole flow.
+- Confirm the active context. Run `dome context current` and confirm the workspace name starts with `studio-`. If it does not, stop and ask me. Only change the workspace selected for this tutorial.
+- Restore every change you make, in the same session, and prove it with the command output. Do not leave the workspace in a broken state.
+- Diagnose from evidence, not from guessing. For each failure, show me the audit event and the simulation result, not just the client-side error.
+- Do not fix a denial by widening the rules. Show me what the rule says, then restore the original state.
+- Never print the `dome_...` agent token in chat.
+- Never report a step as done without showing the command output.
+
+For each of the three failures, tell me the one command I would have run first if I did not know the cause in advance.
+
+Then give me a short summary I can keep: which error message points at which gate.
+</Prompt>
+
+In this tutorial, you will plant three failures at three different layers and diagnose each from the outside. By the end you will be able to read an error message and know which command to run first.
+
+To do this, you will:
+
+<Steps>
+  <Step title="Learn the order of the gates">
+    Understand what runs before what.
+  </Step>
+  <Step title="Diagnose a rule denial">
+    Attribute a rejection to the rule that caused it.
+  </Step>
+  <Step title="Diagnose a Gateway access denial">
+    Find the missing gateway grant that rejects invocation before Cedar evaluates the resource.
+  </Step>
+  <Step title="Diagnose a malformed endpoint">
+    Separate transport problems from authorization problems.
+  </Step>
+  <Step title="Tell denials from redactions">
+    Recognize the events that are not denials.
+  </Step>
+</Steps>
+
+## Prerequisites
+
+For this tutorial, you will need:
+
+- The Dome CLI. Refer to [Install](/install) for Homebrew and direct-download instructions.
+- [Govern your first agent](/tutorials/get-started/govern-your-first-agent) completed, with its workspace still active. You will use its `hr-assistant` agent, its rule bundle, and its `demo-hr` connection.
+
+Confirm the workspace, and stay in the workspace. You are about to break things deliberately:
+
+```bash
+dome context current
+```
+
+## Learn the order of the gates
+
+A call passes several independent checks before it reaches a backend. They run in a fixed order, and the first one to reject ends the call, so the gate that answered tells you where to look.
+
+| Order | Gate | What it decides | Typical signal |
+|---|---|---|---|
+| 1 | Authentication | Is this a valid, active credential? | `401`, or `403` for a suspended or revoked agent |
+| 2 | Act-as verification | Is the end-user identity present and provable? | `400 act-as header required`, `403 act-as verification failed` |
+| 3 | Endpoint selection | Did the caller name a gateway? | `400 select a gateway` |
+| 4 | gateway membership | Is this resource in that gateway? | `tool not available in this gateway` |
+| 5 | gateway admission | Is this agent granted access to that gateway? | `agent is not granted access to this gateway` |
+| 6 | quota | Is there budget left? | `429 llm: quota exceeded` |
+| 7 | rules | Does Cedar permit it? | `denied by rule: <id>` |
+
+Two properties of this ladder cause most confusion.
+
+Quota sits **above** rules. A permit that looks correct still fails if the spend cap is exhausted, so a rule you just deployed is not always the thing to change.
+
+Discovery behaves differently from invocation. `tools/list` remains membership- and Cedar-filtered and does not prove that the agent has a gateway access grant. The grant is enforced when the agent invokes a resource, so use an actual call as the access check.
+
+## Diagnose a rule denial
+
+Start with the denial you already have. The `hr-assistant` rules permit five tools and forbid the rest, so payroll is rejected.
+
+Ask the assistant in your MCP client:
+
+```
+What is Alice's salary?
+```
+
+Your client shows whatever the model made of the error. The underlying response is a JSON-RPC error with code `-32001`, carrying `dome.authorization_denied` in its `data.type`, and a message that is Dome's recorded reason rather than the model's paraphrase.
+
+Get the authoritative record:
+
+```bash
+dome audit query --results denied --limit 5
+```
+
+The denied operation event names the agent and resource; its shared `denial` block names the reason. A reason of `denied by rule: <id>` means an explicit `forbid` matched. A reason of `denied by rule` with no identifier, or `no rule bundle loaded`, means nothing permitted the call rather than something forbidding it, which is a different fix.
+
+Confirm the decision without a client in the loop. Simulation runs the same evaluator with no side effects:
+
+```bash
+dome rules simulate --agent hr-assistant --action mcp:call \
+  --resource demo-hr/finance/get_salary --resource-type mcp_tool
+```
+
+Expect `DENY` with the reason and the determining rule. Add `--json` for the full response, including the scope trace showing which scope contributed the decision.
+
+Then read what the agent is actually running under, which is not always what you think you deployed:
+
+```bash
+dome rules show --agent hr-assistant
+```
+
+That resolves the whole hierarchy. To see only the agent-scoped bundle, use `dome agents get-policies hr-assistant`.
+
+<Callout type="info">
+
+Simulation takes the same identity flags the gateway would supply. `--actas-sub`, `--actas-email`, `--actas-groups`, and `--actas-roles` let you reproduce a denial that only affects one person, and `--eval-arguments` supplies tool arguments for rules that inspect them.
+
+</Callout>
+
+## Diagnose a Gateway access denial
+
+Now revoke the agent's gateway grant:
+
+```bash
+dome gateways access revoke Default hr-assistant
+```
+
+Reload MCP in your client, then ask it to call `demo-hr/hr/list_employees`. The call fails with `agent is not granted access to this gateway` before the resource's Cedar rule is evaluated. Discovery can still list the tool, so a successful `tools/list` is not an access test.
+
+This is the case where simulation misleads you if you ask it the wrong question. Cedar still permits discovery, so a bundle check comes back clean:
+
+```bash
+dome rules simulate --agent hr-assistant --action mcp:discover \
+  --resource demo-hr/hr/list_employees --resource-type mcp_tool
+```
+
+That returns `ALLOW` while invocation is rejected, because gateway admission runs before resource authorization. The permit is real but is never reached.
+
+The command to run first for a missing gateway grant:
+
+```bash
+dome gateways access list Default
+```
+
+An empty result, or a list without `hr-assistant`, is your answer. Restore it:
+
+```bash
+dome gateways access grant Default hr-assistant
+```
+
+Retry the tool call and confirm it succeeds. The lesson generalizes: when invocation reports a missing gateway grant, inspect gateway access before changing resource rules.
+
+Membership is the neighboring failure. A tool that exists but belongs to no gateway is unreachable through that endpoint. This command shows which resources a gateway actually carries:
+
+```bash
+dome gateways get Default
+```
+
+## Diagnose a malformed endpoint
+
+The third class of failure is not authorization at all, and it is worth being able to rule out in seconds.
+
+Call the gateway without naming a gateway:
+
+```bash
+curl -i -X POST https://GATEWAY_HOST/mcp \
+  -H "Authorization: Bearer AGENT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+You get `400` with `select a gateway: use /gateways/{id}/mcp`. Nothing was evaluated and nothing appears in audit, because the request never identified a gateway to be evaluated against. The same applies to `/v1` for inference.
+
+Two related mistakes produce different errors, which is how you tell them apart:
+
+- A URL missing the `/mcp` suffix reaches no handler.
+- A valid URL with a wrong or unauthenticated token returns `401` from authentication, ahead of every authorization gate.
+
+The rule of thumb: **`400` and `401` are your problem, `403` and `-32001` are the policy's answer.** Only the second kind is worth taking to your security team.
+
+<Accordions>
+<Accordion title="Message-to-cause reference">
+  Match the message you have to the gate that produced it:
+
+  - `select a gateway`.
+
+    The URL omits the `/gateways/<id>` segment. Nothing was evaluated.
+
+  - `401 invalid or expired token`.
+
+    The credential is wrong, malformed, or rotated. Mint a new key rather than editing rules.
+
+  - `403 agent is suspended` or `agent is revoked`.
+
+    Lifecycle state, not policy. Check the agent record with `dome agents get`.
+
+  - `act-as header required`.
+
+    The agent requires a verified end-user identity and the call arrived without one.
+
+  - `act-as verification failed`.
+
+    An identity was presented but did not verify. Usually a mismatched HMAC secret or an expired token.
+
+  - `tool not available in this gateway`.
+
+    Membership. The tool exists but is not in this gateway, or the gateway is inactive.
+
+  - `agent is not granted access to this gateway`.
+
+    Admission on invocation. Discovery may still list the resource and is not proof that a grant exists.
+
+  - `llm: quota exceeded`.
+
+    A spend cap. The message names the subject that ran out. Check `dome quotas list`.
+
+  - `denied by rule: <id>`.
+
+    An explicit `forbid` matched. Read it with `dome rules show --agent <agent>`.
+
+  - `no rules for workspace` or `no rule bundle loaded`.
+
+    Nothing was deployed, so the default deny applied. Deploy a bundle.
+
+  - `policy stale` or `gateway policy stale, fail closed`.
+
+    The gateway's policy copy aged past its tolerance and it is failing closed. This is an infrastructure signal, not a rule problem.
+</Accordion>
+</Accordions>
+
+## Tell denials from redactions
+
+`guard.filter.evaluate` is a verdictless sibling event. Its `direction` and `actions` fields distinguish request and response changes. If an action blocks the operation, the enclosing `tool.call` or `model.call` carries `result=denied` and `denial.reason=guard_blocked`.
+
+This distinction matters when an agent reports missing data. If the field arrived as `[REDACTED]`, no denial occurred and the rules are not the place to look:
+
+```bash
+dome tools guards filters list demo-hr
+```
+
+Filters attach to the connection, so every agent reaching that tool inherits them regardless of its own rules.
+
+For the full picture of a single request, follow its activity chain. One user action can span many events, and the chain shows them in order:
+
+```bash
+dome audit chains --limit 10
+dome audit chain <ACTIVITY_ID>
+```
+
+To read one event in full, including its payload:
+
+```bash
+dome audit get <EVENT_ID>
+```
+
+## Verify the results
+
+Confirm you left the workspace as you found it. The grant should be back:
+
+```bash
+dome gateways access list Default
+```
+
+The five permitted tools should still allow, and payroll should still deny:
+
+```bash
+dome rules simulate --agent hr-assistant --action mcp:call \
+  --resource demo-hr/hr/list_employees --resource-type mcp_tool
+dome rules simulate --agent hr-assistant --action mcp:call \
+  --resource demo-hr/finance/get_salary --resource-type mcp_tool
+```
+
+Expect `ALLOW` then `DENY`. `dome rules simulate` exits non-zero on a denial, which makes it usable as a check in CI: assert that the calls you intend to be impossible stay impossible.
+
+## Next steps
+
+In this tutorial, you:
+
+- Learned the order the [gates](/concepts/architecture/dataplane) run in, and why quota sits above rules.
+- Attributed a denial to its rule using the [audit trail](/operate/audit) rather than the client's paraphrase.
+- Found a missing gateway grant from its explicit invocation denial.
+- Separated transport errors from policy answers.
+- Distinguished a [Guard](/govern/guards) rewriting a field from a rule refusing a call.
+
+Continue with:
+
+<Cards>
+  <Card title="Simulate rules" href="/govern/rules/simulate">
+    Every flag, including identity and argument evaluation.
+  </Card>
+  <Card title="Audit reference" href="/operate/audit">
+    Event envelope, filters, chains, and export formats.
+  </Card>
+  <Card title="Adopt an existing app" href="/tutorials/production/adopt-an-existing-app">
+    Move an app you already run onto the governed path.
+  </Card>
+  <Card title="Stream Live Events" href="/operate/observe">
+    Live streams, metrics, and OpenTelemetry export.
+  </Card>
+</Cards>

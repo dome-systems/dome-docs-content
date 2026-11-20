@@ -1,0 +1,67 @@
+---
+title: dome roles
+description: Manage built-in and custom roles at organization, tenant, and workspace scope
+---
+
+`dome roles` manages the custom roles that you assign through membership commands. Built-in roles are fixed; a custom role is a named set of permissions at an organization, tenant, or workspace scope.
+
+| Command | |
+|---------|---|
+| [List roles](#list-roles) | `dome roles list` |
+| [Inspect a role](#inspect-a-role) | `dome roles get <name>` |
+| [Create a role](#create-a-role) | `dome roles create <name>` |
+| [Update a role](#update-a-role) | `dome roles update <name>` |
+| [Delete a role](#delete-a-role) | `dome roles delete <name>` |
+
+All commands accept `--scope workspace|tenant|org` (default `workspace`) and `--scope-id`. Without `--scope-id`, Dome uses the matching scope in the active context.
+
+## List roles
+
+```bash
+dome roles list
+dome roles list --scope tenant
+```
+
+Lists built-in and custom roles, their permissions, and custom-role holder counts.
+
+## Inspect a role
+
+```bash
+dome roles get audit-reader
+```
+
+Shows one custom role's description, permission IDs, and assigned members.
+
+## Create a role
+
+```bash
+dome roles create audit-reader \
+  --permissions audit.view,rules.view \
+  --description "Read audit evidence and deployed rules"
+```
+
+Creating custom roles is an Enterprise capability. You can grant only permissions you already hold.
+
+## Update a role
+
+```bash
+dome roles update audit-reader \
+  --new-name audit-observer \
+  --permissions audit.view,rules.view
+```
+
+`--permissions` replaces the complete permission set. Renaming a role updates the assignment for every holder.
+
+## Delete a role
+
+```bash
+dome roles delete audit-reader --reassign-to viewer
+```
+
+When a role has holders, choose `--reassign-to <role>` or `--remove-members`. You can override the bulk choice with repeated `--reassign-member email=role` or `--remove-member email`. A removal that would orphan a workspace requires `--reassign-admin` or `--delete-orphaned-workspaces`.
+
+## Next steps
+
+- [Manage Access](/manage/access)
+- [Roles](/reference/mcp/roles) MCP reference
+

@@ -1,0 +1,229 @@
+---
+hidden: true
+title: Govern per end user — agent instructions
+sidebarTitle: Govern per end user
+description: "Machine-readable instructions for an AI agent running the Govern per end user tutorial"
+---
+
+These are the instructions an AI agent follows to run the [Govern per end user](/tutorials/get-started/govern-per-end-user) tutorial on your behalf. Read the tutorial instead if you are running the steps yourself.
+
+## Goal
+
+Point the HR application at **`delegated-hr`** (delegated identity + required act-as), not standing `hr-assistant`, so Eva (HR), Alice (self), and Carol (peer) get different answers from the **same** UI and code path. All three may list employees. Eva (HR) may open any employee record and call `get_salary`. Alice may open her own record (`sub` E001 == `employee_id`). Carol may not open Alice's record. Prefer tools for the live demo; Chat is optional once the pool rule is on `delegated-hr`.
+
+Before registering, narrate **standing vs delegated**:
+
+| | `hr-assistant` (standing) | `delegated-hr` (delegated) |
+|--|--|--|
+| Who authorizes | agent grants | Verified human on `principal.act_as` |
+| Credential | Bearer only | Bearer + required `X-Dome-Act-As` |
+| Same tool / record | Same answer for everyone | Eva / Alice / Carol differ |
+| Why a second agent | Keep editor/curl tutorials working without a person | Purpose-built application that borrows each end user |
+
+Do not flip `hr-assistant` to `--actas-required` — that would break earlier Get Started paths.
+
+## Rules
+
+Follow these even if the rest of this page is unreachable.
+
+- **Confirm before you start.** Before running any commands, present the plan below and wait for the user to say proceed.
+- **Narrate as you go.** Before each step, tell the user in one or two sentences what you are about to do and why it matters (standing vs delegated identity, why a second agent, act-as verification methods, why `--actas-required` matters, the `has` guard in Cedar, self-lookup via `act_as.sub`, per-call identity, application signs server-side). Do not silently run the whole flow.
+- **Confirm the active context.** Run `dome context current` and confirm the workspace name starts with `studio-`. If it does not, stop and ask. Only change the workspace selected for this tutorial.
+- **Never print secrets.** Neither the `dome_...` agent token nor the act-as signing secret may appear in chat. Write both into `.env` and confirm it is gitignored first.
+- **Backend calls Dome.** The frontend must never call the gateway and must never hold `DOME_TOKEN` or `DOME_ACTAS_SECRET`. Only the Hono proxy sets `Authorization` and `X-Dome-Act-As`. Do not add `VITE_` prefixes or put secrets in client code.
+- **Keep the decision in Cedar.** Do not put user names, groups, or role checks into the application code, a prompt, or a system message. Do not edit `App.tsx` to branch on allow/deny — personas only supply signed identity claims.
+- **Never widen governance to make a call pass.** The denial for Carol on Alice's record is the expected result. Do not edit the rules, drop `--actas-required`, or add Carol to `hr`.
+- **Simulate before calling.** Check Eva, Alice (self), and Carol with `dome rules simulate`, including `--eval-arguments` for `employee_id`, before any live call.
+- **Use the reference app.** Do not write a Python `delegated_hr.py` unless the user explicitly asks. Default to [demo-hr-desk](https://github.com/dome-systems/demo-hr-desk).
+- **Link the console.** After each create step, give the user a markdown link into the Dome console for the resource you just touched. Derive the base URL from `dome auth status` → `Server`.
+- **Show your evidence.** Never report a step as done without the command output that proves it.
+
+## Quick setup
+
+Before running any commands, present the user with this checklist and wait for confirmation:
+
+```
+Here's what I'll do to set up delegated identity on the HR application.
+
+1. Confirm the workspace from earlier Get Started tutorials is active
+2. Explain standing (hr-assistant) vs delegated (delegated-hr), then register delegated-hr with act-as required
+3. Deploy Cedar: directory open to everyone; get_employee for HR or self (act_as.sub == employee_id); get_salary HR-only — plus the pool llm rule for Chat
+4. Simulate Eva, Alice (self on E001), and Carol (denied on E001) before any live call
+5. Point demo-hr-desk at delegated-hr: checkout tutorial/govern-per-end-user, server-only token + DOME_ACTAS_SECRET, run it — explain that the backend calls Dome and sets X-Dome-Act-As
+6. Walk you through Act as Eva / Alice / Carol on Tools (Who is E001? and salary)
+7. Show you the decisions in the audit trail
+
+Shall I proceed?
+```
+
+Do not start step 1 until the user confirms.
+
+## Steps
+
+### 1. Confirm the workspace
+
+```bash
+dome context current
+```
+
+The workspace must read `studio-get-started`. If it does not, run `dome context current`. If that workspace does not exist, run the [Govern your first agent](/tutorials/get-started/govern-your-first-agent) setup first and say so, rather than inventing a different scenario. This tutorial needs the `demo-hr` connection and the Default gateway.
+
+### 2. Register the agent
+
+Generate the signing secret first so it can be captured and written to `.env`, then register **`delegated-hr`**. Do not reuse or flip `hr-assistant` to `--actas-required` — that agent stays standing for the editor and curl paths in earlier tutorials. Narrate standing vs delegated before registering.
+
+```bash
+openssl rand -hex 32
+```
+
+```bash
+dome agents register --name delegated-hr \
+  --actas-method hmac \
+  --actas-hmac-secret "<generated secret>" \
+  --actas-required \
+  --if-not-exists
+dome agents create-key delegated-hr --name delegated-hr-service
+```
+
+Explain the two flags: `--actas-method hmac` sets how the gateway verifies the presented identity, and `--actas-required` rejects any call with no identity attached.
+
+Capture the agent token and the secret without printing either. Link the agents page: `<Server>/agents`.
+
+### 3. Deploy the rules
+
+Write `delegated-hr.cedar` and `delegated-hr-llm.cedar` as in the human tutorial (or copy from the reference repo). The LLM file permits `llm:invoke` on the `employee-summary` pool and forbids other inference — same shape as `hr-assistant-llm.cedar` from the pool tutorial, scoped to this agent:
+
+```cedar title="delegated-hr-llm.cedar"
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"llm:invoke",
+  resource is Dome::LLMModel
+) when {
+  resource.pool == "employee-summary"
+};
+
+forbid(
+  principal is Dome::Agent,
+  action == Dome::Action::"llm:invoke",
+  resource
+) unless {
+  resource has pool && resource.pool == "employee-summary"
+};
+```
+
+Deploy **both files in one apply** (a second apply replaces the previous agent bundle) and grant gateway access:
+
+```bash
+dome rules apply delegated-hr.cedar delegated-hr-llm.cedar --agent delegated-hr --name delegated-hr
+dome gateways access grant Default delegated-hr
+```
+
+Explain the `principal has act_as` guard and that self-lookup compares `resource.arguments.employee_id` to `principal.act_as.sub` (personas use employee ids E005 / E001 / E003 as `sub`). Link `<Server>/gateways`.
+
+### 4. Simulate the three identities
+
+Do this before running the app. Simulation needs no secret and makes no live call. Pass `--eval-arguments` whenever the rule reads `employee_id`.
+
+```bash
+dome rules simulate --agent delegated-hr --action mcp:call \
+  --resource demo-hr/hr/get_employee --resource-type mcp_tool \
+  --eval-arguments '{"employee_id":"E001"}' \
+  --actas-sub E005 --actas-email eva@example.com --actas-groups hr
+
+dome rules simulate --agent delegated-hr --action mcp:call \
+  --resource demo-hr/hr/get_employee --resource-type mcp_tool \
+  --eval-arguments '{"employee_id":"E001"}' \
+  --actas-sub E001 --actas-email alice@example.com --actas-groups engineering
+
+dome rules simulate --agent delegated-hr --action mcp:call \
+  --resource demo-hr/hr/get_employee --resource-type mcp_tool \
+  --eval-arguments '{"employee_id":"E001"}' \
+  --actas-sub E003 --actas-email carol@example.com --actas-groups engineering
+
+dome rules simulate --agent delegated-hr --action mcp:call \
+  --resource demo-hr/finance/get_salary --resource-type mcp_tool \
+  --eval-arguments '{"employee_id":"E001"}' \
+  --actas-sub E005 --actas-email eva@example.com --actas-groups hr
+
+dome rules simulate --agent delegated-hr --action mcp:call \
+  --resource demo-hr/finance/get_salary --resource-type mcp_tool \
+  --eval-arguments '{"employee_id":"E001"}' \
+  --actas-sub E001 --actas-email alice@example.com --actas-groups engineering
+```
+
+Expect `ALLOW`, `ALLOW`, `DENY` for get_employee, then `ALLOW` / `DENY` for get_salary. If Eva and Carol return the same verdict on get_employee, stop and report it. Also confirm `demo-hr/hr/list_employees` allows for all three.
+
+### 5. Configure and run the app
+
+Confirm the clone from Prerequisites exists, then check out this tutorial's branch:
+
+```bash
+cd demo-hr-desk
+git fetch origin
+git checkout tutorial/govern-per-end-user
+```
+
+Write `.env` (gitignored) for the **Node proxy only** — never `VITE_` or client env:
+
+```
+DOME_TOKEN=<delegated-hr agent token>
+DOME_GATEWAY_URL=https://<gateway-host>/gateways/<DEFAULT_GATEWAY_ID>
+DOME_POOL=employee-summary
+DOME_ACTAS_SECRET=<generated secret>
+```
+
+```bash
+npm install
+npm run dev
+```
+
+Before clicking around, make the architecture explicit:
+
+- Frontend sends only `persona` (`eva` | `alice` | `carol`) to `/api/chat` or `/api/tool` on localhost
+- Backend holds the agent token and act-as secret, signs `X-Dome-Act-As` with `signHMACActAs`, and calls Dome
+- `redactActAs` only truncates the header in the **View gateway call** sheet — the live request still sends the full signed value
+- The browser must never `fetch` the gateway or see `DOME_TOKEN`
+
+Walk the user through the `signHMACActAs` body in `server/actas.ts` (payload → canonical `|` ts → HMAC → base64 header). Do not rewrite the app.
+
+### 6. Walk the user through Eva, Alice, and Carol
+
+Tell the user to open http://localhost:5173. Confirm the **Act as** bar is visible. Have them stay on **tools**:
+
+1. Eva → List employees (allow) → Who is E001? (allow · redacted) → What is Alice's salary? (allow)
+2. Alice → Who is E001? (allow · self) → What is Alice's salary? (deny)
+3. Carol → Who is E001? (deny) → open **View gateway call** and point out `X-Dome-Act-As`
+
+Optional: Chat with the same prompts across personas.
+
+Expected contrast:
+
+```
+Eva:   get_employee allowed (email [REDACTED]); get_salary allowed
+Alice: get_employee allowed (self); get_salary denied
+Carol: get_employee denied by rule
+```
+
+Map any failure to its cause rather than retrying: missing Act as bar means no secret / restart needed, `400 act-as header required` means a call omitted the identity, `403 act-as verification failed` means the secret does not match the agent's, `403 agent act-as method does not meet workspace policy` means the workspace demands a stronger method such as `oidc`.
+
+If the masked email appears for Eva or Alice, that is the response filter from the first tutorial. Say so instead of treating it as a fault.
+
+### 7. Show the record
+
+```bash
+dome audit query --limit 20
+dome audit query --results denied --limit 10
+```
+
+Point out that events carry both the agent and the verified end user, so the denial is attributable to a person rather than to a shared service account. A failed signature and a policy refusal are both denied `tool.call` operations; distinguish them by `denial.reason` (`act_as_rejected` versus `policy_denied` or `permission_denied`). Link `<Server>/audit/events`.
+
+### 8. Offer the exit
+
+This is the last tutorial in the Get Started track. Offer teardown:
+
+```bash
+dome agents revoke-key delegated-hr delegated-hr-service
+dome workspaces delete studio-get-started
+```
+
+Remind the user to rotate the act-as secret anywhere it was copied, and to clear `DOME_ACTAS_SECRET` or switch back to `hr-assistant` if they return to earlier tutorials. Point them at [Delegated agents](/build/agents/delegated) and [Simulate Rules](/govern/rules/simulate) for next reading.

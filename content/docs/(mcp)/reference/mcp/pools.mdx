@@ -1,0 +1,183 @@
+---
+title: Pools
+description: Route and fail over LLM traffic across model connections
+---
+
+import { modelPool } from '@/snippets/glossary';
+
+<p>{modelPool}</p>
+
+Refer to [Pools](/connect/pools) for routing strategies and membership. Add [model connections](/reference/mcp/models) first, then group them here. All tools require workspace context.
+
+## Pools
+
+### dome_models_pool_list
+
+List LLM pools in the active workspace.
+
+<Callout icon="key">Requires `gateways.view`.</Callout>
+
+### dome_models_pool_get
+
+Get a pool with its members.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Pool name |
+
+<Callout icon="key">Requires `gateways.view`.</Callout>
+
+### dome_models_pool_create
+
+Create an LLM pool.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Pool name (unique within workspace) |
+| `description` | string | No | Free-form description |
+| `match_when` | object | No | Predicate selecting this pool by request shape (e.g. `{"prompt_tokens":{"gt":100000}}`). Refer to [match_when predicates](/reference/resources/model-pools#pool-resolution) reference for the full grammar — operators (`gt`/`lt`/`eq`, `in`, `prefix`, `suffix`, `regex`) and composition (`any`, `all`, `not`). |
+| `is_default` | bool | No | Mark as the workspace default pool |
+| `cache_ttl_secs` | int32 | No | Exact-match cache TTL (`0` disables cache) |
+| `cache_scope` | string | No | `workspace` or `caller` (default: `workspace`) |
+| `routing_strategy` | string | No | `priority_weighted`, `round_robin`, `least_loaded`, `most_quota_remaining` (default: `priority_weighted`). Refer to [Routing strategies](/reference/resources/model-pools#routing-strategies) reference. |
+| `strategy_scope` | string | No | Scope of stateful routing counters: `workspace` (default) or `caller`. Ignored by `priority_weighted`. Scopes only the tiebreak for `most_quota_remaining`. |
+| `failover_max` | string | No | Failover ceiling. `"all"` walks every member; integer `N` gives primary + N retries (`0` disables failover). Defaults to `"all"`. |
+| `gateways` | array | No | [Gateway](/build/gateways) names to attach the pool to at create time. Without it the pool is unreachable until attached (`dome_gateways_model_pool_add`). |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+### dome_models_pool_update
+
+Update a pool. Only provided fields change.
+
+When `new_name` renames a pool, managed agents configured to run on it follow the new name.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Pool name |
+| `new_name` | string | No | Rename |
+| `description` | string | No | Update description |
+| `match_when` | object | No | Replace match predicate (pass `{}` to clear). Refer to [match_when predicates](/reference/resources/model-pools#pool-resolution) reference for the grammar. |
+| `cache_ttl_secs` | int32 | No | Update cache TTL (`0` disables) |
+| `cache_scope` | string | No | Update cache scope |
+| `routing_strategy` | string | No | `priority_weighted`, `round_robin`, `least_loaded`, or `most_quota_remaining` |
+| `strategy_scope` | string | No | `workspace` or `caller` |
+| `failover_max` | string | No | `"all"` (walk every member) or non-negative integer `N`. Omit to leave unchanged. |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+### dome_models_pool_usage
+
+Show what depends on a pool before deleting or renaming it: managed agents configured to run on it, agents granted it, and gateways that expose it. The response can omit names you are not allowed to view.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Pool name |
+
+<Callout icon="key">Requires `gateways.view`.</Callout>
+
+### dome_models_pool_set_default
+
+Set the workspace's default pool. Replaces any prior default.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Pool name |
+| `reassign_to` | string | No | Replacement model connection or pool. Moves managed agents configured for this pool and grants the replacement to agents that held it. |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+Without `reassign_to`, managed agents configured to run on the pool cannot run and agents with no other model grant lose model access.
+
+### dome_models_pool_move
+
+Reposition a pool in its workspace's `match_when` evaluation order. Pools with non-empty predicates evaluate in ascending `sort_key`; the first match wins. Exactly one of `before` or `after` is required.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Pool to move |
+| `before` | string | No | Anchor pool name; the moved pool lands immediately before it |
+| `after` | string | No | Anchor pool name; the moved pool lands immediately after it |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+### dome_models_pool_remove
+
+Remove an LLM pool. Marked destructive.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Pool name |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+## Pool members
+
+Members are model connections inside a pool, each with a priority and weight. Failover walks ascending priority; within a priority bucket, requests distribute by weight.
+
+### dome_models_pool_member_list
+
+List members of a pool.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `pool` | string | Yes | Pool name |
+
+<Callout icon="key">Requires `gateways.view`.</Callout>
+
+### dome_models_pool_member_add
+
+Add a model to a pool.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `pool` | string | Yes | Pool name |
+| `model` | string | Yes | model connection name |
+| `priority` | int32 | No | Priority bucket (`0` = primary, ascending fails over) |
+| `weight` | int32 | No | Weight within the priority bucket (default: `1`) |
+| `enabled` | bool | No | Whether the member is included in routing (default: `true`) |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+```json title="Add a member with failover"
+{
+  "name": "dome_models_pool_member_add",
+  "arguments": {
+    "pool": "default",
+    "model": "claude-sonnet",
+    "priority": 0,
+    "weight": 1
+  }
+}
+```
+
+### dome_models_pool_member_update
+
+Update a pool member's priority, weight, or enabled flag.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `pool` | string | Yes | Pool name |
+| `model` | string | Yes | model connection name |
+| `priority` | int32 | No | New priority |
+| `weight` | int32 | No | New weight |
+| `enabled` | bool | No | New enabled flag |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+### dome_models_pool_member_remove
+
+Remove a model from a pool. Marked destructive.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `pool` | string | Yes | Pool name |
+| `model` | string | Yes | model connection name |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+## Next steps
+
+- [Models](/reference/mcp/models) to add the connections a pool routes across
+- [Quotas](/reference/mcp/quotas) to cap spend and drive spillover
+- [Pools](/connect/pools) how-to for the full workflow

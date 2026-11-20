@@ -1,0 +1,36 @@
+---
+title: dome sessions
+description: List your Dome sessions and sign out of one or all other sessions
+---
+
+`dome sessions` manages where you are signed in to Dome: Dashboard browsers, CLI installations, and hosted Dome MCP clients. It requires a context created by `dome auth login`; platform API keys have no sessions.
+
+## List sessions
+
+```bash
+dome sessions list
+```
+
+Lists sessions newest first and marks the session used by this CLI as current.
+
+## Revoke a session
+
+```bash
+dome sessions revoke <session-id>
+```
+
+Revoking a session ends every credential it holds. Revoking the current CLI session signs this CLI out; run `dome auth login` to use it again.
+
+## Revoke every other session
+
+```bash
+dome sessions revoke --others
+```
+
+This leaves the current CLI session active and signs you out everywhere else.
+
+## Next steps
+
+- [Configure Dome via MCP](/manage/mcp#manage-your-sessions)
+- [Sessions](/reference/mcp/sessions) MCP reference
+

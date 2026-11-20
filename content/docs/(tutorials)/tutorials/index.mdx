@@ -1,0 +1,80 @@
+---
+title: Hands-on Labs
+sidebarTitle: Overview
+description: Guided labs for building with Dome
+---
+
+Every tutorial runs in a workspace and ends with a governed call you can verify in the audit trail. Follow the guided path in order, or jump to the track that matches your role.
+
+## Get started
+
+Four tutorials, in sequence. Each one builds on the workspace the one before it left behind.
+
+<RowCards>
+  <RowCard step={1} title="Govern your first agent" href="/tutorials/get-started/govern-your-first-agent">
+    Allow, redact, and deny tool calls from Cursor, Claude, or curl.
+  </RowCard>
+  <RowCard step={2} title="Call a model through a pool" href="/tutorials/get-started/call-a-model-through-a-pool">
+    Route chat through a model pool with failover and server-side keys.
+  </RowCard>
+  <RowCard step={3} title="Build a governed app" href="/tutorials/get-started/build-a-governed-app">
+    Wire model and tool calls in one app. Watch allow, redact, and deny.
+  </RowCard>
+  <RowCard step={4} title="Govern per end user" href="/tutorials/get-started/govern-per-end-user">
+    Give each user different tool access and answers from the same agent.
+  </RowCard>
+</RowCards>
+
+## Choose your role
+
+What developer, security, operator, and platform admin each own on Dome, with a guided workspace walk for each.
+
+<FeatureCards>
+  <FeatureCard title="Developer" image="/icons/developer-nobg.svg" href="/tutorials/role/developer">
+    Register an agent, call tools through a gateway, and confirm allow and deny.
+  </FeatureCard>
+  <FeatureCard title="Security" image="/icons/security-nobg.svg" href="/tutorials/role/security">
+    Author and simulate Cedar, redact sensitive fields, prove denials, and export evidence.
+  </FeatureCard>
+  <FeatureCard title="Operator" image="/icons/operator-nobg.svg" href="/tutorials/role/operator">
+    Attach tools, expose a gateway, grant access, and watch audit.
+  </FeatureCard>
+  <FeatureCard title="Platform Admin" image="/icons/admin-nobg.svg" href="/tutorials/role/platform-admin">
+    Set who may administer Dome, check platform health, and export an audit snapshot.
+  </FeatureCard>
+</FeatureCards>
+
+## Production
+
+Take what you built in the workspace and run it for real.
+
+<LinkRows>
+  <LinkRow icon="network" title="Use Dome as an MCP gateway" href="/tutorials/production/use-dome-as-an-mcp-gateway">
+    Let Cursor, Claude Code, or Codex sign in with your own Dome account and call MCP tools, individually audited.
+  </LinkRow>
+  <LinkRow icon="route" title="Use Dome as a model broker" href="/tutorials/production/use-dome-as-a-model-broker">
+    Hold the provider key server-side and let Cursor, Claude Code, or Codex call any model, not just their own.
+  </LinkRow>
+  <LinkRow icon="key-round" title="Govern callers with OIDC" href="/tutorials/production/govern-callers-with-oidc">
+    Authorize a shared assistant from each employee's verified identity, then inspect every caller.
+  </LinkRow>
+  <LinkRow icon="server" title="Deploy an always-on agent" href="/tutorials/production/deploy-your-agent/always-on">
+    Build and deploy a governed HTTP service that stays ready for requests.
+  </LinkRow>
+  <LinkRow icon="zap" title="Deploy an event-driven agent" href="/tutorials/production/deploy-your-agent/event-driven">
+    Build and deploy a governed handler that wakes for an event and exits.
+  </LinkRow>
+</LinkRows>
+
+## Examples
+
+Working applications you can clone and adapt.
+
+<LinkRows>
+  <LinkRow icon="message-square" title="Interactive app" href="/tutorials/examples/interactive-agent">
+    A chess coach that acts for each player, beside a standing opponent.
+  </LinkRow>
+  <LinkRow icon="calendar-clock" title="Scheduled agent" href="/tutorials/examples/noninteractive-agent">
+    A nightly GitHub report that cannot merge, comment, or file. Python, TypeScript, or Go.
+  </LinkRow>
+</LinkRows>

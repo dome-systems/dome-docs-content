@@ -1,0 +1,184 @@
+---
+title: Environments
+sidebarTitle: Prepare environments
+description: 'Create tenants and workspaces, then select a CLI context'
+---
+
+import { environment } from '@/snippets/glossary';
+
+<p>{environment}</p>
+
+## Overview
+
+Dome nests environments under an organization. An organization contains tenants. A tenant contains workspaces. Agents, resources, gateways, rules, guards, quotas, and audit events live in a workspace. Tenants isolate data. Workspaces separate teams and environments inside a tenant. Refer to [Scope Hierarchy](/concepts/platform/scopes) concept for isolation and rule inheritance.
+
+Creating a tenant or workspace defines a boundary. A CLI context does not create a boundary; it selects which workspace subsequent CLI and MCP commands use.
+
+The typical workflow is:
+
+1. [Create a tenant](#create-a-tenant) when you need a new hard isolation boundary.
+2. [Create a workspace](#create-a-workspace) for the team or environment inside that tenant.
+3. [Select a CLI context](#select-a-cli-context) so commands run against that workspace.
+4. Optionally [scaffold a project](#scaffold-a-project) against the selected context.
+
+The sections below explain the attributes that shape a tenant or workspace at creation.
+
+### Plans
+
+Each tenant receives a plan that determines available features.
+
+| Plan | Use for |
+|------|---------|
+| `essential` | Core platform features |
+| `managed` | Dome-managed platform + gateway |
+| `enterprise` | Full feature set with SLA |
+| `complete` | Everything, including custom integrations |
+
+You set the plan when you [create a tenant](#create-a-tenant).
+
+### Join policies
+
+`join_policy` controls how non-members enter a tenant or a workspace. Every tenant and every workspace carries its own value. The workspace policy is independent of its tenant's. New tenants and workspaces default to `invite_only` when the field is omitted at creation.
+
+| Value | Who can enter |
+|-------|---------------|
+| `open` | Verified-domain users join automatically |
+| `request` | Users request access. Admins approve |
+| `invite_only` | Admins must invite users (default) |
+
+You set `join_policy` when you [create a tenant](#create-a-tenant) or [create a workspace](#create-a-workspace).
+
+## Requirements
+
+Before you begin, authenticate the Dome CLI.
+
+### Permissions
+
+Tenant and workspace creation use org- and tenant-scoped roles. Each operation states the permission it requires.
+
+For exhaustive flags, tool parameters, and endpoint contracts, refer to the [CLI](/cli/settings/tenants), [MCP](/reference/mcp/platform), and [API](/api/tag/tenants/create-tenant) references.
+
+| Default roles | Permission | Grants |
+|---------------|------------|--------|
+| Org `admin` or `owner` | `tenants.manage` | Create tenants |
+| Tenant `admin` | `tenants.manage` | Create workspaces |
+
+## Create a tenant
+
+Create a tenant under your organization when you need a hard isolation boundary. You can set [plan](#plans) and [join policy](#join-policies) in the same call.
+
+<Callout icon="key">Requires org-level `tenants.manage` (held by org `admin` or `owner`).</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome tenants create --name acme-prod --plan managed --join-policy request
+    dome tenants list
+    ```
+
+    | Flag | Description |
+    |------|-------------|
+    | `--name` | Tenant display name (required). |
+    | `--plan` | `essential` (default), `managed`, `enterprise`, or `complete`. |
+    | `--join-policy` | `open`, `request`, or `invite_only` (default when omitted). |
+    | `--org-id` | Target org. Defaults to the active context's org. |
+
+    <Callout icon="terminal">Reference: [`dome tenants create`](/cli/settings/tenants#create-tenant)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tools: `dome_tenants_create`, `dome_tenants_list`, `dome_tenants_get`
+
+    Pass `join_policy` on create (`open`, `request`, or `invite_only`). Omit it to take the server default.
+
+    <Callout icon="cpu">Reference: [`dome_tenants_create`](/reference/mcp/platform#tenants-create)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /v1/tenants
+    {
+      "name": "acme-prod",
+      "plan": "managed",
+      "join_policy": "request"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`CreateTenant`](/api/tag/tenants/create-tenant)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Create a tenant"
+    Create a tenant named "acme-prod" on the managed plan.
+    ```
+  </Tab>
+</Tabs>
+
+## Create a workspace
+
+Create a workspace for a team or environment inside a tenant. You can set [join policy](#join-policies) in the same call. List or delete workspaces as teams and projects change.
+
+<Callout icon="key">Requires tenant-level `tenants.manage` (held by a tenant `admin`, or by org `owner` / `admin` via cascade).</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome workspaces create --name "payments-team" --join-policy open
+    dome workspaces list
+    dome workspaces delete <workspace-id>
+    ```
+
+    <Callout icon="terminal">Reference: [`dome workspaces`](/cli/settings/workspace)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tools: `dome_workspaces_create`, `dome_workspaces_list`, `dome_workspaces_get`, `dome_workspaces_delete`
+
+    Pass `join_policy` on create (`open`, `request`, or `invite_only`). Omit it to take the server default.
+
+    <Callout icon="cpu">Reference: [`dome_workspaces_create`](/reference/mcp/workspaces)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /v1/workspaces
+    {
+      "tenant_id": "{{TENANT_ID}}",
+      "slug": "payments",
+      "name": "Payments",
+      "join_policy": "invite_only"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`CreateWorkspace`](/api/tag/workspaces/create-workspace)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Create a workspace"
+    Create a workspace named "payments-team".
+    ```
+  </Tab>
+</Tabs>
+
+## Select a CLI context
+
+Sync after creating a tenant or workspace, then select the target so CLI and MCP commands run against that workspace.
+
+```bash
+dome context sync
+dome context list
+dome context use production
+dome context current
+```
+
+Use `workspace`, `tenant/workspace`, or `org/tenant/workspace` shorthand when names overlap.
+
+## Scaffold a project
+
+Create a starter project against the selected environment.
+
+```bash
+dome quickstart my-agent-project
+```
+
+The command generates SDK setup, `dome.yaml`, environment placeholders, a Dockerfile, and starter Cedar rules.
+
+## Next steps
+
+- [Manage Access](/manage/access)
+- [Configure Platform](/manage/settings)
+- [Quickstart](/quickstart)

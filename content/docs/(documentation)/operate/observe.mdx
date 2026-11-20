@@ -1,0 +1,454 @@
+---
+title: Stream live events
+sidebarTitle: Stream live events
+description: Stream live governed events, calls, denials, health, latency, failures, usage, quotas, and telemetry
+---
+
+import { streamLiveEvents } from '@/snippets/glossary';
+
+<p>{streamLiveEvents}</p>
+
+Refer to [Audit events](/concepts/audit) concept for how the one trail works. Contracts are on the [Event contracts](/reference/events/contracts) reference.
+
+## Overview
+
+Streaming correlates several signals on the same governed traffic. Each signal answers a different operational question.
+
+| Signal | What it shows |
+|--------|---------------|
+| Live events | Governed requests as they occur, without polling |
+| Calls and denials | Allowed, denied, filtered, and failed outcomes |
+| Health and failures | Unavailable services, backends, and policy paths |
+| Latency | Slow tools, models, gateways, and rule evaluations |
+| Tokens and cost | LLM consumption by agent, API key, identity, and served model |
+| quotas | Rate-limit and resource-exhausted events by scope |
+| OpenTelemetry | Traces, metrics, and logs on your collector |
+| Product telemetry | Feature adoption. Not compliance evidence |
+
+Streaming reads the same Audit v1 trail as [Audit events](/operate/audit). Stream for live operations. Query and export for history and compliance.
+
+The typical workflow is:
+
+1. [Stream events](#stream-events) for live governed traffic.
+2. Optionally review [token usage and cost](#token-usage-and-cost).
+3. Optionally [configure OpenTelemetry](#configure-opentelemetry) or [product usage telemetry](#configure-product-usage-telemetry) for your own stack.
+
+### Token classes
+
+Every LLM call resolves to a disjoint partition across five token classes. The window total is their sum.
+
+| Class | Description |
+|-------|-------------|
+| `llm_input_tokens` | Fresh input tokens that bypassed the prompt cache. |
+| `llm_cache_read_tokens` | Prompt-cache hits. Cheapest class. |
+| `llm_cache_write_tokens` | Prompt-cache writes. Carry a premium over fresh input. |
+| `llm_output_tokens` | Tokens emitted in the visible response. |
+| `llm_reasoning_tokens` | Hidden reasoning tokens (e.g. OpenAI `o1` reasoning). Bill at the output rate. |
+| `llm_calls` | Completed LLM calls that reported usage in the window. |
+
+Adapters normalize provider-specific usage records into this partition. Per-class pricing is applied at read time and surfaced as `estimated_cost_usd`.
+
+### Usage cubes
+
+Token usage and call counts fan out across the workspace aggregate and four read-time **cubes** so you can attribute consumption by the dimension you care about.
+
+| Cube | Key | What it answers |
+|------|-----|------------------|
+| Workspace summary | workspace | What did this workspace consume in the window? |
+| By agent | `agent_id` | Which agents drive cost? |
+| By API key | `key_id` | Which key (and therefore which workload) is responsible? Survives key revocation. |
+| By act-as identity | `act_as_sub` | Which assumed human identity ran up the bill? Keyed on the stable OIDC subject. |
+| By model | `connection_id` | Which upstream model connection actually served the call? Failover-aware: surfaces the served connection, not the requested one. |
+
+## Requirements
+
+Before you begin:
+
+- Authenticate to Dome and select a workspace
+- Have traffic in the workspace when you want live events to appear
+
+### Permissions
+
+Live event streams and token-usage reads require platform permissions. People and scoped API keys call these surfaces. Agent credentials are not the usual path.
+
+All workspace roles can stream events and read token usage with `audit.view`. OpenTelemetry and product usage telemetry are configured on the api-server and gateway processes with environment variables. They do not use workspace permissions.
+
+| Default roles | Permission | Grants |
+|---------------|------------|--------|
+| All workspace roles | `audit.view` | Stream events and read token usage |
+
+## Stream events
+
+Stream audit events in real time with server-sent events (SSE). The stream delivers events as they occur, without polling.
+
+<Callout icon="key">Requires `audit.view`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome audit stream
+    ```
+
+    Filter by class, type, agent, or trace:
+
+    ```bash
+    dome audit stream --classes governing --results denied --agent-id <uuid>
+    ```
+
+    For the complete stream flag reference, refer to [`dome audit stream`](/cli/operate/audit#stream-events). Find valid event types in the [Event catalog](/reference/events/catalog) reference.
+
+    <Callout icon="terminal">Reference: [`dome audit stream`](/cli/operate/audit#stream-events)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Real-time streaming is not available via MCP tools. Poll recent events with `dome_audit_query` instead.
+
+    <Callout icon="cpu">Reference: [`dome_audit_query`](/reference/mcp/audit#audit-query)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    GET /v1/audit/events/stream?event_classes=EVENT_CLASS_GOVERNING&results=RESULT_DENIED&agent_id=<uuid>
+    ```
+
+    Server-sent events. Returns a stream of `AuditEventV1` envelopes as they occur. Accepts the same filter set as `QueryEvents` except time-range and pagination fields.
+
+    <Callout icon="code">Reference: [`StreamEvents`](/api/tag/audit/stream-events)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Query recent audit events"
+    Query the most recent 20 audit events of type authorization.evaluate for agent "a1b2c3d4-...".
+    ```
+  </Tab>
+</Tabs>
+
+Each streamed event is a full `AuditEventV1` envelope.
+
+```json
+{
+  "event_id": "<uuid>",
+  "event_type": "tool.call",
+  "event_class": "EVENT_CLASS_GOVERNING",
+  "stage": "STAGE_COMPLETED",
+  "result": "RESULT_ALLOWED",
+  "occurred_at": "2026-05-30T10:30:00Z",
+  "scope": { "workspace_id": "ws_..." },
+  "actor": { "kind": "ACTOR_KIND_AGENT", "id": "agent_..." },
+  "correlation": { "trace_id": "0af7651916cd43dd8448eb211c80319c" },
+  "payload": {
+    "@type": "type.googleapis.com/dome.audit.v1.ToolCallV1",
+    "tool": "database-query",
+    "backend": "my-mcp-server",
+    "latency_ms": 142
+  }
+}
+```
+
+### Filter the stream
+
+Narrow the stream further by combining multiple type filters.
+
+<Callout icon="key">Requires `audit.view`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome audit stream --types tool.call
+    ```
+
+    <Callout icon="terminal">Reference: [`dome audit stream`](/cli/operate/audit#stream-events)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Real-time streaming is not available via MCP tools. Poll with `dome_audit_query` and `since` / `until` instead.
+
+    <Callout icon="cpu">Reference: [`dome_audit_query`](/reference/mcp/audit#audit-query)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    GET /v1/audit/events/stream?event_types=tool.call
+    ```
+
+    <Callout icon="code">Reference: [`StreamEvents`](/api/tag/audit/stream-events)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Query filtered audit events"
+    Query the most recent 20 audit events of type tool.call.
+    ```
+  </Tab>
+</Tabs>
+
+The stream remains open until you terminate it. It fits live monitoring during deployments, incident investigation, or development testing.
+
+## Token usage and cost
+
+Query LLM consumption across every agent, API key, identity, and served model in the workspace. The dashboard token panel, the `dome usage` CLI, and the `dome_usage` MCP tool share one summary endpoint, so numbers line up everywhere.
+
+<Callout icon="key">Requires `audit.view`.</Callout>
+
+<Callout type="warning">
+Estimated cost is derived from token usage at read time and is not a bill. Model-aware usage is priced from the organization or Dome rate era that covered each usage window, so opening a new rate era preserves historical pricing. Aggregate usage without a model dimension uses the fallback blended rate. The rate eras are persisted; calculated cost is not.
+</Callout>
+
+<Tabs items={["CLI","MCP","API"]}>
+  <Tab value="CLI">
+    Print the workspace token total and estimated cost for the last 24 hours.
+
+    ```bash
+    dome usage
+    ```
+
+    The output mirrors the dashboard token panel. Add `--json` for machine-readable output and pipe into `jq` for scripted budgets.
+
+    <Callout icon="terminal">Reference: [`dome usage`](/cli/operate/usage)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Agents and assistants read the same numbers through `dome_usage`.
+
+    <Callout icon="cpu">Reference: [`dome_usage`](/reference/mcp/audit#audit-usage)</Callout>
+  </Tab>
+  <Tab value="API">
+
+    All token-usage reads are workspace-scoped. Time-range params `from` and `to` accept RFC 3339. Absent values default to the last 24 hours. `limit` defaults vary per endpoint and clamps at 200.
+
+    | Route | Returns |
+    |-------|---------|
+    | `GET /api/v1/metrics/summary` | Workspace totals (`evaluations_*`, `tool_calls_*`, the five token classes, `llm_total_tokens`, `llm_calls`, `estimated_cost_usd`) plus time-series buckets. |
+    | `GET /api/v1/metrics/agents` | Top agents ranked by activity or denies, with token totals and cost per agent. `sort=activity\|denies`. |
+    | `GET /api/v1/metrics/agents/{agent_id}` | Per-agent detail with time-series buckets. |
+    | `GET /api/v1/metrics/agents/{agent_id}/keys` | Per-API-key token usage and cost for one agent. Revoked keys still surface their historical usage. |
+    | `GET /api/v1/metrics/models` | Top served model connections ranked by tokens. Joins the connection table for the live display name. |
+    | `GET /api/v1/metrics/pools/{pool_id}` | Pool activity: `failover_served_calls`, `request_failures`, member breakdown, and time-series buckets for the window. |
+    | `GET /api/v1/metrics/act-as` | Top act-as identities ranked by tokens. `email` is a last-wins display snapshot. `sub` is the stable key. |
+
+    Per-agent detail buckets include `llm_calls` alongside evaluations and tool calls. LLM audit events carry `pool_id` so you can attribute spend and failover to a pool.
+
+    Sample summary response:
+
+    ```json
+    {
+      "evaluations_allow": 1842,
+      "evaluations_deny": 17,
+      "tool_calls_total": 921,
+      "llm_input_tokens": 412000,
+      "llm_cache_read_tokens": 1820000,
+      "llm_cache_write_tokens": 88000,
+      "llm_output_tokens": 64000,
+      "llm_reasoning_tokens": 12000,
+      "llm_total_tokens": 2396000,
+      "llm_calls": 318,
+      "estimated_cost_usd": 3.4521,
+      "agents_active": 12,
+      "buckets": [
+        { "window_start": "2026-06-05T10:00:00Z", "llm_input_tokens": 18000, "llm_output_tokens": 2400, "estimated_cost_usd": 0.092 }
+      ]
+    }
+    ```
+
+    <Callout icon="code">Reference: REST metrics under `/api/v1/metrics/*`</Callout>
+  </Tab>
+</Tabs>
+
+## Configure OpenTelemetry
+
+Every Dome service exports OpenTelemetry traces, metrics, and logs over OTLP/HTTP. Point the standard `OTEL_*` env vars at your collector (Jaeger, Tempo, Datadog agent, OTel Collector, Axiom, or anything that speaks OTLP) to wire Dome into your existing observability stack.
+
+<Callout type="info">
+Dome is vendor-neutral: it emits standard OTLP and reads standard `OTEL_*` variables. The collector decides where data lands. Swap backends without redeploying Dome.
+</Callout>
+
+### Enable
+
+Set `OTEL_EXPORTER_OTLP_ENDPOINT` on the api-server and gateway processes. When the variable is unset, the SDK runs in silent no-op mode. That is useful for local development without a collector.
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+export OTEL_SERVICE_NAME=dome-api-server      # also: dome-gateway
+export OTEL_RESOURCE_ATTRIBUTES=deployment.environment=production
+```
+
+| Env var | Description |
+|---------|-------------|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP/HTTP collector URL. Unset disables the SDK. |
+| `OTEL_SERVICE_NAME` | Service name on every signal (e.g. `dome-api-server`, `dome-gateway`). |
+| `OTEL_RESOURCE_ATTRIBUTES` | Comma-separated resource attrs (`key=value,key=value`). |
+| `OTEL_SDK_DISABLED` | Set to `true` to force the no-op provider. |
+| `OTEL_TRACES_EXPORTER` | Set to `none` to drop only traces while keeping metrics and logs. Same pattern for `OTEL_METRICS_EXPORTER` and `OTEL_LOGS_EXPORTER`. |
+| `OTEL_TRACES_SAMPLER_ARG` | Head-sampling ratio for root spans. Defaults to `0.01` (1%). Use `1.0` for full traces in local dev. |
+| `DOME_BUILD_VERSION` | Overrides the `service.version` resource attribute. Defaults to the build-time version. |
+
+Health probes (`/healthz`, `/readyz`, `/health`, `/ready`) are filtered out of traces and HTTP metrics automatically.
+
+### Identity attributes
+
+Every span and log record carries the same `dome.*` vocabulary so you can pivot from a trace to its logs with a single tag filter:
+
+| Attribute | Value |
+|-----------|-------|
+| `dome.caller_type` | `agent`, `platform_user`, or `gateway` |
+| `dome.tenant_id` | Tenant UUID |
+| `dome.org_id` | Org UUID |
+| `dome.workspace_id` | Workspace UUID |
+| `dome.agent_id` | agent UUID (agent callers) |
+| `dome.gateway_id` | gateway UUID (gateway callers) |
+| `dome.platform_user_key_id` | Platform API key UUID (platform-user callers) |
+
+Logs also carry the OTel `trace_id`, so a single query (`dome.tenant_id="..."`) returns the full request story across spans and logs for that tenant.
+
+### Product metrics
+
+Eight product-level instruments emit on the global OTel meter. Counters omit `tenant_id` to keep cardinality bounded. Pivot per-tenant via the span attributes above.
+
+| Instrument | Type | Tags | Source |
+|------------|------|------|--------|
+| `dome.authz.decisions` | Counter | `decision` (`allow`\|`deny`) | Every authorization evaluation |
+| `dome.authz.deny` | Counter | `reason` (`permission_denied`\|`wrong_caller_type`\|`tenant_mismatch`\|`unauthenticated`) | Every deny audit event |
+| `dome.audit.events_ingested` | Counter | `event_type` | Audit ingest endpoint |
+| `dome.gateway.tool_calls` | Counter | `tool_name`, `outcome` (`allowed`\|`denied`\|`error`) | gateway tool calls |
+| `dome.gateway.sync_cycle.duration` | Histogram (s) | `outcome` (`applied`\|`skipped`\|`error`) | gateway rule-sync cycle |
+| `dome.rules.evaluation.duration` | Histogram (s) | `engine`, `scope_kind` | Authorization rule evaluation |
+| `dome.agents.active` | Observable gauge | `tenant_id` | Active agents per tenant |
+
+### Sampling and cost
+
+Trace volume is head-sampled at 1% by default. Boilerplate database spans from `otelpgx` (transaction state, pool acquire, prepare statements) are dropped at the source. They accounted for ~99% of trace volume in early staging. Tail-sampling decisions belong at your collector.
+
+```bash
+# Local dev: full traces, full logs
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+export OTEL_TRACES_SAMPLER_ARG=1.0
+```
+
+## Configure product usage telemetry
+
+Stream product-usage events to your own analytics backend to see which features each tenant exercises. Telemetry is separate from audit. It answers "which orgs are active, which features get used, where do users get stuck", not "what did this agent do".
+
+<Callout type="warning">
+Use audit for compliance evidence. Use telemetry for product analytics. Telemetry is best-effort: events drop on queue overflow, sink errors, or shutdown, and the request path is never blocked or failed because of telemetry.
+</Callout>
+
+Telemetry is **opt-in** and **off by default**. Set `USAGE_TELEMETRY_ENABLED=true` on the api-server and gateway processes to turn it on. Any other value, including unset, installs a no-op client and emits nothing.
+
+### Sinks
+
+Select a sink with `USAGE_TELEMETRY_SINK`. Leave it unset to use the env-driven default.
+
+| Sink | When to use | Default for |
+|------|-------------|-------------|
+| `logger` | Local development. Emits one `product_usage_event` line per event at **DEBUG** level. | `DOME_ENV=local`, `dev`, `test` |
+| `otlp` | Production. Ships events as OTLP HTTP/logs to your collector. | — (explicit) |
+| `noop` | Disable without unsetting the feature. | Fallback when no other sink can be configured |
+
+A misconfigured sink (missing token, unreachable endpoint at startup, malformed headers) falls back to `noop` and logs the error. Startup never fails because of telemetry.
+
+### Configure
+
+Set the telemetry envvars in the api-server and gateway environments. One client per process. The same configuration applies to both.
+
+| Env var | Required | Description |
+|---------|----------|-------------|
+| `USAGE_TELEMETRY_ENABLED` | yes | Opt-in switch. `1`, `true`, `yes`, `on`, `enabled` turn it on. Anything else disables it. |
+| `USAGE_TELEMETRY_SINK` | no | `logger` \| `otlp` \| `noop`. Unset uses the env-driven default above. |
+| `USAGE_TELEMETRY_OTLP_ENDPOINT` | for `otlp` | Collector base URL. `/v1/logs` is appended if the path is empty. |
+| `USAGE_TELEMETRY_OTLP_HEADERS` | no | Comma-separated `key=value` headers (e.g. collector auth). |
+| `USAGE_TELEMETRY_PII_HASH_KEY` | no | HMAC-SHA256 key for hashing sensitive identifiers in future events. Secret. |
+
+Local development (logger sink, visible at DEBUG):
+
+```bash
+export DOME_ENV=local
+export DOME_LOG_LEVEL=debug
+export USAGE_TELEMETRY_ENABLED=true
+```
+
+Self-hosted OTLP collector:
+
+```bash
+export USAGE_TELEMETRY_ENABLED=true
+export USAGE_TELEMETRY_SINK=otlp
+export USAGE_TELEMETRY_OTLP_ENDPOINT={{COLLECTOR_URL}}
+export USAGE_TELEMETRY_OTLP_HEADERS=Authorization=Bearer {{COLLECTOR_TOKEN}}
+```
+
+### Event coverage
+
+Telemetry covers two surfaces: **lifecycle** events when resources are created, changed, or removed, and **runtime** events on every request the gateway evaluates.
+
+<Accordions>
+<Accordion title="Lifecycle events">
+
+| Event | When it fires |
+|-------|---------------|
+| `org.created` | Organization created |
+| `tenant.created` | Tenant created |
+| `workspace.created`, `workspace.deleted` | Workspace lifecycle |
+| `agent.registered`, `agent.activated`, `agent.updated`, `agent.suspended`, `agent.reactivated`, `agent.revoked`, `agent.deleted` | Product telemetry agent lifecycle (not Audit v1 event types) |
+| `api_key.created`, `api_key.revoked`, `api_key.rotated` | API key lifecycle |
+| `mcp_connection.created`, `mcp_connection.updated`, `mcp_connection.deleted` | gateway MCP backend lifecycle |
+| `llm_connection.created`, `llm_connection.updated`, `llm_connection.deleted` | LLM backend lifecycle |
+| `rule_bundle.deployed`, `rule_bundle.rolled_back`, `cedar_rules.deleted` | rule bundle lifecycle |
+| `credential_link.issued`, `credential_link.consumed` | Per-user credential magic links |
+| `oauth.consent_granted` | OAuth consent completed |
+| `llm_pool.created`, `llm_pool.defaulted` | LLM pool lifecycle |
+
+</Accordion>
+<Accordion title="Runtime events">
+
+| Event | When it fires | Key fields |
+|-------|---------------|------------|
+| `rule_evaluation.completed` | Every authorization decision | `decision` (`allow`\|`deny`), `reason_class`, `action`, `resource_type`, `duration_bucket`, `trace_id` |
+| `tool_call.completed` | Every tool call, allowed or denied | `result` (`success`\|`denied`\|`failure`), `tool`, `backend`, `duration_ms`, `status_code`, `fields_redacted`, `trace_id` |
+| `llm_call.completed` | Every LLM dispatch | `result`, `model`, `pool`, `duration_ms`, `status_code`, `trace_id` |
+| `tool_list.completed` | Every `tools/list` MCP call | `result`, `backend`, `tool_count`, `trace_id` |
+
+Each runtime event carries `trace_id` so you can join a usage event to the matching audit event for the same call.
+
+</Accordion>
+</Accordions>
+
+### Event envelope
+
+Every event, regardless of sink, has the same normalized shape:
+
+```json
+{
+  "name": "tool_call.completed",
+  "version": 1,
+  "timestamp": "2026-05-15T14:22:18.041Z",
+  "scope": {
+    "org_id": "org_...",
+    "tenant_id": "tenant_...",
+    "workspace_id": "ws_..."
+  },
+  "entity": {
+    "type": "agent",
+    "id": "agent_..."
+  },
+  "properties": {
+    "result": "success",
+    "tool": "database-query",
+    "backend": "my-mcp-server",
+    "duration_ms": 142,
+    "trace_id": "trace_..."
+  }
+}
+```
+
+Add a new field to an existing event freely. Additive changes do not bump `version`. Renaming or repurposing a field requires a new event name or a version bump.
+
+### PII handling
+
+Telemetry drops sensitive properties before any sink sees them. Property keys matching `email`, `username`, `password`, `secret`, `token`, `prompt`, `response`, `arguments`, or `args`, and keys containing `oauth_code`, `tool_result`, `user_name`, `raw_*`, or `act_as_subject`, are stripped at the client. Runtime constructors never accept raw tool args, prompts, or model responses in the first place.
+
+Putting PII under a non-matching key name does not bypass this. The package is the second line of defense.
+
+### Tuning behavior
+
+V1 ships with fixed batching parameters: 100 events per batch, 10 s flush interval, 10,000-event in-memory queue, 5 s send timeout, 2 retries with 250 ms backoff. These are not configurable via env in V1.
+
+- **Queue full** → event drops, warn log, `dropped` counter increments.
+- **Sink error** → batch retries once, then drops, error log, `dropped` increments by batch size.
+- **Shutdown** → queue drains, final batch flushes, sink shuts down.
+
+## Next steps
+
+- [Audit events](/operate/audit) for historical queries, exports, and the full event envelope
+- [Subscribe to Events](/operate/webhooks) to push signed events to external systems
+- [Set Usage Limits](/govern/quotas) when quota exhaustion shows up in the stream

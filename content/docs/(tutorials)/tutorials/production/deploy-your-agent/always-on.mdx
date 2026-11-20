@@ -1,0 +1,560 @@
+---
+title: Deploy an always-on agent
+sidebarTitle: Always-on agent
+description: "Build and deploy a governed HTTP service that stays ready for requests"
+---
+
+An always-on agent has an address. A person, webhook, or application sends it a request; the service decides what work to do and answers on that request's timeline. It must be ready for concurrent traffic, expose health separately from work, and survive instances being replaced underneath it.
+
+This lab builds an incident-desk API. Each `POST /incidents` request makes one governed tool call through Dome and returns the result. You will containerize it, keep its agent key in a secret manager, deploy it as a private HTTP service, invoke it, and find the call in Audit.
+
+<Prompt
+  description="Hand this to an AI agent. It builds the HTTP service, provisions its Dome identity, deploys it, invokes it, and verifies the governed call."
+  icon="sparkles"
+  actions={["copy", "cursor"]}
+>
+Deploy the always-on incident-desk agent from this lab.
+
+First, show me this plan and ask me to confirm before running anything:
+
+1. Confirm my Dome and Google Cloud accounts and choose a workspace, project, and region
+2. Create the incident-desk app exactly as documented and run it locally
+3. Attach the public demo operations server to Dome
+4. Register `incident-desk-api`, deploy its one-tool Cedar boundary, and create its API key
+5. Build the container and push it to Artifact Registry
+6. Put the agent key in Secret Manager and deploy a private Cloud Run service
+7. Invoke `/health` and `/incidents`, then show the matching Dome audit event
+8. Deploy a second revision, show the rollback command, and clean up only after I confirm
+
+Follow the commands at https://developer.domesystems.ai/agent/tutorials/production/deploy-your-agent/always-on.md exactly.
+
+Non-negotiable rules:
+
+- Work in a Dome workspace and a non-production Google Cloud project. Show both before changing anything.
+- Never print or commit `DOME_AGENT_API_KEY`. Read it silently and write it directly to Secret Manager.
+- Keep the Cloud Run service private. Do not use `--allow-unauthenticated`.
+- Do not put the agent key in the image, Docker build arguments, ordinary environment variables, source, or logs.
+- Keep `/health` independent of Dome and the upstream tool. A dependency outage must not make the process fail its liveness check.
+- Do not widen Cedar when a call fails. Diagnose the deployment, credential exchange, gateway grant, and rule separately.
+- Use an immutable image tag derived from the Git commit. Do not deploy `latest`.
+- Never report a step as done without showing the non-secret command output.
+
+At the end, explain which parts belong to the always-on operating model and which commands are specific to Cloud Run.
+</Prompt>
+
+To do this, you will:
+
+<Steps>
+  <Step title="Build the HTTP process">
+    Create a health endpoint and a request handler that makes one governed tool call.
+  </Step>
+  <Step title="Provision the agent">
+    Give the process one identity and one allowed tool.
+  </Step>
+  <Step title="Build the image">
+    Produce an immutable container and push it to a registry.
+  </Step>
+  <Step title="Inject the credential">
+    Store the long-lived agent key outside the image.
+  </Step>
+  <Step title="Deploy and invoke">
+    Run the private service, send a request, and inspect Audit.
+  </Step>
+  <Step title="Roll back and clean up">
+    Prove the service can move between revisions without changing its Dome identity.
+  </Step>
+</Steps>
+
+## Why this application stays available
+
+The incident desk answers requests initiated by another system. It cannot know when the next request will arrive, and the caller expects an HTTP response. That makes a request-serving process the right shape:
+
+- start once and listen on `$PORT`
+- handle more than one request per process
+- keep request state local and short-lived
+- keep durable state in external systems
+- expose a cheap liveness endpoint
+- expect instances to start, stop, and overlap during rollout
+
+Cloud Run may scale the service to zero between requests. “Always-on” here describes the application contract—an address that accepts requests—not a promise that one VM runs forever.
+
+## What the deployment receives
+
+The deployment target never receives a GitHub token, model key, or tool credential. It receives:
+
+- a long-lived `DOME_AGENT_API_KEY` stored in the platform's secret manager
+- `DOME_CONTROL_PLANE`, used to exchange that key for a short-lived token
+- `DOME_GATEWAY_MCP_URL`, where the application calls its governed tools
+
+The application image contains no secrets. Dome keeps the tool credential at the gateway, enforces the same Cedar rule regardless of runtime, and records the resulting calls in Audit.
+
+## When event-driven fits better
+
+Deployment starts with the process shape, not the platform. This lab is for an agent that keeps an address and answers on a request timeline:
+
+| | Always-on (this lab) | Event-driven |
+|---|---|---|
+| Starts when | An HTTP request arrives | A schedule or event fires |
+| Process shape | Web server listening on `$PORT` | Handler called with one event |
+| Finishes when | The service is replaced or scaled down | The event is complete |
+| State | Externalize it; instances are replaceable | Treat each invocation as independent |
+| Retries | Client/load balancer behavior | Trigger retry and dead-letter behavior |
+| Concurrency | Multiple requests may share an instance | Multiple invocations may overlap |
+
+If the agent should wake for a schedule or queue message, finish one bounded job, and exit, use [Deploy an event-driven agent](/tutorials/production/deploy-your-agent/event-driven) instead.
+
+<Callout type="info">
+This lab uses [Google Cloud Run](https://docs.cloud.google.com/run/docs/deploying) to make the steps executable. The same process can run on [Amazon ECS Express Mode](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-express-mode.html), [Azure Container Apps](https://learn.microsoft.com/azure/container-apps/overview), [Fly.io](https://fly.io/docs/launch/), or [Render](https://render.com/docs/web-services). Translate the registry, secret, service, and identity commands; keep the process contract and Dome configuration.
+</Callout>
+
+## Prerequisites
+
+You will need:
+
+- Docker with Buildx
+- the [Google Cloud CLI](https://cloud.google.com/sdk/docs/install), authenticated with `gcloud auth login`
+- a non-production Google Cloud project where you may use Cloud Build, Artifact Registry, Secret Manager, IAM, and Cloud Run
+- the Dome CLI, signed in as a tenant `admin` (or org `owner` / `admin`) with permission to attach a tool, register an agent, and deploy rules
+
+Set the Google Cloud values used throughout:
+
+```bash
+export PROJECT_ID="<non-production-project>"
+export REGION="us-central1"
+export REPOSITORY="agent-labs"
+export SERVICE="incident-desk"
+export SERVICE_ACCOUNT="incident-desk"
+
+gcloud config set project "$PROJECT_ID"
+gcloud auth list
+```
+
+Confirm the project is not production before continuing.
+
+## Build the HTTP process
+
+Create an empty project:
+
+```bash
+mkdir incident-desk
+cd incident-desk
+```
+
+Create the dependencies:
+
+```text title="requirements.txt"
+fastapi
+httpx
+uvicorn
+```
+
+Create `app.py`. The application exchanges its long-lived agent API key for a short-lived bearer token on each request, then calls one MCP tool through its gateway:
+
+```python title="app.py"
+import json
+import os
+
+import httpx
+from fastapi import FastAPI, HTTPException
+
+app = FastAPI()
+
+CONTROL_PLANE = os.environ["DOME_CONTROL_PLANE"].rstrip("/")
+GATEWAY_MCP_URL = os.environ["DOME_GATEWAY_MCP_URL"]
+AGENT_API_KEY = os.environ["DOME_AGENT_API_KEY"]
+
+
+def exchange_token() -> str:
+    response = httpx.post(
+        f"{CONTROL_PLANE}/dome.identity.v1.Identity/ExchangeToken",
+        json={"grantType": "api_key", "apiKey": AGENT_API_KEY},
+        headers={"Content-Type": "application/json"},
+        timeout=10,
+    )
+    response.raise_for_status()
+    return response.json()["accessToken"]
+
+
+def parse_mcp(response: httpx.Response) -> dict:
+    if "text/event-stream" not in response.headers.get("content-type", ""):
+        return response.json()
+    for line in response.text.splitlines():
+        if line.startswith("data:"):
+            message = json.loads(line[5:].strip())
+            if "result" in message or "error" in message:
+                return message
+    raise ValueError("MCP stream ended without a response")
+
+
+def call_incident_tool() -> dict:
+    response = httpx.post(
+        GATEWAY_MCP_URL,
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "demo-ops/it/get_incidents",
+                "arguments": {},
+            },
+        },
+        headers={
+            "Authorization": f"Bearer {exchange_token()}",
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        },
+        timeout=20,
+    )
+    response.raise_for_status()
+    return parse_mcp(response)
+
+
+@app.get("/health")
+def health() -> dict:
+    return {"status": "ok"}
+
+
+@app.post("/incidents")
+def incidents() -> dict:
+    try:
+        result = call_incident_tool()
+    except (httpx.HTTPError, KeyError, ValueError) as exc:
+        raise HTTPException(status_code=502, detail="governed tool call failed") from exc
+    if "error" in result:
+        raise HTTPException(status_code=403, detail=result["error"])
+    return result["result"]
+```
+
+`/health` proves only that the process can answer. It deliberately does not exchange a token or call the tool; liveness checks should not generate agent activity or restart a healthy process because one dependency is down.
+
+Create the container:
+
+```dockerfile title="Dockerfile"
+FROM python:3.13-slim
+
+ENV PYTHONUNBUFFERED=1
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY app.py .
+
+CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT:-8080}"]
+```
+
+Exclude local credentials and build output:
+
+```text title=".dockerignore"
+.git
+.env
+.venv
+__pycache__
+*.pyc
+```
+
+## Provision the agent
+
+Create a Dome workspace for the deployed service:
+
+```bash
+dome workspaces create --name studio-deploy-http
+dome context sync
+dome context current
+```
+
+Stop if the workspace does not start with `studio-`.
+
+Attach the public demo backend:
+
+```bash
+dome tools add \
+  --name demo-ops \
+  --url https://demo-mcp.domesystems.ai/mcp \
+  --protocol streamable-http \
+  --auth-method none \
+  --gateway Default
+```
+
+Register the workload identity and admit it to the Default gateway:
+
+```bash
+dome agents register --name incident-desk-api --if-not-exists
+dome gateways access grant Default incident-desk-api
+```
+
+Create `incident-desk.cedar`. Discovery and one incident read are allowed; everything else is forbidden:
+
+```cedar title="incident-desk.cedar"
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:discover",
+  resource
+);
+
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"demo-ops/it/get_incidents"
+);
+
+forbid(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:call",
+  resource
+) unless {
+  resource == Dome::MCPTool::"demo-ops/it/get_incidents"
+};
+```
+
+Deploy and simulate it:
+
+```bash
+dome rules apply incident-desk.cedar \
+  --agent incident-desk-api \
+  --name incident-desk-api
+
+dome rules simulate --agent incident-desk-api --action mcp:call \
+  --resource demo-ops/it/get_incidents --resource-type mcp_tool
+
+dome rules simulate --agent incident-desk-api --action mcp:call \
+  --resource demo-ops/finance/get_salary --resource-type mcp_tool
+```
+
+Expect `ALLOW`, then `DENY`.
+
+Create the long-lived API key. It is an exchange credential, not a bearer token to send directly to the gateway:
+
+```bash
+dome agents create-key incident-desk-api --name cloud-run
+```
+
+Keep the one-time `Token: ...` value available for the Secret Manager step without saving it in source.
+
+Read the control-plane and gateway endpoints:
+
+```bash
+dome auth status
+dome agents get incident-desk-api --gateway Default
+```
+
+Set:
+
+```bash
+export DOME_CONTROL_PLANE="https://api.domesystems.ai"
+export DOME_GATEWAY_MCP_URL="https://<gateway-host>/gateways/<gateway-id>/mcp"
+```
+
+Use the server and gateway returned by your active environment rather than these example hosts when they differ.
+
+## Test the container locally
+
+Read the API key without echoing it:
+
+```bash
+read -rsp "Dome agent API key: " DOME_AGENT_API_KEY
+echo
+```
+
+Build and run:
+
+```bash
+docker build -t incident-desk:local .
+
+docker run --rm -p 8080:8080 \
+  -e DOME_AGENT_API_KEY \
+  -e DOME_CONTROL_PLANE \
+  -e DOME_GATEWAY_MCP_URL \
+  incident-desk:local
+```
+
+In another terminal:
+
+```bash
+curl --fail http://localhost:8080/health
+curl --fail -X POST http://localhost:8080/incidents
+```
+
+The first call returns `{"status":"ok"}` and creates no Dome activity. The second returns incident data and records a `tool.call`.
+
+## Build and push the image
+
+Enable the APIs and create an Artifact Registry repository:
+
+```bash
+gcloud services enable \
+  artifactregistry.googleapis.com \
+  cloudbuild.googleapis.com \
+  run.googleapis.com \
+  secretmanager.googleapis.com
+
+gcloud artifacts repositories create "$REPOSITORY" \
+  --repository-format=docker \
+  --location="$REGION" \
+  --description="Dome agent lab images"
+```
+
+Use an immutable tag:
+
+```bash
+export IMAGE_TAG="$(git rev-parse --short HEAD 2>/dev/null || date +%Y%m%d%H%M%S)"
+export IMAGE="$REGION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE:$IMAGE_TAG"
+
+gcloud builds submit --tag "$IMAGE" .
+```
+
+The image contains code and dependency metadata only. `DOME_AGENT_API_KEY` was runtime input and never entered the build context.
+
+## Store the agent key
+
+Create a dedicated runtime service account:
+
+```bash
+gcloud iam service-accounts create "$SERVICE_ACCOUNT" \
+  --display-name="Incident desk Cloud Run service"
+
+export SERVICE_ACCOUNT_EMAIL="$SERVICE_ACCOUNT@$PROJECT_ID.iam.gserviceaccount.com"
+```
+
+Write the key directly from the shell variable into Secret Manager:
+
+```bash
+printf '%s' "$DOME_AGENT_API_KEY" | \
+  gcloud secrets create incident-desk-agent-key --data-file=-
+
+unset DOME_AGENT_API_KEY
+```
+
+Allow only the runtime identity to read it:
+
+```bash
+gcloud secrets add-iam-policy-binding incident-desk-agent-key \
+  --member="serviceAccount:$SERVICE_ACCOUNT_EMAIL" \
+  --role="roles/secretmanager.secretAccessor"
+```
+
+## Deploy and invoke
+
+Deploy a private service from the immutable image:
+
+```bash
+gcloud run deploy "$SERVICE" \
+  --image="$IMAGE" \
+  --region="$REGION" \
+  --service-account="$SERVICE_ACCOUNT_EMAIL" \
+  --set-secrets="DOME_AGENT_API_KEY=incident-desk-agent-key:1" \
+  --set-env-vars="DOME_CONTROL_PLANE=$DOME_CONTROL_PLANE,DOME_GATEWAY_MCP_URL=$DOME_GATEWAY_MCP_URL" \
+  --no-allow-unauthenticated
+```
+
+Get its URL:
+
+```bash
+export SERVICE_URL="$(
+  gcloud run services describe "$SERVICE" \
+    --region="$REGION" \
+    --format='value(status.url)'
+)"
+```
+
+Invoke it with your Google identity:
+
+```bash
+export GOOGLE_ID_TOKEN="$(gcloud auth print-identity-token)"
+
+curl --fail \
+  -H "Authorization: Bearer $GOOGLE_ID_TOKEN" \
+  "$SERVICE_URL/health"
+
+curl --fail -X POST \
+  -H "Authorization: Bearer $GOOGLE_ID_TOKEN" \
+  "$SERVICE_URL/incidents"
+```
+
+If Cloud Run returns `403`, your Google identity needs `roles/run.invoker` on this service. Do not make the service public to bypass that boundary.
+
+Inspect the service logs without exposing the secret:
+
+```bash
+gcloud run services logs read "$SERVICE" \
+  --region="$REGION" \
+  --limit=20
+```
+
+Then inspect the governed call:
+
+```bash
+dome audit query --types tool.call --limit 10
+```
+
+The Cloud Run request log proves the HTTP process ran. The Dome event proves `incident-desk-api` called `demo-ops/it/get_incidents` through its one-tool boundary. You need both records to investigate the full request.
+
+## Roll out and roll back
+
+Each Cloud Run deploy creates a revision. Make a harmless response change, build a second immutable tag, and deploy it with the same service account, secret, and Dome endpoints.
+
+List revisions:
+
+```bash
+gcloud run revisions list \
+  --service="$SERVICE" \
+  --region="$REGION"
+```
+
+To roll all traffic back:
+
+```bash
+gcloud run services update-traffic "$SERVICE" \
+  --region="$REGION" \
+  --to-revisions="<previous-revision>=100"
+```
+
+The revision changes the code carrying the agent. It does not create another Dome agent or widen its rule. Stable identity across replaceable revisions is the deployment property this lab is proving.
+
+<Accordions>
+<Accordion title="Troubleshooting">
+  - The container exits immediately.
+
+    Confirm it listens on `0.0.0.0:$PORT`. Binding only to localhost makes it unreachable from Cloud Run.
+
+  - `/health` works but `/incidents` returns `502`.
+
+    Read the Cloud Run logs, then check `DOME_CONTROL_PLANE` and `DOME_GATEWAY_MCP_URL`. Confirm the service account can read secret version `1`.
+
+  - Token exchange returns `401`.
+
+    The stored API key is wrong or revoked. Rotate it in Dome, add a new Secret Manager version, deploy a revision pinned to that version, verify it, then disable the old version.
+
+  - The gateway returns a policy denial.
+
+    Simulate `demo-ops/it/get_incidents` for `incident-desk-api`. Do not grant every tool or remove the closing forbid.
+
+  - Multiple requests overlap.
+
+    That is normal for an HTTP service. Keep request state inside the handler, avoid mutable module-level request data, and make downstream operations safe to retry.
+</Accordion>
+</Accordions>
+
+## Clean up
+
+Delete the deployment first, then the secret and image repository:
+
+```bash
+gcloud run services delete "$SERVICE" --region="$REGION"
+gcloud secrets delete incident-desk-agent-key
+gcloud artifacts repositories delete "$REPOSITORY" --location="$REGION"
+gcloud iam service-accounts delete "$SERVICE_ACCOUNT_EMAIL"
+```
+
+Delete the Dome workspace:
+
+```bash
+dome workspaces delete studio-deploy-http
+```
+
+## Next steps
+
+You deployed a request-serving agent whose code is replaceable, identity is stable, credential is external to the image, and tool boundary is enforced at the gateway.
+
+- [Deploy an event-driven agent](/tutorials/production/deploy-your-agent/event-driven) to build a handler that runs once and exits
+- [Govern callers with OIDC](/tutorials/production/govern-callers-with-oidc) when the agent acts for a signed-in person

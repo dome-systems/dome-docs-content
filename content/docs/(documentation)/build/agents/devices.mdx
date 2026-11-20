@@ -1,0 +1,85 @@
+---
+title: Enroll Devices
+hidden: true
+description: Bind approved runtime devices to agent identities during the limited preview
+---
+
+**Device enrollment** binds approved hardware or workloads to a registered agent identity. Dome adds a device trust signal before a runtime requests governed resources.
+
+<Callout type="info">
+Device enrollment is available in limited preview. Contact your Dome representative to request access and confirm supported runtime environments.
+</Callout>
+
+<Callout type="warning">
+The preview does not expose public CLI, MCP, or API enrollment operations. Do not automate enrollment against undocumented endpoints.
+</Callout>
+
+## Prepare the agent
+
+Register the agent before requesting device enrollment. Record its agent ID, workspace, intended runtime, and deployment environment.
+
+Use a separate agent identity for each independently governed workload. Shared identities weaken device-level revocation and audit attribution.
+
+## Request preview access
+
+Send your Dome representative the following information:
+
+- Organization, tenant, and workspace names
+- agent name and agent ID
+- Runtime type and operating system
+- Deployment environment and region
+- Expected device count
+- Rotation and replacement requirements
+
+Preview access and supported attestation methods vary by deployment. Confirm support before changing production rollout plans.
+
+## Complete enrollment
+
+Follow the enrollment instructions supplied with your preview access. Complete these tasks from the target runtime:
+
+<Steps>
+  <Step title="Start enrollment">
+    Start the approved enrollment flow for the registered agent.
+  </Step>
+  <Step title="Present device evidence">
+    Submit the attestation evidence required for your runtime type.
+  </Step>
+  <Step title="Approve the binding">
+    Confirm the device, workspace, and agent identity before approval.
+  </Step>
+  <Step title="Store runtime credentials">
+    Store issued material in the runtime's protected credential store.
+  </Step>
+</Steps>
+
+Never copy enrollment material between devices. Enroll replacement devices separately, then revoke the retired binding.
+
+## Verify enrollment
+
+Confirm these properties before sending production traffic:
+
+- The device appears under the intended agent.
+- The workspace and environment match the deployment.
+- The binding reports an approved or active state.
+- A governed test request succeeds from the enrolled runtime.
+- The same request fails from an unenrolled runtime.
+
+Use [Develop](/develop) to configure runtime client authentication and gateway routing after enrollment.
+
+## Replace or retire a device
+
+Enroll the replacement before removing the old binding. Validate the new runtime, then revoke the retired device.
+
+Treat a lost device as compromised. Revoke its device binding and rotate the agent's runtime credentials.
+
+## Troubleshoot enrollment
+
+| Symptom | Check |
+|---------|-------|
+| Enrollment is unavailable | Confirm preview access for the organization and workspace |
+| Evidence is rejected | Confirm the runtime and attestation method are supported |
+| Device binds to the wrong agent | Cancel enrollment and restart with the intended agent ID |
+| Runtime remains unauthorized | Confirm agent state, gateway grant, and client credentials |
+| Replacement cannot enroll | Confirm device limits and retire stale preview bindings |
+
+For agent state and key rotation, follow [Agents](/build/agents). For endpoint reachability, follow [Gateways](/build/gateways).

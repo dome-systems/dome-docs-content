@@ -1,0 +1,9 @@
+{
+  "pages": [
+    "audit",
+    "integrations",
+    "webhooks",
+    "usage",
+    "usage-caps"
+  ]
+}

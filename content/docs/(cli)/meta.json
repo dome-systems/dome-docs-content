@@ -1,0 +1,8 @@
+{
+  "title": "CLI",
+  "root": true,
+  "icon": "SquareTerminal",
+  "pages": [
+    "...cli"
+  ]
+}

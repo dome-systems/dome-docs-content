@@ -1,0 +1,198 @@
+---
+title: Deploy agent with template
+description: Pull, configure, and deploy a published Dome agent template.
+---
+
+Deploy a governed agent from a published Templates Registry release. The
+Templates CLI lets you inspect an immutable release, generate local Terraform,
+provision Dome, and—when applicable—run its external agent runtime. To create
+or maintain a release, see [Publish template](/develop/templates/publish).
+
+## Before you begin
+
+The examples use `npx`, so a global Templates CLI installation is not required.
+`auth`, `view`, `pull`, and `generate` need Node.js 20 or later and network
+access. Install the [Dome CLI](/install) before using `up`; install Docker with
+the Compose plugin only when `up` will start an external agent runtime.
+
+```bash title="Confirm the CLI is available"
+npx @domesystems/templates --help
+```
+
+Remote commands use the production Registry by default. Use `--server <Dome application URL>` to discover the Registry from a Dome application, or `--registry <Registry URL>` to connect directly. Use one, not both.
+
+## Deploy agent with template
+
+### Sign in
+
+Sign in once per Registry environment. The selected endpoint becomes the default for later remote commands, and credentials remain isolated by endpoint.
+
+```bash title="Sign in to production"
+npx @domesystems/templates auth login \
+  --registry https://templates-registry.domesystems.ai \
+  --github
+```
+
+Use `auth status` to check the selected Registry, identity, GitHub link, and any publisher roles:
+
+```bash
+npx @domesystems/templates auth status
+```
+
+For a non-production environment, explicitly select its Registry when signing in. For example:
+
+```bash
+npx @domesystems/templates auth login \
+  --registry https://templates-registry-dev.domesystems.ai
+```
+
+### Inspect and pull a release
+
+Inspect a template before you download it. Without a version, `view` resolves the Registry's default: the newest non-deprecated release.
+
+```bash title="Inspect the default release"
+npx @domesystems/templates view dome-systems/ai-agent-for-documentation
+
+# Inspect one immutable release or see the version history.
+npx @domesystems/templates view dome-systems/ai-agent-for-documentation@0.1.2
+npx @domesystems/templates view dome-systems/ai-agent-for-documentation versions
+```
+
+Pull a release into an empty directory:
+
+```bash title="Pull a template"
+npx @domesystems/templates pull dome-systems/ai-agent-for-documentation \
+  --dir ./ai-agent-for-documentation
+cd ai-agent-for-documentation
+```
+
+The CLI verifies the downloaded SHA-256, extracts only the expected `template/` root, writes `.dome-template-lock.yaml`, and copies `.env.example` to `.env` when present. An exact deprecated version remains pullable with a warning; pin versions when you need a reproducible deployment.
+
+### Review, configure, and generate Terraform
+
+Start with interactive generation:
+
+```bash title="Preview the topology and generate Terraform"
+npx @domesystems/templates generate
+```
+
+The CLI first renders a colored topology showing agents, gateways, tools, models, pools, rules, guards, quotas, and triggers. Select **Generate** to keep the template defaults, or **Configure** to choose a deployment configuration.
+
+When configuring, the CLI asks in this order:
+
+1. **Runtime for each agent:** choose **Managed** when Dome runs the agent, or **External** when you run its runtime yourself.
+2. **Triggers:** choose schedule, webhook, or disabled for each trigger that targets a managed agent.
+3. **Model for each model role:** choose a provider, model, and credential type.
+
+Managed and external are the two agent types. Delegation is separate: either type can use an Act-As envelope when access must depend on the person represented by the agent. Native Dome triggers invoke managed agents only. If you select an external runtime, the CLI disables its native triggers instead of asking for a trigger that cannot apply.
+
+HMAC Act-As delegation is the exception: it requires the runtime to sign each
+request, so it is supported only by external agents. The CLI rejects
+`act_as.method: hmac` or `act_as.hmac_secret` on a managed agent before it
+generates Terraform.
+
+Use `--verbose` to expand the tools within each connection and models within each pool:
+
+```bash
+npx @domesystems/templates generate --verbose
+```
+
+The generated `dome.tf` is local output, not template source. Review it before provisioning. The command will not replace an existing output unless you explicitly pass `--force`.
+
+```bash
+npx @domesystems/templates generate --output generated.dome.tf
+npx @domesystems/templates generate --force
+```
+
+### Configure models safely
+
+Templates give models role-based names—such as `documentation-model`—rather than tying names to one provider. The picker supports the Dashboard provider catalog, including OpenAI, Anthropic, Google, Azure OpenAI, Bedrock, Mistral, Groq, Together AI, Fireworks AI, DeepSeek, Moonshot, xAI, Perplexity, Cohere, OpenRouter, Cerebras, NVIDIA NIM, DeepInfra, SambaNova, AI21, Databricks, vLLM, Ollama, OpenAI-compatible endpoints, and custom passthrough models.
+
+When a model uses a shared credential, the CLI adds the provider's sensitive variable and correct credential wiring to generated Terraform. Choose **per-user** only when callers provide credentials through a verified Act-As identity. Providers such as Azure OpenAI, Bedrock, self-hosted, and custom endpoints may ask for provider-specific configuration.
+
+For automation, put the selections in a YAML values file:
+
+```yaml title="deployment-values.yaml"
+models:
+  documentation-model:
+    provider: anthropic
+    model: claude-haiku-4-5-20251001
+    credential_type: shared
+runtime:
+  docs-answerer: external
+variables:
+  anthropic_api_key: sk-ant-…
+```
+
+Then generate non-interactively:
+
+```bash
+npx @domesystems/templates generate --values deployment-values.yaml
+```
+
+`variables` values are written to a local `terraform.tfvars` file with
+owner-only permissions. Keep the values file and generated `terraform.tfvars`
+out of source control. Runtime, trigger, and model choices affect only this
+Terraform generation by default. To deliberately persist those choices back to
+the source template, review the printed diff and use both safeguards:
+
+```bash
+npx @domesystems/templates generate \
+  --values deployment-values.yaml \
+  --write-config --yes
+```
+
+`--write-config` makes a targeted `dome.yaml` update and preserves unrelated comments and ordering. Do not use it merely to provision a one-off environment.
+
+### Provision and run a template (Preview)
+
+`up` is a Preview command. It reads the generated `dome.tf`; it does not ask
+for arbitrary template variables, so provide them with `generate --values`
+beforehand. When a template declares `metadata.guide`, `up` prints its
+`GUIDE.md` before provisioning or starting anything.
+
+Then provision:
+
+```bash title="Provision Dome and start an external runtime"
+npx @domesystems/templates up
+```
+
+`up` imports `dome.tf`. For an external runtime, it obtains the one-time runtime token and gateway URL from the import, writes only `DOME_TOKEN` and `DOME_GATEWAY_URL` to the ignored local `.env`, generates `.dome-compose.yaml`, and starts the runtime with Docker Compose. Use `--skip-provision --no-start` to review only the setup guide, `--no-start` to provision without starting it, `--detach` to run in the background, and `--debug` for safe endpoint/status/timing diagnostics.
+
+For a first deployment, Studio is the recommended way to evaluate a template: it deploys the selected immutable release into your Dome workspace, or creates one when you do not have one, then opens the included experience. [Follow the AI Documentation agent Studio instructions](https://developer.domesystems.ai/templates/dome-systems/ai-agent-for-documentation#usage) for an example, then [try it in Studio](https://developer.domesystems.ai/panel/patterns/chat?templates=dome-systems%2Fai-agent-for-documentation&managed=true&version=0.1.2). Use `templates up` when you need to provision from your local checkout or start an external runtime yourself.
+
+Managed agents are provisioned in Dome; they have no local container to start. If a template has more than one external agent, select the one to run:
+
+```bash
+npx @domesystems/templates up --agent docs-answerer
+```
+
+If an import has pending runtime outputs, recover them without reprovisioning:
+
+```bash
+npx @domesystems/templates up --import-job <job-id>
+```
+
+### Troubleshoot before an operation
+
+Run the targeted preflight when a machine is new or an operation fails:
+
+```bash
+npx @domesystems/templates doctor pull
+npx @domesystems/templates doctor up --dir ./ai-agent-for-documentation
+```
+
+`doctor up` checks `dome.yaml`, Docker Compose, and the Dome CLI. Add `--json` for automation.
+
+## Command reference
+
+Use `npx @domesystems/templates <command> --help` for the exact options for one command.
+
+| Command | Purpose |
+| --- | --- |
+| `auth login`, `auth status`, `auth logout` | Manage a Registry sign-in and inspect publisher access. |
+| `view <package> [versions]` | Inspect a release or its version history. |
+| `pull <package[@version]>` | Download and verify an immutable source release. |
+| `generate` | Review topology, optionally configure it, and write local Terraform. |
+| `up` | **Preview:** provision a local template and start an external runtime when applicable. |
+| `doctor [pull|up]` | Check operation-specific prerequisites. |

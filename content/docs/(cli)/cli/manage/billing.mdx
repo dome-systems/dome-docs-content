@@ -1,0 +1,193 @@
+---
+title: dome billing
+description: Review organization plan status, usage, seats, invoices, and plan changes
+---
+
+`dome billing` manages organization billing. All commands require `billing.manage` and accept `--org-id` to override the active context's organization. Card capture completes in the dashboard.
+
+| Command | |
+|---------|---|
+| [Show status](#show-status) | `dome billing status` |
+| [List plans](#list-plans) | `dome billing plans` |
+| [Change plan](#change-plan) | `dome billing change-plan <sku>` |
+| [Cancel plan](#cancel-plan) | `dome billing cancel` |
+| [Resume plan](#resume-plan) | `dome billing resume` |
+| [Show seats](#show-seats) | `dome billing seats` |
+| [Set seats](#set-seats) | `dome billing seats set <count>` |
+| [Show usage](#show-usage) | `dome billing usage` |
+| [List invoices](#list-invoices) | `dome billing invoices` |
+| [Show contact](#show-contact) | `dome billing contact` |
+| [Set contact](#set-contact) | `dome billing contact set` |
+| [List payment methods](#list-payment-methods) | `dome billing payment-methods` |
+| [Add payment method](#add-payment-method) | `dome billing payment-methods add` |
+| [Set default payment method](#set-default-payment-method) | `dome billing payment-methods set-default <payment-method-id>` |
+
+[`dome usage-caps`](/cli/operate/usage-caps) shows free-tier allowances for the active workspace.
+
+## Plan
+
+### Show status
+
+```bash
+dome billing status
+```
+
+Show the active plan and interval, subscription status, renewal dates, default payment method, any scheduled plan change, and any resources over the current tier's caps.
+
+### List plans
+
+```bash
+dome billing plans
+```
+
+List the self-serve plans and their monthly and annual prices, plus enterprise plans that require contacting sales. Per-seat plans show a per-user price. Pass `--json` for full per-SKU limits and features.
+
+### Change plan
+
+```bash
+dome billing change-plan <sku> --interval monthly --seats 5 --dry-run
+dome billing change-plan <sku> --interval annual --seats 10
+```
+
+Change the organization's plan.
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--interval` | `monthly` \| `annual` | No | Billing interval |
+| `--seats` | int32 | No | Purchased seats on a per-seat plan; `0` keeps the assigned-seat count |
+| `--dry-run` | bool | No | Preview the charge, credit, and scheduling without applying the change |
+
+An upgrade applies immediately and bills a full period up front; time already paid on the old plan returns as an account credit toward upcoming invoices rather than reducing today's charge. A downgrade is scheduled for the end of the current term and is not refunded, and it is blocked while resources exceed the target plan's caps.
+
+To move seats on the plan you already have, use [`seats set`](#set-seats) instead.
+
+### Cancel plan
+
+```bash
+dome billing cancel
+```
+
+Schedule cancellation of the paid plan. The plan stays active until the end of the current billing period, then reverts to free.
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--yes` | bool | No | Skip the confirmation prompt |
+
+### Resume plan
+
+```bash
+dome billing resume
+```
+
+Reverse a scheduled cancellation before the current term ends. The existing plan and billing cadence continue, and nothing is charged.
+
+## Seats
+
+### Show seats
+
+```bash
+dome billing seats
+```
+
+Show purchased and used seats. Used counts the distinct role holders across all workspaces; purchased is what the organization pays for on a per-seat plan.
+
+### Set seats
+
+```bash
+dome billing seats set 12 --dry-run
+dome billing seats set 12
+```
+
+Set the absolute purchased-seat count on the current per-seat plan without changing its SKU or billing interval.
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--dry-run` | bool | No | Preview the target, recurring total, and whether the change is deferred |
+
+An increase applies immediately and is billed now, prorated for the remainder of the current period. A reduction is scheduled for the period end and does not remove access early. The target cannot be lower than the number of assigned seats. Setting the count back to today's value cancels a pending reduction, and each new request replaces any earlier one.
+
+## Usage and invoices
+
+### Show usage
+
+```bash
+dome billing usage
+```
+
+Show the usage-based charges accruing in the current billing period, broken down by meter and by tenant.
+
+Usage meters governed actions: every tool call and model call that clears authentication and quotas, whether allowed or denied. Tool calls are billed per call and model calls by tokens. The plan fee and seats are billed separately and are not included here.
+
+### List invoices
+
+```bash
+dome billing invoices
+```
+
+List invoice history with each invoice's date, amount, status, and hosted URL.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--limit` | int32 | `20` | Maximum invoices to return |
+
+## Billing contact
+
+### Show contact
+
+```bash
+dome billing contact
+```
+
+Show the current billing contact and address.
+
+### Set contact
+
+```bash
+dome billing contact set --email billing@example.com
+```
+
+Update the billing contact. Pass at least one flag; only the fields you pass change.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--name` | string | Contact name |
+| `--email` | string | Contact email |
+| `--line1` | string | Address line 1 |
+| `--line2` | string | Address line 2 |
+| `--city` | string | City |
+| `--state` | string | State or province |
+| `--postal-code` | string | Postal or ZIP code |
+| `--country` | string | Country as an ISO 3166-1 alpha-2 code, such as `US` |
+
+## Payment methods
+
+Aliases: `payment-method`, `pm`.
+
+### List payment methods
+
+```bash
+dome billing payment-methods
+```
+
+List saved cards with their brand, last four digits, expiration, and which is the default.
+
+### Add payment method
+
+```bash
+dome billing payment-methods add
+```
+
+Start a Stripe SetupIntent and print its publishable key and client secret. Card entry completes in the browser, so the card number never reaches Dome. Finish in the dashboard under **Billing → Payment methods**.
+
+### Set default payment method
+
+```bash
+dome billing payment-methods set-default <payment-method-id>
+```
+
+Make a saved payment method the default. IDs come from [`payment-methods`](#list-payment-methods).
+
+## Next steps
+
+- [Billing](/manage/billing) how-to
+- [Export data](/manage/export#stream-audit-evidence-to-a-siem) for plan-gated SIEM streaming

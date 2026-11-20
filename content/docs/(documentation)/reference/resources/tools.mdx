@@ -1,0 +1,62 @@
+---
+title: Tools
+sidebarTitle: Tools
+description: 'Auth methods, credential types, egress header sources, discovered-tool statuses, and protocols'
+---
+
+This page lists upstream authentication pairings, egress header sources, discovered-tool statuses, and protocol constraints.
+
+Refer to [Tools](/concepts/resources/tools) concept for how connections work. Configure on [Tools](/connect/tools).
+
+## Upstream authentication
+
+| Auth method | When the upstream |
+|-------------|-------------------|
+| `none` | Requires no credential |
+| `api-key` | Accepts a static API key or bearer token |
+| `oauth` | Supports OAuth 2.0 or 2.1 |
+
+| Credential type | What the gateway sends |
+|-----------------|------------------------|
+| `none` | No credential |
+| `shared` | One workspace-managed credential for every call |
+| `per-user` | One credential per verified act-as subject |
+
+Valid pairings: `none` with `none` only; `api-key` and `oauth` each with `shared` or `per-user`. Defaults when credential type is omitted: `none`→`none`, `api-key`→`shared`, `oauth`→`per-user`. OAuth requires `streamable-http`.
+
+## Egress headers
+
+| Source | Value |
+|--------|-------|
+| Literal | Fixed string on every outbound request |
+| Stored secret | Injected at egress |
+| Act-as identity | Verified end-user identity from the inbound request |
+
+Only `streamable-http` tools can carry egress headers. An act-as header (`--header-actas`) is the forwarding opt-in: it sends the assertion the workspace Act-As floor already admitted, including `none` when that floor allows it. The gateway does not re-rank methods at egress. The call fails closed when no raw assertion is available, including device-bound and interactive session identity. Act-as headers are not valid with OAuth upstream auth. Configure headers on [Tools](/connect/tools#egress-headers).
+
+## Discovered tools
+
+| Status | Behavior |
+|--------|----------|
+| `active` | Discoverable and callable when rules allow |
+| `deprecated` | Callable, with a catalog warning |
+| `blocked` | Hidden from discovery and denied on invocation |
+
+Blocking denies the operation even if another rule would permit it. Status persists when the gateway observes the operation again. Only a restore returns it to `active`.
+
+## Protocols
+
+| Protocol | Use case | Notes |
+|----------|----------|-------|
+| `streamable-http` | Remote MCP servers | Supports OAuth and egress headers |
+| `stdio` | Local processes | No HTTP headers; no OAuth |
+
+Also refer to [Tools gateway](/concepts/gateways/tools-gateway#egress-protocols) concept for REST catalog egress.
+
+## Next steps
+
+Add connections and attach them to gateways:
+
+- [Tools](/concepts/resources/tools) concept for credentials, catalogs, and reachability
+- [Tools](/connect/tools) to add tools, manage catalogs, and attach gateways
+- [Tools gateway](/concepts/gateways/tools-gateway) concept for the MCP ingress

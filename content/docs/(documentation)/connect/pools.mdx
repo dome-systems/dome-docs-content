@@ -1,0 +1,884 @@
+---
+title: Pools
+sidebarTitle: Pools
+description: Route and fail over LLM traffic across model connections
+---
+
+import { modelPool } from '@/snippets/glossary';
+
+<p>{modelPool}</p>
+
+## Overview
+
+A pool contains one or more [models](/connect/models). When an agent puts the pool name in a request's `model` field, Dome orders the members according to the routing strategy. Dome sends the request to the first eligible member. If that attempt fails, Dome can try the remaining eligible members.
+
+The typical workflow is:
+
+1. [Connect the models](/connect/models#add-model) that can serve the traffic.
+2. [Create a pool](#create-pool).
+3. [Add the models as members](#add-member).
+4. Configure the pool's [routing strategy](#routing-strategies) and [failover](#failover).
+5. [Attach the pool to a gateway](#attach-to-a-gateway).
+6. Allow the gateway on the [external agent](/build/agents/external#allowed-resources).
+7. [Verify the pool](#verify-pool) with that agent's API key.
+
+### Members
+
+Each member represents one model connection in the pool. With priority-weighted routing, the priority places the member in a failover tier. The weight determines how often Dome selects the member within that tier. Round-robin, least-loaded, and most-quota-remaining routing treat every member equally, so they ignore priority and weight.
+
+A model can belong to more than one pool. Removing a member changes only that pool and leaves the model connection available elsewhere.
+
+<Callout type="warning">
+  The management interfaces store an `enabled` value, but the current gateway routes to members regardless of that value. To stop sending traffic to a member, remove it from the pool.
+</Callout>
+
+### Routing strategies
+
+The routing strategy chooses the primary model and orders any failover candidates.
+
+| Strategy | Primary selection | Member fields it uses |
+|----------|-------------------|----------------------|
+| `priority_weighted` | Chooses by weight from the lowest priority tier | Priority and weight |
+| `round_robin` | Rotates through all members in order | Neither |
+| `least_loaded` | Chooses the member with the fewest in-flight requests and breaks ties randomly | Neither |
+| `most_quota_remaining` | Chooses the member with the most remaining per-model cost-quota headroom; unmetered members serve last | Neither |
+
+Use `priority_weighted` when some models should take traffic before others. Use `round_robin` or `least_loaded` when members are peers. Use `most_quota_remaining` when members carry different per-model cost caps and you want to drain the highest-headroom member first. Exhausted members are locked out by the quota barrier before this strategy orders the survivors. With no per-model quotas, every member ties and the strategy degrades to round-robin — meter every member for the ordering to have effect.
+
+The `strategy_scope` setting determines whether round-robin rotation, least-loaded request counts, and `most_quota_remaining` tiebreaks are shared across the workspace or tracked per agent. Priority-weighted routing does not use this setting. For `most_quota_remaining`, scope only affects the tiebreak — not the primary ordering.
+
+You can choose a strategy when you [create a pool](#create-pool) or [change it later](#change-routing).
+
+### Failover
+
+The failover limit controls how many additional members Dome may try when the request to the primary member fails.
+
+| Value | Runtime behavior |
+|-------|------------------|
+| No limit or `all` | Try every eligible member until one succeeds |
+| `0` | Try only the primary |
+| `N` | Try the primary and up to `N` additional members |
+
+Dome authorizes the primary before sending the request. If the primary fails, Dome authorizes each remaining member before trying it and skips any member that rules deny. A streaming request can fail over only before Dome sends the first response data to the caller. An error after streaming begins terminates the response.
+
+You can set failover when you [create a pool](#create-pool) or [change it later](#change-failover).
+
+### Pool resolution
+
+When a request reaches a gateway, Dome resolves its `model` value in this order:
+
+1. A pool with that exact name
+2. A direct model connection with that exact name
+3. A direct connection whose upstream model identifier matches
+4. The first pool in the configured order whose `match_when` predicate matches
+5. The workspace default pool
+
+An exact pool or model name takes precedence over conditional routing. When the requested name does not match directly, a `match_when` condition can select a pool based on the request or verified identity (for example `prompt_tokens.gt`). The full `match_when` dialect is on the [Pools](/reference/resources/model-pools#pool-resolution) reference. You can set a condition when you [create a pool](#create-pool), [change it later](#change-request-routing), and [move the pool](#move-pool) to control evaluation order.
+
+### Response caching
+
+Pool records store a cache TTL and cache scope for reusing responses to identical requests.
+
+<Callout type="warning">
+  The gateway does not read these settings during model dispatch. Setting `cache_ttl_secs` or `cache_scope` does not cache responses.
+</Callout>
+
+## Requirements
+
+Before you begin:
+
+- Authenticate to Dome and select a workspace
+- Connect at least one [model](/connect/models)
+- Have a [Gateway](/build/gateways) ready when you want the pool reachable
+
+### Permissions
+
+Pool operations require platform permissions. Each operation states its required permission inline.
+
+| Default roles | Permission | Grants |
+|---------------|------------|--------|
+| All workspace roles | `gateways.view` | List and inspect pools |
+| `admin`, `operator` | `gateways.manage` | Create, update, and remove pools and members |
+
+## Create pool
+
+Create a pool with a name that clients can put in the request's `model` field. A new pool has no members until you add them.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome models pool create production \
+      --routing-strategy priority_weighted \
+      --failover-max all \
+      --gateway prod-llms
+    ```
+
+    By default, the CLI uses priority-weighted routing and shares routing state across the workspace. It sets the cache TTL to `0` and allows Dome to try every eligible member after a failure.
+
+    <Callout icon="terminal">Reference: [`dome models pool create`](/cli/connect/models#create-pool)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_models_pool_create`
+
+    ```json
+    {
+      "name": "production",
+      "routing_strategy": "priority_weighted",
+      "failover_max": "all",
+      "gateways": ["prod-llms"]
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_models_pool_create`](/reference/mcp/pools#dome_models_pool_create)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    POST /v1/models/pools
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "name": "production",
+      "routing_strategy": "priority_weighted",
+      "strategy_scope": "workspace"
+    }
+    ```
+
+    Omit `failover_max` to let Dome try every eligible member after a failure. The endpoint returns the pool's UUID. The other management endpoints use this UUID to identify the pool. Attach the pool to a gateway in a separate operation.
+
+    <Callout icon="code">Reference: [`CreateLLMPool`](/api/tag/model-pools/create-llm-pool)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Create a model pool"
+    Create a model pool named "production" with priority-weighted routing and no failover limit. Attach it to the "prod-llms" Gateway.
+    ```
+  </Tab>
+</Tabs>
+
+Agents cannot call a pool until it has at least one model member and belongs to a gateway.
+
+## Update pool
+
+Update a pool to change its name, description, routing strategy, conditional routing criteria, cache settings, or failover limit. Setting a different default pool and changing the order of conditional routes are separate operations. When you rename a pool, managed agents configured to run on it follow the new name.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome models pool update production \
+      --description "Production chat routing"
+    ```
+
+    Only the flags you pass change.
+
+    <Callout icon="terminal">Reference: [`dome models pool update`](/cli/connect/models#update-pool)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_models_pool_update`
+
+    ```json
+    {
+      "name": "production",
+      "description": "Production chat routing"
+    }
+    ```
+
+    Only the parameters you send change.
+
+    <Callout icon="cpu">Reference: [`dome_models_pool_update`](/reference/mcp/pools#dome_models_pool_update)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    PATCH /v1/models/pools/{{POOL_ID}}
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "description": "Production chat routing"
+    }
+    ```
+
+    Omitted fields keep their stored values. An empty description does not clear the existing description. To clear `match_when`, set `match_when_provided` to `true`. To set the cache TTL to `0`, set `cache_ttl_secs_provided` to `true`. To let Dome retry every eligible member, set `failover_max_clear` to `true`.
+
+    <Callout icon="code">Reference: [`UpdateLLMPool`](/api/tag/model-pools/update-llm-pool)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Update a model pool"
+    Change the description of "production" to "Production chat routing". Keep its members and routing configuration unchanged.
+    ```
+  </Tab>
+</Tabs>
+
+### Change routing
+
+You can change how the pool selects its primary member. Refer to [Routing strategies](#routing-strategies) for when to use each strategy. When switching away from priority-weighted routing, existing priorities and weights remain stored but no longer affect selection.
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome models pool update production \
+      --routing-strategy most_quota_remaining \
+      --strategy-scope workspace
+    ```
+
+    <Callout icon="terminal">Reference: [`dome models pool update`](/cli/connect/models#update-pool)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_models_pool_update`
+
+    ```json
+    {
+      "name": "production",
+      "routing_strategy": "most_quota_remaining",
+      "strategy_scope": "workspace"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_models_pool_update`](/reference/mcp/pools#dome_models_pool_update)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    PATCH /v1/models/pools/{{POOL_ID}}
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "routing_strategy": "most_quota_remaining",
+      "strategy_scope": "workspace"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`UpdateLLMPool`](/api/tag/model-pools/update-llm-pool)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Change pool routing"
+    Change "production" to caller-scoped round-robin routing.
+    ```
+  </Tab>
+</Tabs>
+
+### Change request routing
+
+You can replace the conditions that select this pool during conditional routing. Send an empty `match_when` object to remove those conditions.
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome models pool update long-context \
+      --match-when '{"prompt_tokens":{"gt":50000}}'
+    ```
+
+    <Callout icon="terminal">Reference: [`dome models pool update`](/cli/connect/models#update-pool)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_models_pool_update`
+
+    ```json
+    {
+      "name": "long-context",
+      "match_when": {
+        "prompt_tokens": {
+          "gt": 50000
+        }
+      }
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_models_pool_update`](/reference/mcp/pools#dome_models_pool_update)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    PATCH /v1/models/pools/{{POOL_ID}}
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "match_when": {
+        "prompt_tokens": {
+          "gt": 50000
+        }
+      },
+      "match_when_provided": true
+    }
+    ```
+
+    <Callout icon="code">Reference: [`UpdateLLMPool`](/api/tag/model-pools/update-llm-pool)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Change conditional routing"
+    Route prompts over 50,000 tokens through the "long-context" pool.
+    ```
+  </Tab>
+</Tabs>
+
+### Change failover
+
+You can change how many additional members Dome may try after the primary fails. Refer to [Failover](#failover) for limit values and streaming behavior. After setting a numeric limit, you can use the API to let Dome try every eligible member again.
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome models pool update production \
+      --failover-max 2
+    ```
+
+    <Callout icon="terminal">Reference: [`dome models pool update`](/cli/connect/models#update-pool)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_models_pool_update`
+
+    ```json
+    {
+      "name": "production",
+      "failover_max": "2"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_models_pool_update`](/reference/mcp/pools#dome_models_pool_update)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    PATCH /v1/models/pools/{{POOL_ID}}
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "failover_max": 2
+    }
+    ```
+
+    To let Dome try every eligible member, send a separate update with `failover_max_clear`.
+
+    ```http
+    PATCH /v1/models/pools/{{POOL_ID}}
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "failover_max_clear": true
+    }
+    ```
+
+    <Callout icon="code">Reference: [`UpdateLLMPool`](/api/tag/model-pools/update-llm-pool)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Change pool failover"
+    Allow the "production" pool to retry up to two additional models.
+    ```
+  </Tab>
+</Tabs>
+
+## Get pool
+
+Retrieve a pool with its routing configuration and members. Check this information before an update or when you need to determine which models can serve requests to the pool.
+
+<Callout icon="key">Requires `gateways.view`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome models pool get production
+    ```
+
+    <Callout icon="terminal">Reference: [`dome models pool get`](/cli/connect/models#get-pool)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_models_pool_get`
+
+    ```json
+    {
+      "name": "production"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_models_pool_get`](/reference/mcp/pools#dome_models_pool_get)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    GET /v1/models/pools/{{POOL_ID}}?workspace_id={{WORKSPACE_ID}}
+    ```
+
+    The API returns the pool and its members.
+
+    <Callout icon="code">Reference: [`GetLLMPool`](/api/tag/model-pools/get-llm-pool)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Get a model pool"
+    Get the "production" pool with its routing configuration and members.
+    ```
+  </Tab>
+</Tabs>
+
+## List pools
+
+Retrieve the pools in a workspace with their routing strategies, conditional routing criteria, and default status. Use the list to find a pool to inspect, reorder, update, or remove.
+
+<Callout icon="key">Requires `gateways.view`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome models pool list
+    ```
+
+    <Callout icon="terminal">Reference: [`dome models pool list`](/cli/connect/models#list-pools)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_models_pool_list`
+
+    ```json
+    {}
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_models_pool_list`](/reference/mcp/pools#dome_models_pool_list)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    GET /v1/models/pools?workspace_id={{WORKSPACE_ID}}
+    ```
+
+    <Callout icon="code">Reference: [`ListLLMPools`](/api/tag/model-pools/list-llm-pools)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="List model pools"
+    List the model pools in this workspace with their routing strategy, predicate, and default state.
+    ```
+  </Tab>
+</Tabs>
+
+## Set default pool
+
+Set a pool as the workspace default. Dome uses the default only when a request does not match an exact model name, exact pool name, or conditional route. Setting a new default removes the previous default.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome models pool set-default production
+    ```
+
+    <Callout icon="terminal">Reference: [`dome models pool set-default`](/cli/connect/models#set-default-pool)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_models_pool_set_default`
+
+    ```json
+    {
+      "name": "production"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_models_pool_set_default`](/reference/mcp/pools#dome_models_pool_set_default)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    POST /v1/models/pools/{{POOL_ID}}/default
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}"
+    }
+    ```
+
+    Send an empty `pool_id` to clear the default without setting another pool.
+
+    <Callout icon="code">Reference: [`SetDefaultLLMPool`](/api/tag/model-pools/set-default-llm-pool)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Set the default model pool"
+    Set "production" as the default model pool for this workspace.
+    ```
+  </Tab>
+</Tabs>
+
+## Move pool
+
+Move a conditional pool earlier or later in the order Dome checks `match_when` predicates. This order affects only conditional routing and does not change routes that use an exact model or pool name.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome models pool move long-context \
+      --before production
+    ```
+
+    Pass exactly one of `--before` or `--after`.
+
+    <Callout icon="terminal">Reference: [`dome models pool move`](/cli/connect/models#move-pool)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_models_pool_move`
+
+    ```json
+    {
+      "name": "long-context",
+      "before": "production"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_models_pool_move`](/reference/mcp/pools#dome_models_pool_move)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Move a conditional pool"
+    Evaluate "long-context" immediately before "production".
+    ```
+  </Tab>
+</Tabs>
+
+## Manage members
+
+Pool members are the model connections that Dome can select to serve requests to the pool.
+
+### Add member
+
+Add a model to a pool. For a priority-weighted pool, priority defaults to `0` and weight defaults to `1`. Round-robin and least-loaded pools reject explicit priority or weight values.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome models pool member add production claude-prod \
+      --priority 0 \
+      --weight 4
+    ```
+
+    Run a separate command for each model because each member can have a different priority and weight.
+
+    <Callout icon="terminal">Reference: [`dome models pool member add`](/cli/connect/models#add-member)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_models_pool_member_add`
+
+    ```json
+    {
+      "pool": "production",
+      "connection": "claude-prod",
+      "priority": 0,
+      "weight": 4
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_models_pool_member_add`](/reference/mcp/pools#dome_models_pool_member_add)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    POST /v1/models/pools/{{POOL_ID}}/members
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "llm_model_connection_id": "{{CONNECTION_ID}}",
+      "priority": 0,
+      "weight": 4,
+      "enabled": true
+    }
+    ```
+
+    <Callout icon="code">Reference: [`CreateLLMPoolMember`](/api/tag/model-pools/create-llm-pool-member)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Add a pool member"
+    Add "claude-prod" to "production" at priority zero with weight four.
+    ```
+  </Tab>
+</Tabs>
+
+### List members
+
+Retrieve the models in a pool with each member's priority, weight, and stored `enabled` value.
+
+<Callout icon="key">Requires `gateways.view`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome models pool member list production
+    ```
+
+    <Callout icon="terminal">Reference: [`dome models pool member list`](/cli/connect/models#list-members)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_models_pool_member_list`
+
+    ```json
+    {
+      "pool": "production"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_models_pool_member_list`](/reference/mcp/pools#dome_models_pool_member_list)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    GET /v1/models/pools/{{POOL_ID}}/members?workspace_id={{WORKSPACE_ID}}
+    ```
+
+    <Callout icon="code">Reference: [`ListLLMPoolMembers`](/api/tag/model-pools/list-llm-pool-members)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="List pool members"
+    List the members of "production" with their priority and weight.
+    ```
+  </Tab>
+</Tabs>
+
+### Update member
+
+Update the priority or weight of a member in a priority-weighted pool. To move a model to another pool, remove it from the current pool and add it to the destination pool.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome models pool member update production claude-prod \
+      --priority 1 \
+      --weight 1
+    ```
+
+    <Callout icon="terminal">Reference: [`dome models pool member update`](/cli/connect/models#update-member)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_models_pool_member_update`
+
+    ```json
+    {
+      "pool": "production",
+      "connection": "claude-prod",
+      "priority": 1,
+      "weight": 1
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_models_pool_member_update`](/reference/mcp/pools#dome_models_pool_member_update)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    PATCH /v1/models/pools/{{POOL_ID}}/members/{{MEMBER_ID}}
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "priority": 1,
+      "weight": 1
+    }
+    ```
+
+    <Callout icon="code">Reference: [`UpdateLLMPoolMember`](/api/tag/model-pools/update-llm-pool-member)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Update a pool member"
+    Change "claude-prod" in "production" to priority one and weight one.
+    ```
+  </Tab>
+</Tabs>
+
+### Remove member
+
+Remove a model from a pool to stop the pool from sending requests to that model. Removing the member does not delete the model connection, so other pools and direct gateway routes can still use it.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome models pool member rm production claude-prod
+    ```
+
+    <Callout icon="terminal">Reference: [`dome models pool member rm`](/cli/connect/models#remove-member)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_models_pool_member_remove`
+
+    ```json
+    {
+      "pool": "production",
+      "connection": "claude-prod"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_models_pool_member_remove`](/reference/mcp/pools#dome_models_pool_member_remove)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    DELETE /v1/models/pools/{{POOL_ID}}/members/{{MEMBER_ID}}?workspace_id={{WORKSPACE_ID}}
+    ```
+
+    <Callout icon="code">Reference: [`DeleteLLMPoolMember`](/api/tag/model-pools/delete-llm-pool-member)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Remove a pool member"
+    Remove "claude-prod" from "production" without deleting the model.
+    ```
+  </Tab>
+</Tabs>
+
+## Remove pool
+
+Remove a pool to delete its routing configuration and memberships. Removing the pool does not delete its model connections.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Callout type="warning">
+  Removing a pool also removes it from every gateway. Check what depends on it before deleting it. Without reassignment, managed agents configured to run on it cannot run, and agents with no other model grant lose model access.
+</Callout>
+
+Inspect dependencies before deleting or renaming a pool:
+
+```bash
+dome models pool usage production
+```
+
+The result identifies dependent managed agents, agents granted the pool, and gateways. Names can be omitted when you cannot view the corresponding agent type. Use `dome_models_pool_usage` for the same check through MCP.
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome models pool rm production --reassign-to fallback
+    ```
+
+    <Callout icon="terminal">Reference: [`dome models pool rm`](/cli/connect/models#remove-pool)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_models_pool_remove`
+
+    ```json
+    {
+      "name": "production",
+      "reassign_to": "fallback"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_models_pool_remove`](/reference/mcp/pools#dome_models_pool_remove)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    DELETE /v1/models/pools/{{POOL_ID}}?workspace_id={{WORKSPACE_ID}}
+    ```
+
+    <Callout icon="code">Reference: [`DeleteLLMPool`](/api/tag/model-pools/delete-llm-pool)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Remove a model pool"
+    Remove the "production" pool after confirming no clients still use its name.
+    ```
+  </Tab>
+</Tabs>
+
+`--reassign-to` (or `reassign_to`) moves dependent managed agents to a replacement model or pool and grants it to agents that held the deleted pool. Omit it only when you intend to remove that access. The CLI asks for confirmation when dependents exist; use `--yes` only in an unattended workflow that has already checked usage.
+
+## Pool activity metrics
+
+Read pool operational metrics from `GET /api/v1/metrics/pools/{pool_id}` (workspace-scoped; same time-range params as other metrics routes). The response includes `failover_served_calls`, `request_failures`, a `members` breakdown, and time-series buckets for the window.
+
+Use `failover_served_calls` to see how often traffic landed on a non-primary member after a failure. LLM audit events also carry `pool_id` so you can filter spend and denials by pool. Workspace and per-agent totals are on [Token usage and cost](/operate/observe#token-usage-and-cost).
+
+## Attach to a Gateway
+
+Attach a pool to a gateway so agents can request the pool by name at that gateway's model endpoints. The attachment makes the pool reachable but does not authorize an agent to call it. The agent must allow the gateway, and rules must permit both the pool and selected model.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome models pool gateways add production prod-llms
+    ```
+
+    <Callout icon="terminal">Reference: [`dome models pool gateways add`](/cli/connect/models#gateway-membership)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_gateways_model_pool_add`
+
+    ```json
+    {
+      "gateway": "prod-llms",
+      "pool": "production"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_gateways_model_pool_add`](/reference/mcp/gateway#dome_gateways_model_pool_add)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Publish a model pool"
+    Add the "production" model pool to the "prod-llms" Gateway.
+    ```
+  </Tab>
+</Tabs>
+
+### Verify pool
+
+Call the pool through the gateway with an agent API key. A successful response confirms the pool is reachable, rules permit the route, and at least one member can serve the request.
+
+```python title="OpenAI-compatible client"
+from openai import OpenAI
+
+client = OpenAI(
+    api_key="{{DOME_AGENT_KEY}}",
+    base_url="https://{{GATEWAY_HOST}}/gateways/{{GATEWAY_ID}}/v1",
+)
+
+response = client.chat.completions.create(
+    model="production",
+    messages=[{"role": "user", "content": "Return OK."}],
+)
+```
+
+If Dome cannot find the pool for the request, check the pool's gateway membership and model members. If Dome denies the request, check the agent's allowed resources and rules. Audit events record which model served the request and whether Dome attempted failover.
+
+## Next steps
+
+- [Pools](/concepts/resources/model-pools) concept for how routing and failover work and [Pools](/reference/resources/model-pools) reference for strategies and `match_when`
+- [Connect more models](/connect/models) to add providers or failover capacity
+- Manage membership and grants in [Gateways](/build/gateways)
+- Configure model and pool spend limits in [Cost Quotas](/govern/quotas)

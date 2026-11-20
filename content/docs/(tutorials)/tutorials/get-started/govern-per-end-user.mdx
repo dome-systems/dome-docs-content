@@ -1,0 +1,604 @@
+---
+title: Govern per end user
+sidebarTitle: Govern per end user
+description: "Give each user different tool access and answers from the same agent."
+---
+
+A shared agent has a shared problem. If the HR application can read every employee record, then everyone who talks to it can, whatever their own access happens to be. Copying your permission model into the agent's prompt is not a fix. The model can be talked out of it.
+
+With [standing identity](/concepts/identity-patterns), the agent acts as itself — every caller gets the same Cedar answer from the agent's grants. With [delegated identity](/concepts/identity-patterns), each call carries a verified person, and Cedar authorizes on that person instead.
+
+<Prompt
+  description="Hand this to an AI agent. It sets up act-as for Eva, Alice, and Carol on the HR application, then shows different answers from the same UI."
+  icon="sparkles"
+  actions={["copy", "cursor"]}
+>
+Set up a Dome agent with **delegated identity** (`delegated-hr`) so each end user's permissions apply, then show me the same application returning different answers for Eva Martinez (HR), Alice Johnson (self), and Carol Williams (peer). Contrast this with standing identity on `hr-assistant` from earlier tutorials.
+
+Use the Vite + Hono reference app at https://github.com/dome-systems/demo-hr-desk.
+
+First, show me this plan and ask me to confirm before running anything:
+
+1. Confirm the workspace from earlier Get Started tutorials is still active
+2. Explain standing (`hr-assistant`) vs delegated (`delegated-hr`), then register `delegated-hr` with act-as required
+3. Deploy Cedar: directory open to everyone, get_employee for HR or self (act_as.sub == employee_id), get_salary HR-only, plus the pool llm rule for Chat
+4. Simulate Eva, Alice (self on E001), and Carol (denied on E001) before any live call
+5. Point the application at delegated-hr: checkout tutorial/govern-per-end-user, put token + DOME_ACTAS_SECRET in server .env, run it, and explain how the application signs X-Dome-Act-As
+6. Walk me through Act as Eva / Alice / Carol on tools (Who is E001? and salary). Same buttons, different outcomes
+7. Show me the decisions in the audit trail, each naming the end user
+
+Follow the commands at https://developer.domesystems.ai/agent/tutorials/get-started/govern-per-end-user.md exactly.
+
+Non-negotiable rules:
+
+- Narrate as you go. Before each step, tell me in one or two sentences what you are about to do and why it matters. Do not silently run the whole flow.
+- Confirm the active context. Run `dome context current` and confirm the workspace name starts with `studio-`. If it does not, stop and ask me.
+- Never print the `dome_...` agent token or the act-as signing secret in chat. Write both into `.env` and confirm it is gitignored.
+- The browser must never call Dome. Only the Hono backend holds `DOME_TOKEN` and `DOME_ACTAS_SECRET` and sets `X-Dome-Act-As`. Do not put either secret in client code, Vite env, or the browser.
+- Do not put users' names or groups in a prompt, a system message, or an if-statement that decides allow/deny in my code. The whole point is that Cedar decides, not the application.
+- Do not widen the rules to make Carol's denied call succeed. The difference between personas is the result I am asking for.
+- Use `dome rules simulate` with act-as flags and `--eval-arguments` to check identities before running any live call.
+- After each create step, give me a markdown link into the Dome console for that resource. Derive the base URL from `dome auth status` → `Server`.
+- Never report a step as done without showing the command output.
+
+Show me clearly that the runs differ only in the signed identity passed to Dome, not in the code path taken.
+
+Then offer to run `dome audit query --limit 20` so I can see each decision attributed to both the agent and the person.
+</Prompt>
+
+In this tutorial, you will switch from standing `hr-assistant` to a delegated agent, `delegated-hr`. Eva (HR), Alice (self), and Carol (peer) click the same buttons and get different answers. The app has no logic that knows the difference.
+
+To do this, you will:
+
+<Steps>
+  <Step title="Register a delegated agent">
+    Configure act-as verification on `delegated-hr` and make it mandatory. Leave `hr-assistant` standing.
+  </Step>
+  <Step title="Write rules about the person">
+    Deploy Cedar that reads groups and compares `act_as.sub` to tool arguments.
+  </Step>
+  <Step title="Check the identities">
+    Simulate Eva, Alice, and Carol before making a live call.
+  </Step>
+  <Step title="How this application implements it">
+    Keep the token and act-as secret server-side. Sign per request.
+  </Step>
+  <Step title="Verify the results">
+    See different answers from one UI, and each in audit.
+  </Step>
+</Steps>
+
+## Background
+
+Earlier tutorials used **`hr-assistant`** standing. This one registers a second agent, **`delegated-hr`**, that requires act-as. Cedar reads `principal.act_as`, so Eva, Alice, and Carol can get different answers for the same tool.
+
+| | `hr-assistant` (standing) | `delegated-hr` (delegated) |
+|--|--|--|
+| **Who authorizes** | The agent's own grants | The verified human on `principal.act_as` |
+| **Credential** | Bearer token only | Bearer token + required `X-Dome-Act-As` |
+| **Same tool, same record** | Identical outcome for everyone | Eva allow · Alice self · Carol deny on `get_employee` E001 |
+| **Anonymous call** | Allowed under standing grants | Rejected (`--actas-required`) |
+
+You register a **second** agent rather than flipping `hr-assistant` to require act-as. Those settings would break earlier tutorials that call with no person attached. `delegated-hr` is the application agent that borrows each end user's identity.
+
+[Act-as](/concepts/agents/identity#act-as-identity) carries that person on each call. The boundary is enforced at the gateway, not in the model's prompt.
+
+That only works if **your backend** talks to Dome. Keep the token and signing secret on the server; the browser only says who is using the app. A frontend that called Dome directly could forge or omit act-as.
+
+## Prerequisites
+
+For this tutorial, you will need:
+
+- [Govern your first agent](/tutorials/get-started/govern-your-first-agent) completed, with its workspace still active. This tutorial reuses that workspace, its `demo-hr` connection, and its Default gateway.
+- [Call a model through a pool](/tutorials/get-started/call-a-model-through-a-pool) completed if you want **Chat** under `delegated-hr` (the `employee-summary` pool).
+- [Build a governed app](/tutorials/get-started/build-a-governed-app) completed, or the [demo-hr-desk](https://github.com/dome-systems/demo-hr-desk) repo cloned as below.
+- Node.js 18 or later.
+
+Confirm the workspace before you start:
+
+```bash
+dome context current
+```
+
+The workspace should read `studio-get-started`. Switch back if it does not:
+
+```bash
+dome context current
+```
+
+Clone the reference app if you do not already have it from the previous tutorial:
+
+```bash
+git clone https://github.com/dome-systems/demo-hr-desk.git
+cd demo-hr-desk
+npm install
+cp .env.example .env
+```
+
+If you already cloned it for [Build a governed app](/tutorials/get-started/build-a-governed-app), just `cd` into that directory. You will check out this tutorial's branch when you wire act-as.
+
+> This tutorial runs entirely in a workspace. In a production workspace, the identity provider is wired once by an operator, and the rules that read its claims are owned by security.
+
+## Register a delegated agent
+
+Register **`delegated-hr`** rather than reusing **`hr-assistant`**. Standing vs delegated is chosen [per agent](/concepts/identity-patterns). `hr-assistant` stays the standing editor/curl agent from earlier tutorials. `delegated-hr` is the purpose-built application agent: it authenticates as itself, but every governed call must present a verified end user, and Cedar authorizes on that person.
+
+This tutorial uses **HMAC** — a shared secret your backend uses to sign act-as. That is fine for a workspace. In production, use **OIDC** instead: register with `--actas-method oidc` and forward a JWT from your identity provider so Dome verifies the person against the IdP, not a secret your service holds.
+
+Generate the signing secret first so you can save it:
+
+```bash
+export ACTAS_SECRET=$(openssl rand -hex 32)
+echo "$ACTAS_SECRET"
+```
+
+```bash
+dome agents register --name delegated-hr \
+  --actas-method hmac \
+  --actas-hmac-secret "$ACTAS_SECRET" \
+  --actas-required \
+  --if-not-exists
+```
+
+Two flags carry the meaning:
+
+- `--actas-method hmac` tells the gateway how to verify the identity your service presents. Shared-secret HMAC is the workspace path here; production uses `oidc`.
+- `--actas-required` rejects any call arriving without an identity. Without it, act-as is accepted when present and ignored when absent, and a caller who omits it gets the agent's own permissions.
+
+Mint a credential for the application:
+
+```bash
+dome agents create-key delegated-hr --name delegated-hr-service
+```
+
+<Callout type="info">
+
+`--actas-allowed-group`, `--actas-allowed-email`, and `--actas-allowed-subject` add an admission-level allowlist, rejecting identities outside it before Cedar runs. That is a coarse gate for narrowing which population an agent may serve. Leave it unset here so Cedar makes every decision.
+
+</Callout>
+
+## Write rules about the person
+
+Cedar sees the end user as `principal.act_as`, a record carrying `sub`, `email`, `roles`, `groups`, and any custom `claims` the verified identity provided. Rules can read those the same way they read anything else.
+
+This policy does four things:
+
+- Anyone with a verified identity can list employees and view the org chart
+- Someone in the `hr` group can open any employee record and read salary
+- Anyone else can open only their own record (`act_as.sub` matches `employee_id`)
+- Calls with no act-as identity, and tools outside that set, are denied
+
+So Eva (HR) gets Alice's record and salary; Alice gets her own record only; Carol gets neither for Alice.
+
+The reference repo ships `delegated-hr.cedar`. Create it (or copy from the clone):
+
+```cedar title="delegated-hr.cedar"
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:discover",
+  resource
+);
+
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:call",
+  resource
+) when {
+  resource in [
+    Dome::MCPTool::"demo-hr/hr/list_employees",
+    Dome::MCPTool::"demo-hr/hr/org_chart"
+  ]
+};
+
+// HR can open any employee; others only their own record (act_as.sub == employee_id).
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"demo-hr/hr/get_employee"
+) when {
+  principal has act_as &&
+  (
+    principal.act_as.groups.contains("hr") ||
+    (
+      resource has arguments &&
+      resource.arguments has employee_id &&
+      resource.arguments.employee_id == principal.act_as.sub
+    )
+  )
+};
+
+// Payroll is HR-only.
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"demo-hr/finance/get_salary"
+) when {
+  principal has act_as && principal.act_as.groups.contains("hr")
+};
+
+// Overrides the auto-generated agent_spec permit that opens every Default gateway tool.
+forbid(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"demo-hr/hr/get_employee"
+) unless {
+  principal has act_as &&
+  (
+    principal.act_as.groups.contains("hr") ||
+    (
+      resource has arguments &&
+      resource.arguments has employee_id &&
+      resource.arguments.employee_id == principal.act_as.sub
+    )
+  )
+};
+
+forbid(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"demo-hr/finance/get_salary"
+) unless {
+  principal has act_as && principal.act_as.groups.contains("hr")
+};
+
+forbid(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:call",
+  resource
+) unless {
+  resource in [
+    Dome::MCPTool::"demo-hr/hr/list_employees",
+    Dome::MCPTool::"demo-hr/hr/org_chart",
+    Dome::MCPTool::"demo-hr/hr/get_employee",
+    Dome::MCPTool::"demo-hr/finance/get_salary"
+  ]
+};
+```
+
+The `principal has act_as` guard matters. `act_as` is absent from the entity entirely when no identity was verified, and reading an absent attribute is an evaluation error rather than a false. Guard it, and an anonymous call falls through to a clean deny.
+
+Self-lookup compares `resource.arguments.employee_id` to `principal.act_as.sub`. Demo personas set `sub` to the employee id (E005 Eva, E001 Alice, E003 Carol), so Alice can open her own record while Carol cannot open Alice's. Payroll (`get_salary`) stays HR-only.
+
+If you completed [Call a model through a pool](/tutorials/get-started/call-a-model-through-a-pool), Chat still needs `llm:invoke` on `employee-summary`. Tool rules do not cover inference. Create `delegated-hr-llm.cedar` (same shape as `hr-assistant-llm.cedar`, scoped to this agent):
+
+```cedar title="delegated-hr-llm.cedar"
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"llm:invoke",
+  resource is Dome::LLMModel
+) when {
+  resource.pool == "employee-summary"
+};
+
+forbid(
+  principal is Dome::Agent,
+  action == Dome::Action::"llm:invoke",
+  resource
+) unless {
+  resource has pool && resource.pool == "employee-summary"
+};
+```
+
+Deploy both files scoped to the new agent, grant gateway access, and (for Chat) permit the pool:
+
+```bash
+dome rules apply delegated-hr.cedar delegated-hr-llm.cedar --agent delegated-hr --name delegated-hr
+dome gateways access grant Default delegated-hr
+```
+
+Apply both Cedar files in one deploy so the tool rules and the pool rule stay active together. A second `dome rules apply` at the same agent scope replaces the previous bundle rather than layering beside it.
+
+## Check the identities
+
+Simulation accepts an end-user identity, so you can test a rule that reads `act_as` without a signing secret, a service, or a live call. Pass `--eval-arguments` whenever the rule compares `employee_id`.
+
+Eva (HR) looking up Alice:
+
+```bash
+dome rules simulate --agent delegated-hr --action mcp:call \
+  --resource demo-hr/hr/get_employee --resource-type mcp_tool \
+  --eval-arguments '{"employee_id":"E001"}' \
+  --actas-sub E005 --actas-email eva@example.com --actas-groups hr
+```
+
+Expect `ALLOW`. Alice looking up herself (`sub` E001):
+
+```bash
+dome rules simulate --agent delegated-hr --action mcp:call \
+  --resource demo-hr/hr/get_employee --resource-type mcp_tool \
+  --eval-arguments '{"employee_id":"E001"}' \
+  --actas-sub E001 --actas-email alice@example.com --actas-groups engineering
+```
+
+Expect `ALLOW`. Carol looking up Alice:
+
+```bash
+dome rules simulate --agent delegated-hr --action mcp:call \
+  --resource demo-hr/hr/get_employee --resource-type mcp_tool \
+  --eval-arguments '{"employee_id":"E001"}' \
+  --actas-sub E003 --actas-email carol@example.com --actas-groups engineering
+```
+
+Expect `DENY`. Confirm salary is HR-only:
+
+```bash
+dome rules simulate --agent delegated-hr --action mcp:call \
+  --resource demo-hr/finance/get_salary --resource-type mcp_tool \
+  --eval-arguments '{"employee_id":"E001"}' \
+  --actas-sub E005 --actas-email eva@example.com --actas-groups hr
+
+dome rules simulate --agent delegated-hr --action mcp:call \
+  --resource demo-hr/finance/get_salary --resource-type mcp_tool \
+  --eval-arguments '{"employee_id":"E001"}' \
+  --actas-sub E001 --actas-email alice@example.com --actas-groups engineering
+```
+
+Expect `ALLOW` then `DENY`. Confirm that the directory stays open to everyone by swapping the resource for `demo-hr/hr/list_employees`, and that omitting the act-as flags entirely denies the employee lookup rather than erroring.
+
+This is the loop worth keeping. A rule that reads identity claims has more branches than a rule that reads a tool name, and simulation is where you find the branch you forgot.
+
+## How this application implements it
+
+Act-as is a **server-side** concern. The gateway authenticates the agent with `Authorization: Bearer dome_…` and the end user with `X-Dome-Act-As`. Both headers are secrets your browser must never hold.
+
+| Layer | Holds | Talks to Dome? |
+|---|---|---|
+| Frontend (`src/App.tsx`) | Persona id only (`eva` / `alice` / `carol`) | No. Only `POST /api/chat` and `POST /api/tool` on your origin |
+| Backend (Hono proxy) | `DOME_TOKEN`, `DOME_ACTAS_SECRET` | Yes. Signs act-as and calls `/mcp` and `/v1/chat/completions` |
+
+Same frontend/backend split as [Build a governed app](/tutorials/get-started/build-a-governed-app#how-this-application-implements-it). With act-as the stakes are higher: if the browser held the agent token or signing secret, anyone with DevTools could impersonate anyone.
+
+Check out this tutorial's branch, which adds the Act as picker and HMAC signing, then point the **server** at `delegated-hr`:
+
+```bash
+cd demo-hr-desk
+git fetch origin
+git checkout tutorial/govern-per-end-user
+```
+
+Update `.env` with the **delegated-hr** token and the secret you generated above. These values are read only by the Node process, never shipped to Vite or the browser:
+
+```bash title=".env"
+DOME_TOKEN=dome_...
+DOME_GATEWAY_URL=https://GATEWAY_HOST/gateways/DEFAULT_GATEWAY_ID
+DOME_POOL=employee-summary
+DOME_ACTAS_SECRET=...
+```
+
+```bash
+dome context current
+dome gateways list
+```
+
+<Callout type="warning">
+
+Do not prefix these with `VITE_`. Do not put `DOME_TOKEN` or `DOME_ACTAS_SECRET` in client bundles, public env, or browser storage. The frontend must not import them and must not `fetch` the gateway URL.
+
+</Callout>
+
+### How the application signs
+
+The browser only sends a persona id (`eva` | `alice` | `carol`). The Hono proxy maps it to claims, signs with the server secret, and sets `X-Dome-Act-As` on the outbound Dome request. Cedar never sees a branch in `App.tsx`.
+
+Personas are fixed claims for the demo. There is still no allow/deny logic in the UI:
+
+```ts title="server/actas.ts"
+export const PERSONAS = {
+  eva: {
+    id: "eva" as const,
+    label: "Eva Martinez",
+    detail: "HR Director",
+    sub: "E005",
+    email: "eva@example.com",
+    groups: ["hr"],
+  },
+  alice: {
+    id: "alice" as const,
+    label: "Alice Johnson",
+    detail: "Senior Engineer",
+    sub: "E001",
+    email: "alice@example.com",
+    groups: ["engineering"],
+  },
+  carol: {
+    id: "carol" as const,
+    label: "Carol Williams",
+    detail: "Staff Engineer",
+    sub: "E003",
+    email: "carol@example.com",
+    groups: ["engineering"],
+  },
+} as const;
+```
+
+`signHMACActAs` builds the envelope the gateway verifies: identity fields + `_ts`, HMAC-SHA256 over canonical JSON `|` timestamp, then standard base64 of the signed payload. That string is the `X-Dome-Act-As` header value.
+
+```ts title="server/actas.ts"
+export function signHMACActAs(
+  secret: string,
+  identity: ActAsIdentity,
+  ts = Math.floor(Date.now() / 1000),
+): string {
+  if (!identity.sub && !identity.email) {
+    throw new Error("act-as identity requires sub or email");
+  }
+
+  const payload: Record<string, unknown> = { _ts: ts };
+  if (identity.sub) payload.sub = identity.sub;
+  if (identity.email) payload.email = identity.email;
+  if (identity.groups?.length) payload.groups = identity.groups;
+  // roles / claims omitted when empty
+
+  const canonical = `${canonicalJson(payload)}|${ts}`;
+  const digest = createHmac("sha256", secret).update(canonical).digest();
+  payload._signature = digest.toString("base64url");
+
+  return Buffer.from(canonicalJson(payload)).toString("base64");
+}
+
+export function actAsHeaderValue(identity: ActAsIdentity): string | undefined {
+  const secret = process.env.DOME_ACTAS_SECRET?.trim();
+  if (!secret) return undefined;
+  return signHMACActAs(secret, identity);
+}
+```
+
+Tool and chat routes attach the **full** signed header on the real gateway request. `redactActAs` is only for the **View gateway call** sheet. It truncates the header in the UI trace so the signed blob is not dumped into the browser transcript. Dome still receives the unredacted value.
+
+```ts title="server/dome.ts"
+if (actAs) {
+  const signed = actAsHeaderValue(actAs);
+  if (signed) {
+    headers["X-Dome-Act-As"] = signed;                 // sent to Dome
+    displayHeaders["X-Dome-Act-As"] = redactActAs(signed); // shown in the sheet
+  }
+}
+```
+
+```ts title="server/types.ts"
+export function redactActAs(header: string) {
+  if (header.length <= 16) return "<signed act-as>";
+  return `${header.slice(0, 12)}…(${header.length} chars)`;
+}
+```
+
+Start the app:
+
+```bash
+npm run dev
+```
+
+Open [http://localhost:5173](http://localhost:5173). The **Act as** bar appears when `DOME_ACTAS_SECRET` is set.
+
+### Click through Eva, Alice, and Carol
+
+Stay on **tools** for the clearest contrast:
+
+1. Select **Eva Martinez** (HR · `hr` · E005).
+2. Click **List employees**. Allowed.
+3. Click **Who is E001?**. Allowed. Email arrives as `[REDACTED]` (filter still applies).
+4. Click **What is Alice's salary?**. Allowed (HR-only).
+5. Select **Alice Johnson** (Engineering · E001).
+6. Click **Who is E001?**. Allowed (self: `sub` matches `employee_id`). Email still redacted.
+7. Click **What is Alice's salary?**. Denied.
+8. Select **Carol Williams** (Engineering · E003).
+9. Click **Who is E001?**. Denied. Open **View gateway call** and confirm `X-Dome-Act-As` on the request. The response carries the Cedar reason.
+
+If you want, try the same walk on **Chat** — ask **Who is E001 and how do I reach them?** as Eva, then Alice, then Carol. Same prompt, different outcomes. Model and tool steps both carry the signed identity.
+
+| Persona | List employees | Who is E001? | Alice's salary |
+|---|---|---|---|
+| Eva (`hr` · E005) | Allowed | Allowed · redacted | Allowed |
+| Alice (E001) | Allowed | Allowed · self · redacted | Denied |
+| Carol (E003) | Allowed | Denied | Denied |
+
+One UI, one agent, one credential, three answers. Alice can still see herself. Carol cannot open Alice's record. Only Eva reaches payroll.
+
+<Callout type="info">
+
+For a real identity provider, configure the agent with `--actas-method oidc` and forward the JWT your application already validated as `X-Dome-Act-As`. The gateway verifies the signature against the provider's discovery document, so your service never becomes the authority on who the caller is. HMAC is the workspace path. [Govern callers with OIDC](/tutorials/production/govern-callers-with-oidc) builds that production path against your own identity provider.
+
+</Callout>
+
+<Accordions>
+<Accordion title="Troubleshooting">
+  These are remediation steps if you get stuck:
+
+  - The Act as bar does not appear.
+
+    `DOME_ACTAS_SECRET` is missing or empty. Restart `npm run dev` after writing `.env`. Confirm `/api/config` returns `"actAsEnabled": true`.
+
+  - `400` with `act-as header required`.
+
+    The agent is registered with `--actas-required` and the call carried no identity. Confirm the app is sending a persona and that the secret is set so the proxy signs.
+
+  - `403` with `act-as verification failed`.
+
+    The signature did not verify. Usually the secret in `.env` is not the one the agent holds. Rotate both to a known value:
+
+    ```bash
+    dome agents update delegated-hr --actas-hmac-secret "$NEW_SECRET"
+    ```
+
+  - `403` with `agent act-as method does not meet workspace policy`.
+
+    The workspace requires a stronger verification method than this agent uses, typically `oidc` rather than `hmac`. Check the policy before weakening anything:
+
+    ```bash
+    dome agents get delegated-hr
+    ```
+
+  - Both users get the same answer.
+
+    The rule is not reading the claim you think it is, or you are still on the `hr-assistant` token. Simulate both identities again and confirm `.env` uses the `delegated-hr` key:
+
+    ```bash
+    dome rules simulate --agent delegated-hr --action mcp:call \
+      --resource demo-hr/hr/get_employee --resource-type mcp_tool \
+      --actas-sub alice --actas-groups engineering
+    ```
+
+  - A `VITE_` env var or browser network tab shows calls to the gateway / holds `dome_…`.
+
+    Wrong shape. Move the token and act-as secret back to server `.env` and call Dome only from the Hono proxy. The frontend may only hit `/api/*` on your origin.
+
+  - Chat fails with a pool / llm error while tools work.
+
+    Apply the pool rule to this agent:
+
+    ```bash
+    dome rules apply delegated-hr.cedar delegated-hr-llm.cedar --agent delegated-hr --name delegated-hr
+    ```
+
+  - The employee record arrives with a masked email for Eva or Alice.
+
+    That is the response filter from the first tutorial, still doing its job on this connection. Filters apply to the tool, not to the agent, so a second agent inherits them.
+</Accordion>
+</Accordions>
+
+## Verify the results
+
+Confirm both decisions are on the record:
+
+```bash
+dome audit query --limit 20
+```
+
+Each event carries the agent and the verified end user, so a denial is attributable to a person rather than to a shared service account. That is the audit property act-as buys you, and it is the one that matters during an investigation.
+
+To read only the rejection:
+
+```bash
+dome audit query --results denied --limit 10
+```
+
+A rejected identity is a completed `tool.call` with `result=denied`, just like a policy refusal. Use `denial.reason`: `act_as_rejected` means the assertion did not verify, while `policy_denied` or `permission_denied` means authorization refused the call.
+
+<Callout type="info">
+
+Quotas take end users as subjects too. `dome quotas set --subject act-as --act-as E005 --limit 20` caps one person's inference spend, which is how you stop a single runaway session from consuming a team's budget.
+
+</Callout>
+
+## Clean up
+
+This is the last tutorial in the Get Started track. Delete the workspace to remove the agents, rules, and grants together:
+
+```bash
+dome workspaces delete studio-get-started
+```
+
+To keep the workspace and retire only this agent:
+
+```bash
+dome agents revoke-key delegated-hr delegated-hr-service
+```
+
+Rotate the act-as secret anywhere you copied it. It signs identity assertions, so treat it like the credential it is. Clear `DOME_ACTAS_SECRET` (or switch back to the `hr-assistant` token) if you return to earlier tutorials.
+
+## Next steps
+
+You learned how to require verified end-user identity, authorize from the person, and attribute decisions to both agent and user. Continue with:
+
+- [Delegated agents](/build/agents/delegated) to configure verification providers and Act-As
+- [Simulate Rules](/govern/rules/simulate) to probe Act-As decisions before deploy

@@ -1,0 +1,69 @@
+---
+title: Permissions
+description: How platform RBAC differs from runtime agent authorization
+---
+
+import { permissions } from '@/snippets/glossary';
+
+<p>{permissions}</p>
+
+## Two authorization layers
+
+Dome separates who can administer the platform from what agents may do at runtime. The layers look different on purpose:
+
+| Layer | Principal | Governs | Decision point |
+|-------|-----------|---------|----------------|
+| **Platform RBAC** | User, service account, or scoped API key | CLI commands, API endpoints, and MCP management tools | Dome API / CLI / MCP |
+| **agent authorization** | Registered agent with optional act-as identity | tool calls and model invocations | gateway request |
+
+Granting a user `operator` does not authorize an agent to call a tool. A Cedar `permit` does not grant that user platform administration.
+
+Both layers fail closed and record audit events. Apply each layer independently.
+
+## How roles cascade
+
+RBAC roles are assigned at workspace, tenant, or organization scope. Higher-scope roles cascade their equivalent workspace permissions into every workspace below them. Refer to [Scopes](/concepts/platform/scopes) concept for the hierarchy.
+
+Workspace roles cover day-to-day work in one workspace (`admin`, `operator`, `security`, `developer`, `viewer`, plus reserved `impersonator`). Tenant roles add tenant-wide operations and can cascade a workspace role into every workspace in the tenant. Organization roles are the broadest standing grants and cascade into every tenant and workspace in the org.
+
+Use tenant or org roles when someone needs the same access everywhere below that scope. Use a workspace role when access should stay local. Exact permission IDs and role matrices are on the [Permissions](/reference/permissions) reference.
+
+Org `owner` and `admin` hold org-scoped `tenants.manage`, which also gates org-membership management (`ListOrgMembers`, `AssignOrgRole`, `RemoveOrgMember`), and org-scoped `audit.view`, which widens [audit reads across the organization](/operate/audit#query-events-across-an-organization). Only an owner may grant or remove the `owner` role. Removing the last owner returns `FailedPrecondition`.
+
+Organization billing and model-rate administration use separate permissions. `billing.manage` covers the organization's plan, seats, invoices, and payment methods. `modelrates.manage` covers the organization's upstream provider contract rates. Owners and admins hold both by default, but an org-scoped API key can be limited to one.
+
+### Cross-domain workspace invitees
+
+When a user is invited to a workspace and their email domain does not match any of the org's verified domains, Dome auto-provisions tenant and org memberships with role `unprivileged` rather than `member`. That keeps cross-domain collaborators scoped to the workspaces they were explicitly invited to.
+
+- The invitee receives no org or tenant permissions, only the workspace role chosen by the inviter.
+- The invitee is excluded from auto-enrollment into open tenants on first login.
+- The invitee does not block the first-user-becomes-owner / first-user-becomes-admin auto-promotion logic.
+- If the org later verifies the invitee's domain, existing `unprivileged` memberships are promoted to `member` automatically. Previously assigned higher roles are preserved.
+- If the invitee's last workspace membership in a tenant is removed (or the workspace itself is deleted), the orphaned `unprivileged` tenant and org memberships are cleaned up automatically. Higher operator-granted roles survive workspace removal.
+
+If the org has no verified domains yet, all workspace invitees default to `member` so onboarding stays workable.
+
+## Agent authorization is separate
+
+Agent requests are authorized with Cedar on each governed call. Platform RBAC never substitutes for a Cedar `permit`. Refer to [Authorization Model](/concepts/architecture/authorization-model) concept for entities, permit/forbid semantics, and effective policy. Write and deploy rules on [Authorize Access](/govern/rules).
+
+## How RBAC maps to surface visibility
+
+RBAC roles filter what you see across surfaces.
+
+- **CLI** hides commands your role cannot use in the `--help` menu. Invoking one you lack permission for returns an authorization error.
+- **API** checks permissions before executing endpoints. Unauthorized calls return 403.
+- **MCP** filters tools by role. Tools outside your permission set are hidden entirely.
+
+After selecting a workspace context, only tools matching your role's permissions are available. See the [MCP Server Reference](/reference/mcp) for the tool list with permission requirements.
+
+## Next steps
+
+With that platform RBAC model in mind, continue with:
+
+- [Permissions](/reference/permissions) reference for role and permission catalogs
+- [Manage Access](/manage/access) to assign members and create platform keys
+- [Scopes](/concepts/platform/scopes) concept for the hierarchy
+- [Authorization Model](/concepts/architecture/authorization-model) concept for Cedar
+- [Authorize Access](/govern/rules) to write and deploy rules

@@ -1,0 +1,9 @@
+{
+  "title": "Controls",
+  "defaultOpen": true,
+  "pages": [
+    "rules",
+    "guards",
+    "quotas"
+  ]
+}

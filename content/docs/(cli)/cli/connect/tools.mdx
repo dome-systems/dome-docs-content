@@ -1,0 +1,307 @@
+---
+title: dome tools
+description: Manage MCP server connections the gateway proxies for agents
+---
+
+`dome tools` registers upstream MCP servers (the "tools" an agent reaches through Dome) and manages their auth, outbound headers, and field classifications. To list which tools each agent may call, use [`dome agents list`](/cli/build/agents#list-agents) instead.
+
+| Command | |
+|---------|---|
+| [List connections](#list-connections) | `dome tools list [workspace-id-or-slug]` |
+| [Get connection](#get-connection) | `dome tools get <name> [workspace-id-or-slug]` |
+| [Add connection](#add-connection) | `dome tools add [workspace-id-or-slug]` |
+| [Update connection](#update-connection) | `dome tools update <name> [workspace-id-or-slug]` |
+| [Remove connection](#remove-connection) | `dome tools remove <name> [workspace-id-or-slug]` |
+| [Connect OAuth](#connect-oauth) | `dome tools oauth-connect <name> [workspace-id-or-slug]` |
+| [Disconnect OAuth](#disconnect-oauth) | `dome tools oauth-disconnect <name> [workspace-id-or-slug]` |
+| [gateway membership](#gateway-membership) | `dome tools gateways list\|add\|remove <connection> [gateway]` |
+| [List headers](#list-headers) | `dome tools header list <tool-name>` |
+| [Add header](#add-header) | `dome tools header add <tool-name>` |
+| [Remove header](#remove-header) | `dome tools header remove <tool-name>` |
+| [List tools](#list-tools) | `dome tools catalog list <connection> [workspace-id-or-slug]` |
+| [Sync tools](#sync-tools) | `dome tools catalog sync <connection> [workspace-id-or-slug]` |
+| [Block tool](#block-tool) | `dome tools catalog block <connection> <tool>` |
+| [Deprecate tool](#deprecate-tool) | `dome tools catalog deprecate <connection> <tool>` |
+| [Restore tool](#restore-tool) | `dome tools catalog restore <connection> <tool>` |
+
+## Connections
+
+### List connections
+
+```bash
+dome tools list [workspace-id-or-slug]
+```
+
+List MCP server connections. Aliases: `ls`.
+
+### Get connection
+
+```bash
+dome tools get <name> [workspace-id-or-slug]
+```
+
+Show details for one tool connection.
+
+### Add connection
+
+```bash
+dome tools add [workspace-id-or-slug]
+```
+
+Register a new MCP server.
+
+| Flag | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| `--name` | string | Yes | — | tool name (unique within workspace) |
+| `--url` | string | Streamable | — | URL (required for `streamable-http`) |
+| `--command` | string | Stdio | — | Command to exec (required for `stdio`) |
+| `--arg` | string (repeatable) | No | — | Command argument for `stdio` |
+| `--protocol` | string | No | `streamable-http` | `streamable-http`, `stdio` |
+| `--header-literal` | `Name=Value` (repeatable) | No | — | Literal outbound header |
+| `--header-secret` | `Name=SecretKey` (repeatable) | No | — | Outbound header sourced from a stored secret |
+| `--header-actas` | `Name` (repeatable) | No | — | Header that reinjects the verified `X-Dome-Act-As` |
+| `--authorization` | string | No | — | `Authorization` HTTP header value. REQUIRED with `--auth-method=api-key --credential-type=shared`. The server auto-injects the managed `Authorization` header — do not declare it via `--header-secret`. |
+| `--secret-value` | `KEY=VALUE` (repeatable) | No | — | Advanced: per-tool credential bundle entry for custom secret-source headers. The `Authorization` key is reserved — use `--authorization` instead. |
+| `--auth-method` | string | No | `none` | `none`, `api-key`, `oauth` |
+| `--credential-type` | string | No | — | `shared`, `per-user` |
+| `--oauth-authorize-url` | string | No | — | OAuth: authorize endpoint |
+| `--oauth-token-url` | string | No | — | OAuth: token endpoint |
+| `--oauth-revoke-url` | string | No | — | OAuth: revocation endpoint |
+| `--oauth-registration-url` | string | No | — | OAuth: RFC 7591 registration endpoint (for `client-origin=dcr`) |
+| `--oauth-client-id` | string | No | — | OAuth: client ID (required when `client-origin=manual`) |
+| `--oauth-client-secret` | string | No | — | OAuth: client secret |
+| `--oauth-default-scope` | string (repeatable) | No | — | OAuth: default scope |
+| `--oauth-client-origin` | string | No | — | OAuth: `dcr` or `manual` |
+| `--oauth-token-endpoint-auth` | string | No | `auto` | OAuth: `auto`, `client_secret_basic`, `client_secret_post`. `auto` discovers the server's preferred method via RFC 8414 metadata. |
+| `--field-classification` | `key=value` | No | — | Field sensitivity labels (e.g. `email=PII,phone=PII`) |
+| `--write-tools` | string | No | — | Comma-separated list of tool names classified as write operations |
+| `--gateway` | string (repeatable) | No | — | Attach as a tool source to the named [Gateway](/build/gateways) (name or ID). Without it the connection is unreachable until attached. |
+
+When `--auth-method=oauth --credential-type=shared`, `add` automatically prints the URL to start the admin consent flow. Open it in a browser to complete consent. If the flow can't start automatically, run [`oauth-connect`](#connect-oauth) afterwards.
+
+```bash title="Shared OAuth tool (manual client)"
+dome tools add \
+  --name notion \
+  --url https://mcp.notion.com/mcp \
+  --auth-method oauth \
+  --credential-type shared \
+  --oauth-client-origin manual \
+  --oauth-authorize-url https://api.notion.com/v1/oauth/authorize \
+  --oauth-token-url https://api.notion.com/v1/oauth/token \
+  --oauth-client-id "$NOTION_CLIENT_ID" \
+  --oauth-client-secret "$NOTION_CLIENT_SECRET" \
+  --oauth-default-scope read_content \
+  --oauth-default-scope update_content
+```
+
+```bash title="Per-user OAuth tool (dynamic client registration)"
+dome tools add \
+  --name jira \
+  --url https://mcp.atlassian.com/v1/sse \
+  --auth-method oauth \
+  --credential-type per-user \
+  --oauth-client-origin dcr \
+  --oauth-authorize-url https://auth.atlassian.com/authorize \
+  --oauth-token-url https://auth.atlassian.com/oauth/token \
+  --oauth-registration-url https://auth.atlassian.com/oauth/clients
+```
+
+### Update connection
+
+```bash
+dome tools update <name> [workspace-id-or-slug]
+```
+
+Update an MCP server connection. Only provided flags change. Switching `--auth-method` between `api-key` and `oauth` clears the previously stored credential bundle.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--url` | string | New URL |
+| `--command` | string | New command (stdio) |
+| `--arg` | string (repeatable) | Replace command args |
+| `--protocol` | string | `streamable-http`, `stdio` |
+| `--header-literal` | `Name=Value` (repeatable) | Replace literal-header list |
+| `--header-secret` | `Name=SecretKey` (repeatable) | Replace secret-header list |
+| `--header-actas` | `Name` (repeatable) | Replace act-as header list |
+| `--authorization` | string | New `Authorization` value. Use to rotate an `api-key`+`shared` tool's token. |
+| `--secret-value` | `KEY=VALUE` (repeatable) | Advanced: replace per-tool credential bundle |
+| `--auth-method` | string | `none`, `api-key`, `oauth` |
+| `--credential-type` | string | `shared`, `per-user` |
+| `--oauth-*` | various | OAuth client config overrides (same shape as `add`). Empty `--oauth-client-secret` keeps the existing secret. |
+| `--field-classification` | `key=value` | Add or update field classifications |
+| `--remove-field-classification` | string[] | Remove field classifications by name |
+| `--write-tools` | string | Comma-separated write-tools list (replaces current) |
+
+### Remove connection
+
+```bash
+dome tools remove <name> [workspace-id-or-slug]
+```
+
+Remove an MCP server connection.
+
+### Gateway membership
+
+```bash
+dome tools gateways <list|add|remove> <connection-name-or-id> [gateway-name-or-id]
+```
+
+Manage the connection's tool-source membership in [Gateways](/build/gateways) from the connection side. Mirrors [`dome gateways tool-sources`](/cli/build/gateway#add-tool-source).
+
+- `list <connection>` — gateways this connection is a tool source of. Alias: `ls`.
+- `add <connection> <gateway>` — attach as a tool source; every observed tool joins, and newly discovered tools propagate automatically.
+- `remove <connection> <gateway>` — detach. Alias: `rm`.
+
+```bash
+dome tools gateways add notion prod-tools
+```
+
+## OAuth
+
+### Connect OAuth
+
+```bash
+dome tools oauth-connect <name> [workspace-id-or-slug]
+```
+
+Begin the shared-OAuth admin consent flow. Prints a one-shot URL valid for ~10 minutes. Open it in a browser to complete consent at the upstream's authorization server. After consent, Dome stores the tokens.
+
+Only valid for `--auth-method=oauth --credential-type=shared` tools. Per-user OAuth tools trigger consent automatically on each end user's first call.
+
+```bash
+dome tools oauth-connect notion
+```
+
+### Disconnect OAuth
+
+```bash
+dome tools oauth-disconnect <name> [workspace-id-or-slug]
+```
+
+Revoke shared OAuth credentials. The OAuth client configuration is preserved, so a subsequent `oauth-connect` reuses the same client. Idempotent.
+
+```bash
+dome tools oauth-disconnect notion
+```
+
+## Headers
+
+### List headers
+
+```bash
+dome tools header list <tool-name> [workspace-id-or-slug]
+```
+
+List the outbound headers configured on a tool.
+
+### Add header
+
+```bash
+dome tools header add <tool-name> [workspace-id-or-slug]
+```
+
+Append outbound headers to a tool without replacing the existing list. Combine `--header-literal`, `--header-secret`, and `--header-actas` flags (refer to [`add`](#add-connection) for shapes).
+
+### Remove header
+
+```bash
+dome tools header remove <tool-name> [workspace-id-or-slug]
+```
+
+Remove outbound headers by name from a tool.
+
+## Catalog
+
+### List tools
+
+```bash
+dome tools catalog list <connection> [workspace-id-or-slug]
+```
+
+List the persistent MCP tool catalog for a connection — the tools the gateway has observed on the upstream MCP server. The catalog survives gateway restarts and stays queryable without a live data plane.
+
+| Flag | |
+|------|---|
+| `--with-schema` | Include input schema in the output (truncated). |
+| `--seen-since` | Only include tools seen within this window (e.g. `30d`, `24h`). Pass `0` for all-time. Defaults to `720h` (30 days). |
+| `--show-blocked` | Include blocked tools (hidden by default). |
+
+```bash
+dome tools catalog list notion --seen-since 7d
+```
+
+### Sync tools
+
+```bash
+dome tools catalog sync <connection> [workspace-id-or-slug]
+```
+
+Sync the persistent MCP tool catalog for a `per-user` connection by dispatching exactly one upstream `tools/list` against the calling admin's own per-user credential. Shared connections already pre-warm via the gateway's startup discovery and are rejected client-side.
+
+Attach your per-user credential first through the normal magic-link flow (refer to [`oauth-connect`](#connect-oauth) or the per-user provisioning flow in the dashboard), then run this command. Sync works both before any agent traffic (pre-warm) and after (refresh). The result is recorded through the shared catalog observation path and is visible to `dome tools catalog list` immediately afterwards.
+
+| Flag | |
+|------|---|
+| `--act-as-sub` | Workspace-verified act-as subject under which the admin attached the per-user credential. Defaults to the calling admin's email. Required when the workspace's act-as verifier does not use email as Sub (e.g. OIDC/HMAC verifiers issuing opaque subs, or `local-auth` which sets Sub to a user UUID). |
+
+```bash
+dome tools catalog sync notion
+```
+
+Prints four counters: tools observed, inserted, updated schema, and updated last-seen. Requires the `gateways.manage` permission. Returns `FailedPrecondition` when no per-user credential exists at the resolved sub-hash — the error message names both remedies (attach the credential, or pass `--act-as-sub`).
+
+### Block tool
+
+```bash
+dome tools catalog block <connection> <tool>
+```
+
+Hide a discovered MCP tool from agents. The gateway filters the tool out of `tools/list` and denies any `tools/call` against it. A block takes precedence over ordinary connection-level access. Blocks persist across re-observation.
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--message` | string | No | Operator note shown alongside the tool in dashboards and CLI (e.g. `"dangerous mass-delete"`) |
+
+Requires the `gateways.manage` permission. Blocked-call attempts emit a `tool.blocked_call_denied` audit event.
+
+```bash
+dome tools catalog block notion delete_page --message "dangerous mass-delete; use archive_page"
+```
+
+### Deprecate tool
+
+```bash
+dome tools catalog deprecate <connection> <tool>
+```
+
+Mark a tool as deprecated. The tool stays callable and visible to agents; the dashboard renders a warning chip and operators see the status in `dome tools catalog list`. Use when an upstream replaces a tool and you want to soft-signal callers without breaking them.
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--message` | string | No | Operator note (e.g. `"use create_page_v2"`) |
+
+Requires the `gateways.manage` permission.
+
+```bash
+dome tools catalog deprecate notion create_page --message "use create_page_v2"
+```
+
+### Restore tool
+
+```bash
+dome tools catalog restore <connection> <tool>
+```
+
+Return a tool to `active`, clearing any prior block or deprecation.
+
+Requires the `gateways.manage` permission.
+
+```bash
+dome tools catalog restore notion delete_page
+```
+
+<Callout type="idea">
+`dome tools catalog list <connection>` shows the current `STATUS` column for every observed tool. Blocked tools are hidden by default — pass `--show-blocked` to include them.
+</Callout>
+
+Cap tool spend or call volume with [`dome quotas`](/cli/govern/quota) (`--subject tool`, `--subject agent`, or `--subject workspace`).

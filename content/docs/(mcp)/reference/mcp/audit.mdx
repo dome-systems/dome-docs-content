@@ -1,0 +1,245 @@
+---
+title: Audit
+description: Query audit events by class, result, actor, resource, correlation, and payload
+---
+
+import { auditEvent } from '@/snippets/glossary';
+
+<p>{auditEvent}</p>
+
+Refer to [Audit events](/operate/audit) for how to query and export the trail. Refer to [Audit events](/concepts/audit) concept for how the trail is shaped.
+
+Tool results render enum fields as short tokens (`governing`, `denied`, `gateway_mcp`), and filter arguments accept those same tokens. Refer to [Enum rendering](/reference/events/contracts#enum-rendering) reference.
+
+<Callout type="info">
+  Audit reads are scoped to the active workspace. The server checks the workspace-level `audit.view` permission, so a workspace member can read their own workspace's audit even without a tenant role. Tenant- or org-scoped API keys reading without a workspace context fall back to the tenant-level `audit.view`.
+</Callout>
+
+## Events
+
+### dome_audit_query
+
+Query audit events with optional filters. Returns events with type, agent, timestamp, and data.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `agent_id` | string | No | filter by agent ID |
+| `type` / `types` | string | No | Event types, comma-separated |
+| `classes` | string | No | `governing`, `state_change`, `security`, `audit_access` (comma-separated) |
+| `stages` | string | No | `attempted`, `completed` (comma-separated) |
+| `results` | string | No | `allowed`, `denied` (comma-separated) |
+| `deny_reasons` | string | No | Shared denial reasons, comma-separated |
+| `has_error` | boolean | No | Error-presence filter; omit for no filter |
+| `act_as_sub` | string | No | Governed calls made for one verified end-user subject |
+| `agent_ids` | string | No | Multiple agent IDs, comma-separated |
+| `primary_resource_id` | string | No | Primary resource ID |
+| `primary_resource_kind` | string | No | Primary resource kind |
+| `trace_id` | string | No | Every event for one request |
+| `activity_id` | string | No | Every event in one [activity chain](/reference/events/contracts#correlation) |
+| `operation_id` | string | No | Multi-event operation ID |
+| `parent_event_id` | string | No | Children of a given event |
+| `actor_kind` | string | No | Actor kind |
+| `actor_id` | string | No | Actor ID |
+| `producer_service` | string | No | Producer service |
+| `producer_gateway_id` | string | No | Producer gateway ID |
+| `request_surface` | string | No | Origin surface |
+| `caller_surface` | string | No | Caller application surface |
+| `payload_filter` | string | No | `event.type:field=value`, semicolon-separated or JSON array |
+| `since` | string | No | Start time (RFC3339) |
+| `until` | string | No | End time (RFC3339) |
+| `limit` | number | No | Maximum results (default: 50) |
+| `page_token` | string | No | Cursor from a previous call |
+| `compact` | boolean | No | Bounded investigation rows without full payload (default: false) |
+
+<Callout icon="key">Requires `audit.view`.</Callout>
+
+```json title="Example tool call"
+{
+  "name": "dome_audit_query",
+  "arguments": {
+    "type": "agent.register,agent.suspend",
+    "limit": 10,
+    "since": "2025-01-01T00:00:00Z"
+  }
+}
+```
+
+Returns events in reverse chronological order. Each event includes an ID, type, stage, result when the type has a verdict, shared denial detail on refusals, error detail when handling failed, timestamp, actor, and event-specific payload.
+
+### dome_audit_get_event
+
+Get a single audit event by its ID.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `event_id` | string | Yes | Audit event ID |
+
+<Callout icon="key">Requires `audit.view`.</Callout>
+
+```json title="Example tool call"
+{
+  "name": "dome_audit_get_event",
+  "arguments": {
+    "event_id": "evt_01HQXYZ..."
+  }
+}
+```
+
+Returns the full event record including all metadata, the acting principal, and the complete event payload.
+
+### dome_audit_chains
+
+List activity chains, or pass `activity_id` to return that chain's events in order. A chain groups the audit events that share an activity ID in the active workspace.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `activity_id` | string | No | Drill into one activity chain |
+| `type`, `types`, `classes`, `stages`, `results` | string | No | Restrict the chains listed to ones containing a matching event |
+| `agent_id`, `actor_kind`, `actor_id` | string | No | Restrict by identity |
+| `since`, `until` | string | No | RFC 3339 timestamp or duration window |
+| `limit`, `page_token` | number, string | No | Pagination |
+
+<Callout icon="key">Requires `audit.view`.</Callout>
+
+### dome_audit_export
+
+Export audit events in a SIEM-friendly format for external processing or archival. Supports the same filters as `dome_audit_query`, plus a `format` selector.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `agent_id` | string | No | filter by agent ID |
+| `type` | string | No | filter by event type (comma-separated for multiple) |
+| `since` | string | No | Start time (RFC3339) |
+| `until` | string | No | End time (RFC3339) |
+| `limit` | number | No | Maximum results (default: 1000) |
+| `format` | string | No | Output format: `jsonl` (default), `json`, `csv`, `ocsf`, `cef` |
+
+<Callout icon="key">Requires `audit.export`.</Callout>
+
+| Format | When to use |
+|--------|-------------|
+| `jsonl` | NDJSON, one event per line — log shippers, `jq`. |
+| `json` | Single pretty array — archival. |
+| `csv` | Comma-separated rows. |
+| `ocsf` | OCSF v1.1.0 JSON — Splunk, Sentinel, Chronicle. |
+| `cef` | Common Event Format — ArcSight, QRadar, syslog. |
+
+```json title="Example tool call"
+{
+  "name": "dome_audit_export",
+  "arguments": {
+    "since": "2025-01-01T00:00:00Z",
+    "until": "2025-02-01T00:00:00Z",
+    "limit": 5000,
+    "format": "ocsf"
+  }
+}
+```
+
+<Callout type="info">
+  Export pages to exhaustion up to `limit` and refuses incomplete pages, repeated cursors, or more than 10,000 events. Unknown payload types stay in the artifact with an `@unresolved` marker. The same format set is available on `dome audit export --format`.
+</Callout>
+
+## Usage
+
+### dome_usage
+
+Show LLM token consumption and a per-class estimated cost for the active workspace over the last 24 hours. Use it when an assistant needs to summarize workspace spend, build a budget guardrail, or confirm token attribution.
+
+This tool takes no parameters — it always reports the active workspace over the last 24 hours. For dimensional breakdowns (per-agent, per-API-key, per-identity, per-model), read the [REST query surface](/operate/observe#token-usage-and-cost) directly.
+
+<Callout icon="key">Requires `audit.view`.</Callout>
+
+```json title="Example tool call"
+{
+  "name": "dome_usage",
+  "arguments": {}
+}
+```
+
+Returns the workspace token summary as JSON:
+
+```json
+{
+  "llm_input_tokens": 412000,
+  "llm_cache_read_tokens": 1820000,
+  "llm_cache_write_tokens": 88000,
+  "llm_output_tokens": 64000,
+  "llm_reasoning_tokens": 12000,
+  "llm_total_tokens": 2396000,
+  "estimated_cost_usd": 3.4521
+}
+```
+
+<Callout type="info">
+The estimated cost is a blended cross-model rate intended for trend-watching, not a billable figure. Refer to [Token Usage and Cost](/operate/observe#token-usage-and-cost) for the full token-class breakdown.
+</Callout>
+
+## Catalog
+
+### dome_audit_catalog_list
+
+List every audit event type. Complete and unpaginated. Requires `audit.view`.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| — | — | — | No parameters |
+
+### dome_audit_catalog_show
+
+Show field detail for one event type.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `event_type` | string | Yes | Event type name |
+
+## SIEM
+
+### dome_audit_siem_list
+
+List continuous SIEM stream destinations for the workspace. Requires `audit.view`. Only destinations enabled at least once appear.
+
+### dome_audit_siem_status
+
+Read stream status for one destination. Requires `audit.view`. A never-enabled destination returns not found.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `destination` | string | Yes | Integration slug or ID |
+
+### dome_audit_siem_enable
+
+Create a forward-only SIEM stream from evidence accepted at enable time. Requires `audit.export`. If a stream already exists, use resume.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `destination` | string | Yes | Integration slug or ID |
+
+### dome_audit_siem_disable
+
+Stop delivery while retaining the cursor. Requires `audit.export`.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `destination` | string | Yes | Integration slug or ID |
+
+### dome_audit_siem_resume
+
+Resume delivery from the cursor, or skip backlog with `skip_to_now`. Requires `audit.export`.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `destination` | string | Yes | Integration slug or ID |
+| `skip_to_now` | bool | No | Abandon undelivered backlog permanently |
+
+Always interpret `enabled` and `state` together. A disabled stream retains its previous delivery health, so `state=active` with `enabled` absent or false means stopped, not delivering.
+
+## Next steps
+
+Prefer the Operate how-tos for query patterns. This page is the tool surface:
+
+- [Audit events](/operate/audit)
+- [Stream Live Events](/operate/observe)
+- [Stream audit evidence to a SIEM](/manage/export#stream-audit-evidence-to-a-siem)
+- [Event catalog](/reference/events/catalog) reference
+- [Event contracts](/reference/events/contracts) reference

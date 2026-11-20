@@ -1,0 +1,97 @@
+---
+title: Webhooks
+description: Why Dome delivers a signed public projection of events to your endpoints and providers
+---
+
+import { webhook } from '@/snippets/glossary';
+
+<p>{webhook}</p>
+
+## High-level overview
+
+Dome does not ship a separate event bus for integrations. The same underlying activity that lands on Audit v1 can also fan out as a **public projection** under `dome.webhook.v1`. Public event types use the Audit schema-v4 names byte for byte (`agent.suspend`, `tool.call`, `guard.filter.evaluate`). The body is still a slim public envelope plus `data`, not the forensic audit envelope, and the delivered catalog is a subset of the audit catalog. The one exception is `eventing.test`, a synthetic ping with no audit twin.
+
+A refusal is not its own event type. Subscribe to the operation (`tool.call`, `agent.suspend`, …) and filter on envelope `result=denied` (and optionally `denial.reason`). Names such as `access.denied`, `mcp.tool_call.completed`, and `llm.output.filtered` are retired.
+
+A webhook delivery looks like this:
+
+1. An operator suspends an agent. That write is a configuration state change on the audit trail (`agent.suspend`).
+2. If a subscription matches `agent.suspend`, Dome also renders a public body and POSTs it to each matching destination.
+3. Downstream chat, SIEM, or workflow tools react without reading the forensic envelope.
+
+### Subscription and destination
+
+A **subscription** matches event types and optional filters. A **destination** is where deliveries go (custom URL or provider). Creating a subscription can provision the destination in the same call. Multiple subscriptions can share one destination so several event selections hit the same sink without duplicating credentials.
+
+Secrets (signing keys, provider credentials, secret header values, capability URLs) are write-only. They are set at create time, rotatable later, and never readable back. Reads mask every secret.
+
+### What every destination guarantees
+
+Three guarantees hold across custom URLs and providers.
+
+- **At-least-once delivery.** Duplicates are possible. Dedupe on the `Dome-Event-Id` header. That ID is stable across retries and replays.
+- **Public fields only.** Payloads carry each event's versioned public contract. They never include PII, credentials, or raw tool payloads.
+- **Durable failure handling.** Failed deliveries retry with backoff for up to 72 hours, keep attempt history, and stay replayable for 30 days.
+
+Custom HTTPS destinations follow the [Standard Webhooks](https://www.standardwebhooks.com/) signing model so any off-the-shelf verifier works. Providers that authenticate with a credential in the body (for example PagerDuty) receive no `webhook-signature` header. The credential is the authentication.
+
+### Providers as rendered projections
+
+A destination can target an off-the-shelf provider by picking it and pasting credentials. Dome renders the wire format that provider expects (Datadog array wrap, GitHub `repository_dispatch`, Slack message, and so on). The rendered body is deterministic. Retries and replays reuse the same bytes.
+
+Discover required settings and credentials with `dome webhooks providers list` and `dome webhooks providers get <key>`. Eleven providers authenticate via a paste-in capability URL. Dome stores the URL write-only and displays only its host.
+
+| Category | Examples |
+|----------|----------|
+| Observability and SIEM | Datadog, Splunk HEC, Elasticsearch, New Relic, Dynatrace, Google SecOps, Grafana Loki |
+| Automation and workflow | GitHub, Jira Automation, Zapier, Tines, n8n, ServiceNow, Azure Event Grid |
+| Incident response and chat | PagerDuty, Slack, Microsoft Teams, Discord, incident.io |
+
+### Why retries and circuit breaking exist
+
+Transient failures should not drop a security or lifecycle signal. Dome retries on a backoff schedule (1m, 5m, 15m, 1h, 4h, then every 6h with jitter) for up to 72 hours.
+
+| Response | Handling |
+|----------|----------|
+| `2xx` | Delivered |
+| `408`, `409`, `425`, `429`, any `5xx`, network timeouts | Retried until the 72-hour window closes |
+| Any other `4xx`, any `3xx` (redirects are not followed), TLS failures | Terminal `failed`. The destination rejected the request, so retrying does not help |
+
+A delivery that exhausts the window lands in `expired`. Both `failed` and `expired` stay recoverable via replay while the body is retained.
+
+Each destination also has a circuit breaker. Twenty failures within 10 minutes pause deliveries to that destination for 5 minutes while other destinations keep flowing. Paused deliveries retry. They are not failed. That protects a healthy sink from a stuck peer without discarding the queue.
+
+### Operating limits
+
+Dome-managed constraints for destinations and deliveries:
+
+- **Custom endpoints** are HTTPS-only. Private, loopback, link-local,
+  cloud-metadata, IPv4-mapped, Teredo (`2001::/32`), and 6to4 (`2002::/16`)
+  destinations are rejected.
+- **Custom headers**: up to 5 per destination; names up to 128 bytes, values up to 2048 bytes. `webhook-*` and `Dome-*` names are reserved. Secret header values are write-only and masked on every read.
+- **Body cap**: a rendered body over 128 KiB lands terminal (`body_too_large`) for that delivery. Sibling destinations still deliver.
+- **Delivery policy** is not configurable: 5 sends per second per destination, 5 in-flight, 10-second response timeout.
+- **Retention**: delivery bodies are retained 30 days, trimmed to 24 hours after a successful delivery. Attempt history stays queryable.
+- **Quotas**: subscriptions and destinations per workspace are plan-dependent. Over-quota creates fail with a resource-exhausted error.
+- **Deleting a subscription** stops routing and cancels pending deliveries immediately. History stays queryable.
+
+### How this differs from Audit and Export
+
+| Path | Job |
+|------|-----|
+| [Audit events](/concepts/audit) / [Audit events](/operate/audit) | Durable forensic trail. Query and reconstruct. |
+| [Stream Live Events](/operate/observe) | Live Audit v1 stream inside Dome. |
+| **Webhooks** | Real-time signed delivery of a public projection. |
+| [Export Data](/manage/export) | Batch and scheduled ship of retained history. |
+
+Use webhooks when something must react now. Use audit or export when you need the full evidence record or a SIEM archive.
+
+## Next steps
+
+With the webhook delivery model in mind, continue with:
+
+- [Audit events](/concepts/audit) concept for the trail and how surfaces consume it
+- [Event contracts](/reference/events/contracts#webhooks) reference for the webhook envelope, headers, and bundles
+- [Event catalog](/reference/events/catalog) reference for which event types are delivered
+- [Subscribe to Events](/operate/webhooks) to create, verify, inspect, and replay
+- [Export Data](/manage/export) for batch delivery of retained history

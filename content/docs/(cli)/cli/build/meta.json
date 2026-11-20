@@ -1,0 +1,8 @@
+{
+  "pages": [
+    "agents",
+    "managed-agents",
+    "gateway",
+    "triggers"
+  ]
+}

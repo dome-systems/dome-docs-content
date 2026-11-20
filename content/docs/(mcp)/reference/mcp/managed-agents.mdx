@@ -1,0 +1,29 @@
+---
+title: Managed agents
+description: MCP tools for configuring and running managed agents
+---
+
+Use these tools to configure managed agents, whose execution worker Dome runs. For agents whose worker you run in your own runtime, use the [Agents](/reference/mcp/agents) tools. Refer to [Managed agents](/build/agents/managed) for the operating model.
+
+| tool | Permission | Description |
+| --- | --- | --- |
+| `dome_managed_agents_list`, `dome_managed_agents_get` | `managedagents.view` | List or inspect managed agents |
+| `dome_managed_agents_create`, `dome_managed_agents_update`, `dome_managed_agents_delete` | `managedagents.manage` | Manage the prompt, model or pool, and one gateway |
+| `dome_managed_agents_rotate_runner_key` | `managedagents.manage` | Replace the Dome-held runner key without returning it |
+| `dome_managed_agents_run` | `managedagents.invoke` | Queue an immediate run with optional input |
+| `dome_managed_agents_runs_list`, `dome_managed_agents_runs_get` | `managedagents.view` | Inspect run history and details |
+| `dome_managed_agents_webhook_create`, `dome_managed_agents_webhook_list`, `dome_managed_agents_webhook_revoke` | `managedagents.manage` | Manage agent-scoped inbound webhook triggers |
+
+`dome_managed_agents_create` requires `name`. Pass `system_prompt`, `model`, and `gateway` to configure the worker; the gateway may be omitted only when exactly one workspace gateway admits every agent. The gateway grant permits every tool the gateway exposes, so separate tool grants are rejected.
+
+Use [Triggers](/reference/mcp/triggers) for reusable schedules and webhooks that can start one or more managed agents.
+
+### dome_managed_agents_rotate_runner_key
+
+Rotate the runner key Dome holds for a managed agent. The replacement is stored before the prior key stops working, and the key is never returned. Running and later managed-agent runs use the replacement.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `agent_id` | string | Yes | Managed agent UUID |
+
+<Callout icon="key">Requires `managedagents.manage`.</Callout>

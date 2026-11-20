@@ -1,0 +1,17 @@
+---
+title: Triggers
+description: MCP tools for schedules and signed webhooks that start managed-agent runs
+---
+
+A trigger starts managed-agent runs manually, on a schedule, or from a signed webhook.
+
+| tool | Permission | Description |
+| --- | --- | --- |
+| `dome_triggers_list`, `dome_triggers_get`, `dome_triggers_runs` | `managedagents.view` | Read triggers and their runs |
+| `dome_triggers_create`, `dome_triggers_update`, `dome_triggers_delete` | `managedagents.manage` | Manage schedule and webhook triggers |
+| `dome_triggers_target_set_enabled` | `managedagents.manage` | Enable or disable one target edge |
+| `dome_triggers_fire` | `managedagents.invoke` | Queue a run for each enabled target |
+
+`dome_triggers_create` requires `name` and `kind` (`schedule` or `webhook`). A schedule accepts `cron` and `timezone`; a webhook returns its signing secret once. Targets accept managed-agent names or IDs. The only target kind today is `managed_agent`.
+
+Refer to [Managed agents](/build/agents/managed) for retry, concurrency, and catch-up behavior.

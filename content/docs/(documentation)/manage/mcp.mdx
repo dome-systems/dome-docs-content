@@ -1,0 +1,110 @@
+---
+title: Configure Dome via MCP
+sidebarTitle: Configure Dome via MCP
+description: Manage Dome through an MCP server
+---
+
+Use Dome MCP to manage Dome resources from an MCP client. Each person connects with their own account, chooses a home context at sign-in, and acts with their existing Dome permissions.
+
+## Overview
+
+The Dome MCP server is available at `https://mcp.domesystems.ai`. It gives clients such as Claude Code, Claude.ai, and Cursor direct access to Dome's management tools for agents, resources, gateways, rules, audit, and other platform resources. It serves the same tools as `dome mcp serve`, using Streamable HTTP.
+
+Each person signs in through their browser. They do not need a platform API key, and their actions are attributed to their own session.
+
+See the [MCP server reference](/reference/mcp) for the full list of Dome resources and operations you can manage through MCP.
+
+## Requirements
+
+Before you begin:
+
+- Confirm that Dome MCP sign-in is enabled for the organization you need to use.
+- Use an MCP client that supports remote Streamable HTTP servers and OAuth sign-in.
+- Sign in to Dome with an account that can access the required organization, tenant, or workspace.
+
+An organization owner or admin controls whether members can sign in from MCP clients. The setting is on by default.
+
+## Connect your client
+
+Add Dome MCP without an authorization header. Your client receives an OAuth challenge, opens a browser, and returns to the MCP connection after you sign in.
+
+For Claude Code:
+
+```bash
+claude mcp add --transport http dome https://mcp.domesystems.ai
+```
+
+For clients that ask for a server URL, use:
+
+```txt
+https://mcp.domesystems.ai
+```
+
+Use Streamable HTTP, not the legacy SSE transport. The root URL and `https://mcp.domesystems.ai/mcp` address the same server; prefer the root URL unless your client requires `/mcp`.
+
+## Choose and switch contexts
+
+During sign-in, choose a home context. A context is an organization, tenant, or workspace where you have access. New conversations begin there.
+
+Ask your MCP client to use these Dome tools when you need to inspect or change the active context:
+
+- `dome_context_current` shows the context for the current conversation.
+- `dome_context_list` lists contexts you can reach.
+- `dome_context_use` switches the current conversation to a selected context.
+
+Context is scoped to one MCP conversation. Switching in one conversation does not change another, and Dome never silently falls back to a different context when access changes.
+
+## Manage your sessions
+
+Your Dome MCP sign-in appears alongside your Dashboard browsers and CLI installs. List every active session, then revoke a lost or unneeded client session from the CLI:
+
+```bash
+dome sessions list
+dome sessions revoke {{SESSION_ID}}
+```
+
+Use the session ID returned by `dome sessions list`. Revoking a session ends every credential it holds, and the client must sign in again before it can act.
+
+To sign out of every session except the CLI you are using:
+
+```bash
+dome sessions revoke --others
+```
+
+Sessions belong to the signed-in person. These commands require `dome auth login`; a platform API key cannot list or revoke sessions.
+
+## Control organization access
+
+Organization owners and admins can inspect or change the Dome MCP sign-in setting:
+
+```bash
+dome orgs mcp-sign-in get
+dome orgs mcp-sign-in set --enabled=false
+```
+
+Turning the setting off prevents every member's MCP session from acting in that organization on its next request. It also removes the organization from the sign-in context picker. Their sessions can continue to act in other organizations where Dome MCP sign-in remains enabled.
+
+Turn it back on when members should be able to choose the organization again:
+
+```bash
+dome orgs mcp-sign-in set --enabled=true
+```
+
+Pass `--org {{ORG_ID}}` to target another organization instead of the active context's organization.
+
+## Use a platform API key instead
+
+Use a platform API key only when an automated client needs one fixed scope. Add the key as the server's `Authorization` header:
+
+```bash
+claude mcp add --transport http dome https://mcp.domesystems.ai \
+  --header "Authorization: Bearer {{PLATFORM_API_KEY}}"
+```
+
+A key cannot switch contexts the way a signed-in person can. Prefer Dome MCP sign-in for people who work across organizations, tenants, or workspaces.
+
+## Next steps
+
+- [MCP server reference](/reference/mcp) for the full list of Dome resources and operations you can manage
+- [Manage Access](/manage/access) to assign roles and issue scoped platform API keys
+- [Environments](/manage/environments) to manage organizations, tenants, workspaces, and CLI contexts

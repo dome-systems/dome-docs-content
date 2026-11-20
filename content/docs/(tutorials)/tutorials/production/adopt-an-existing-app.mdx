@@ -1,0 +1,372 @@
+---
+hidden: true
+title: Adopt an existing app
+sidebarTitle: Adopt an existing app
+description: "Move an LLM app you already run onto the governed path, with a parity check and a one-variable rollback"
+---
+
+You already have an app calling a provider directly. The provider key is in its environment, spend shows up on an invoice, and nothing records which part of your system asked for what.
+
+Dome speaks the providers' own wire protocols, so adoption is a configuration change rather than a rewrite. The work is proving parity and keeping a way back.
+
+<Prompt
+  description="Hand this to an AI agent pointed at your repository. It finds the provider calls, moves one environment onto Dome, and verifies nothing changed."
+  icon="sparkles"
+  actions={["copy", "cursor"]}
+>
+Move my existing LLM app onto Dome without rewriting its logic, and keep a rollback.
+
+First, inspect my repository and show me this plan with your findings, then ask me to confirm before changing anything:
+
+1. Every place my code constructs a provider client or names a model, and which provider SDKs I use
+2. Any API surface I use that Dome does not proxy, so I know the risks before I start
+3. A Dome model connection mirroring my current provider and model
+4. The three configuration values that change, wired so I can revert by changing one variable
+5. A parity check: the same prompt through both paths, compared
+6. A rule and a spend cap once parity holds
+
+Follow the commands at https://developer.domesystems.ai/agent/tutorials/production/adopt-an-existing-app.md exactly.
+
+Non-negotiable rules:
+
+- Read before you write. Show me what you found in my code and wait for confirmation before editing anything.
+- Change configuration, not logic. Do not restructure my code, swap my SDK, or "improve" my prompts while you are here. If my code hardcodes a base URL or a key, tell me and propose the smallest change that makes it configurable.
+- Do not touch production. Work on a local or development environment only. Ask me which one before you start.
+- Keep the rollback real. The switch back must be a single environment variable, and you must show me it works before we go further.
+- Never print or commit my provider key or the `dome_...` agent token. Confirm the env file is gitignored.
+- Workspace first. Create a workspace for the parity check rather than using a real workspace, unless I tell you otherwise.
+- Do not skip the parity check. Run the same prompt through both paths and show me both outputs before recommending the switch.
+- Never report a step as done without showing the command output.
+
+Tell me plainly if any part of my app cannot move yet, and why.
+
+Then show me the spend and the audit trail for the calls the governed path made.
+</Prompt>
+
+In this tutorial, you will repoint an app that already calls a provider at Dome, verify it behaves the same, then add the governance that was the reason for moving. Your application logic does not change.
+
+To do this, you will:
+
+<Steps>
+  <Step title="Check what Dome proxies">
+    Confirm your API surface is supported before you start.
+  </Step>
+  <Step title="Mirror your model in Dome">
+    Create a connection that matches what you call today.
+  </Step>
+  <Step title="Switch one environment">
+    Change three values, keeping a one-variable rollback.
+  </Step>
+  <Step title="Verify parity">
+    Compare the same request through both paths.
+  </Step>
+  <Step title="Add the governance">
+    Apply the rule and the cap you moved for.
+  </Step>
+</Steps>
+
+## Prerequisites
+
+For this tutorial, you will need:
+
+- An app that calls OpenAI or Anthropic through their official SDK or plain HTTP.
+- The Dome CLI. Refer to [Install](/install) for Homebrew and direct-download instructions.
+- The provider API key your app uses today.
+- A workspace you can experiment in. Create a workspace if you do not have one:
+
+```bash
+dome workspaces create --name studio-adopt
+dome context sync
+dome context current
+```
+
+> Adopting an existing app usually spans two roles. A developer changes the configuration, while the rule and the spend cap belong to security and finance. Both halves are shown here.
+
+## Check what Dome proxies
+
+Establish this before you change anything, because it determines whether your app can move today.
+
+| Surface | Status |
+|---|---|
+| `POST /v1/chat/completions` | Proxied |
+| `POST /v1/messages` | Proxied |
+| `POST /v1/messages/count_tokens` | Proxied |
+| `POST /v1/embeddings` | Proxied |
+| `GET /v1/models` | Proxied |
+| `POST /v1/responses` | Not yet. Returns `501` |
+| `POST /v1/moderations` | Not yet. Returns `501` |
+| Provider-specific endpoints | Through `POST /v1/passthrough/<name>` |
+
+If your app is built on the OpenAI Responses API, it cannot move yet. Find out now rather than midway through a migration:
+
+```bash
+grep -rn "responses.create\|/v1/responses\|moderations" --include="*.py" --include="*.ts" --include="*.js" .
+```
+
+Also find every place a client is constructed or a model is named. Those are the only lines this tutorial touches:
+
+```bash
+grep -rn "OpenAI(\|Anthropic(\|base_url\|baseURL\|api_key\|apiKey" --include="*.py" --include="*.ts" --include="*.js" .
+```
+
+A base URL or key that is hardcoded rather than read from the environment is the one code change worth making. Make it configurable, and the rest of this is deployment work.
+
+## Mirror your model in Dome
+
+Create a connection that resolves to exactly what your app calls today. Name it after the model id your code already passes, and your application's model string keeps working unchanged:
+
+<Tabs items={["OpenAI","Anthropic"]}>
+  <Tab value="OpenAI">
+    ```bash
+    dome models add gpt-4o \
+      --provider openai \
+      --model gpt-4o \
+      --api-key "$OPENAI_API_KEY" \
+      --gateway Default
+    ```
+  </Tab>
+  <Tab value="Anthropic">
+    ```bash
+    dome models add claude-3-5-sonnet-20241022 \
+      --provider anthropic \
+      --model claude-3-5-sonnet-20241022 \
+      --api-key "$ANTHROPIC_API_KEY" \
+      --gateway Default
+    ```
+  </Tab>
+</Tabs>
+
+Naming the connection after the upstream model is a deliberate migration convenience, not the end state. Dome resolves a connection name to a provider model, so a name of your own choosing lets you change providers later without touching the app. Adopt the model id first, rename once you are stable.
+
+The provider key now lives in Dome. Remove it from your app's environment at the end of this tutorial, not yet. You still need it for the parity check.
+
+Register an agent for the app and mint its credential:
+
+```bash
+dome agents register --name checkout-service --if-not-exists
+dome agents create-key checkout-service --name production
+dome gateways access grant Default checkout-service
+```
+
+## Switch one environment
+
+Three values change, and nothing else:
+
+| Value | From | To |
+|---|---|---|
+| Base URL | The provider's default | `https://<gateway-host>/gateways/<DEFAULT_GATEWAY_ID>/v1` |
+| API key | Your provider key | The Dome agent token, `dome_…` |
+| model | A provider model id | Your Dome connection name |
+
+Naming the connection after the model handled the third. Wire the first two so that reverting is a single variable:
+
+```python title="llm_client.py"
+import os
+
+from openai import OpenAI
+
+def build_client() -> OpenAI:
+    """Route through Dome when configured; otherwise call the provider directly."""
+    gateway_url = os.getenv("DOME_GATEWAY_URL")
+    if gateway_url:
+        return OpenAI(base_url=f"{gateway_url}/v1", api_key=os.environ["DOME_TOKEN"])
+    return OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+```
+
+Unsetting `DOME_GATEWAY_URL` returns the app to the provider. That is the rollback, and it needs no deploy of new code.
+
+Collect the endpoint values:
+
+```bash
+dome context current
+dome gateways list
+```
+
+Smoke-test the endpoint before you point the app at it. This lists the models the gateway exposes to you and confirms the URL and credential are right:
+
+```bash
+curl -s https://GATEWAY_HOST/gateways/DEFAULT_GATEWAY_ID/v1/models \
+  -H "Authorization: Bearer AGENT_API_KEY"
+```
+
+<Callout type="info">
+
+Anthropic clients set `base_url` to the gateway **without** the `/v1` suffix, because their SDK appends `/v1/messages` itself. Anthropic routes also accept the credential in `x-api-key` when no `Authorization` header is present, so an app that only sets `x-api-key` works unchanged.
+
+</Callout>
+
+## Verify parity
+
+Run the same prompt through both paths and compare. Use a deterministic request so the comparison means something:
+
+```python title="parity_check.py"
+import os
+
+from openai import OpenAI
+
+PROMPT = "Reply with exactly the word: ready"
+
+def ask(client: OpenAI) -> str:
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": PROMPT}],
+        temperature=0,
+    )
+    return response.choices[0].message.content
+
+direct = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+governed = OpenAI(
+    base_url=os.environ["DOME_GATEWAY_URL"] + "/v1",
+    api_key=os.environ["DOME_TOKEN"],
+)
+
+print("direct:  ", ask(direct))
+print("governed:", ask(governed))
+```
+
+Both lines should match. Check three things beyond the text itself: that response objects carry the same shape your code already destructures, that streaming still streams if you use it, and that your latency budget still holds with a proxy hop in the path.
+
+Then confirm the governed call was recorded, which the direct call was not:
+
+```bash
+dome audit query --limit 10
+```
+
+You should see attempted and completed `model.call` events attributed to `checkout-service`; the completed event carries token usage. That record is the thing you did not have before.
+
+<Accordions>
+<Accordion title="Troubleshooting">
+  These are remediation steps if you get stuck:
+
+  - `400` with `select a gateway`.
+
+    The base URL is missing its `/gateways/<id>` segment. For OpenAI clients it must also end in `/v1`.
+
+  - `404` with `no connection for requested model`.
+
+    The model string in your code does not match a connection name in this workspace. Compare them:
+
+    ```bash
+    dome models list
+    ```
+
+  - `403` with `model not available in this gateway`.
+
+    The connection is not attached to Default. Check membership with `dome gateways get Default`.
+
+  - `403` with `agent is not granted access to this gateway`.
+
+    The agent has no admission grant. Note that `GET /v1/models` skips this check, so a working smoke test does not prove the grant exists:
+
+    ```bash
+    dome gateways access grant Default checkout-service
+    ```
+
+  - `401` from the gateway.
+
+    Your app is still sending the provider key. This endpoint authenticates the agent.
+
+  - `429` with `llm: quota exceeded`.
+
+    A spend cap fired. The message names the subject that ran out.
+
+  - `501` on a request that worked before.
+
+    You are calling a surface Dome does not proxy yet, such as Responses or Moderations. Keep those calls on the direct path until they are supported.
+
+  - Requests succeed but nothing appears in audit.
+
+    The app is still on the direct path. Confirm `DOME_GATEWAY_URL` is set in the environment the process actually reads.
+</Accordion>
+</Accordions>
+
+## Add the governance
+
+Parity holding is the midpoint, not the finish. Nothing is governed yet: the agent may call anything in the gateway and spend without limit.
+
+Deploy a rule naming what this app may invoke. Create `checkout-service.cedar`:
+
+```cedar title="checkout-service.cedar"
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"llm:invoke",
+  resource == Dome::LLMModel::"gpt-4o"
+);
+
+forbid(
+  principal is Dome::Agent,
+  action == Dome::Action::"llm:invoke",
+  resource
+) unless {
+  resource == Dome::LLMModel::"gpt-4o"
+};
+```
+
+```bash
+dome rules apply checkout-service.cedar --agent checkout-service --name checkout-service
+```
+
+Then cap the spend. Set the limit from what this app actually costs, which you now have a record of:
+
+```bash
+dome quotas set \
+  --subject agent \
+  --agent checkout-service \
+  --limit 200 \
+  --window monthly \
+  --name "checkout service"
+```
+
+Confirm both before you rely on them:
+
+```bash
+dome rules simulate --agent checkout-service --action llm:invoke \
+  --resource gpt-4o --resource-type llm_model
+dome quotas list
+```
+
+Now remove the provider key from your app's environment. Until you do, the app can still bypass everything you just built by falling back to the direct path.
+
+<Callout type="info">
+
+Keep the fallback branch in the code if you want, but point it at nothing. A rollback path that silently restores ungoverned access is worse than no rollback path, because it works.
+
+</Callout>
+
+## Verify the results
+
+Four things should now be true, and each has a command that proves it:
+
+1. The app reaches the provider only through Dome. Its environment no longer holds a provider key.
+2. Calls are attributed. `dome audit query --limit 10` names `checkout-service`.
+3. Only the intended model is reachable. Simulating any other connection name returns `DENY`.
+4. Spend is capped. `dome quotas list` shows the limit and what has been used against it.
+
+Roll out the way you would any configuration change: one environment, then a share of production traffic, then the rest. Because the switch is an environment variable, staged rollout and rollback use the mechanism you already have.
+
+## Next steps
+
+In this tutorial, you:
+
+- Confirmed your [API surface](/concepts/gateways/llm-gateway) was proxied before starting, rather than discovering a gap midway.
+- Moved a provider credential into [Dome](/connect/models) and out of your app's environment.
+- Changed three configuration values and no application logic, keeping a one-variable rollback.
+- Proved parity before adding constraints.
+- Applied a [rule](/govern/rules) and a [quota](/govern/quotas) sized from real usage.
+
+Continue with:
+
+<Cards>
+  <Card title="Debug a tool call denial" href="/tutorials/production/debug-a-denial">
+    Diagnose the first rejection your rollout produces.
+  </Card>
+  <Card title="Govern per end user" href="/tutorials/get-started/govern-per-end-user">
+    The agent inherits each user's permissions — same agent, different tool access and answers per person.
+  </Card>
+  <Card title="Pools" href="/connect/pools">
+    Failover and routing across providers once you are behind the gateway.
+  </Card>
+  <Card title="LLM gateway" href="/concepts/gateways/llm-gateway">
+    Endpoints, pipeline stages, and error shapes in full.
+  </Card>
+</Cards>

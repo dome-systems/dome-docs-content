@@ -1,0 +1,246 @@
+---
+title: Webhooks
+description: Subscribe to Dome events and deliver signed webhooks to your endpoints or off-the-shelf providers, with retries and replay
+---
+
+Webhook `event_types` use the same names as Audit schema-v4 operations (`agent.suspend`, `tool.call`, `guard.filter.evaluate`). There is no `access.denied` type; filter on `result=denied` instead.
+
+import { webhook } from '@/snippets/glossary';
+
+<p>{webhook}</p>
+
+Refer to [Webhooks](/operate/webhooks) for setup, signature verification, and the event catalog. Refer to [Webhooks](/concepts/audit/webhooks) concept for how signed delivery works.
+
+The surface is subscription-first: creating a subscription creates its delivery destination in the same call, and the destination's URL, headers, secret, and credentials are managed through the subscription tools. There are no standalone destination tools. All tools require workspace context.
+
+## Permissions
+
+| Permission | tools |
+|------------|-------|
+| `eventing.view` | `subscription_list`, `subscription_get`, `delivery_list`, `delivery_get`, `provider_list` |
+| `eventing.manage` | `subscription_create`, `_update`, `_disable`, `_rotate_secret`, `_test`, `_delete`; `delivery_cancel` |
+| `eventing.replay` | `delivery_replay`, `delivery_replay_failed` |
+
+Replay sends new outbound requests to your destinations and may trigger downstream automation — it carries its own permission, separate from `manage`.
+
+## Subscriptions
+
+### dome_webhooks_subscription_list
+
+List event subscriptions in the active workspace, each with its delivery destination. No parameters.
+
+<Callout icon="key">Requires `eventing.view`.</Callout>
+
+### dome_webhooks_subscription_get
+
+Get an event subscription by name.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Subscription name |
+
+<Callout icon="key">Requires `eventing.view`.</Callout>
+
+### dome_webhooks_subscription_create
+
+Create a subscription with its delivery destination and event selection, atomically. A failed request leaves neither record behind. The response includes the destination's signing secret **once** — it is only rotatable afterward, never readable.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Subscription name (unique within workspace) |
+| `event_types` | string[] | Yes | Event types to subscribe to (e.g. `["agent.suspend"]`) |
+| `endpoint_url` | string | One of | Custom HTTPS delivery endpoint. Set this or `provider`. |
+| `provider` | string | One of | Provider key from `dome_webhooks_provider_list`. Set this or `endpoint_url`. |
+| `settings` | object | No | Provider non-secret settings (key → value) |
+| `credentials` | object | No | Provider credentials (key → value). Stored write-only. |
+| `filters` | object | No | Per-key predicates — refer to [filters](#filters) |
+| `headers` | array | No | Custom-URL headers: `[{"name", "source": "literal"\|"secret", "value"}]`. Secret values are write-only, masked on read. |
+| `content_format` | string | No | Custom-URL body shape: `object` (default) or `array` |
+
+`endpoint_url`, `headers`, and `content_format` are custom-URL only — combining them with `provider` errors before any state change.
+
+<Callout icon="key">Requires `eventing.manage`.</Callout>
+
+```json title="Example tool call"
+{
+  "name": "dome_webhooks_subscription_create",
+  "arguments": {
+    "name": "security-alerts",
+    "endpoint_url": "https://ops.example.com/hooks/dome",
+    "event_types": ["agent.suspend", "agent.revoke"],
+    "filters": { "result": "denied", "agent_name": ["checkout-worker", "billing-worker"] }
+  }
+}
+```
+
+#### Filters
+
+The `filters` object keys on a field name — envelope keys `stage`, `result`, `denial.reason`, and `error`; payload keys `agent_name`, `connection_name` (resolved from IDs at delivery time), `agent_id`, `tool_name`; or any filterable payload field. Values:
+
+| Value form | Meaning |
+|------------|---------|
+| scalar | Exact match |
+| array | OR across alternatives |
+| `{"like": "<glob>"}` | Glob — `*` any run, `?` one char, `\` escapes. Matches the full value, case-sensitive. |
+
+An event delivers only if it satisfies every filter that applies to its type.
+
+### dome_webhooks_subscription_update
+
+Update a subscription's events, filters, state, or delivery destination. Only supplied fields change.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Current subscription name |
+| `new_name` | string | No | New name |
+| `event_types` | string[] | No | Replace the full event-type set |
+| `filters` | object | No | Replace the full filter set; pass `{}` to clear |
+| `active` | boolean | No | Enable or pause fanout. No backfill on resume. |
+| `endpoint_url` | string | No | New custom HTTPS endpoint URL |
+| `endpoint_active` | boolean | No | Enable or disable the destination itself |
+| `headers` | array | No | Replace custom headers; `[]` clears them. Blank secret values keep the stored secret. |
+| `remove_headers` | string[] | No | Header names to remove |
+| `content_format` | string | No | `object` or `array`. Custom URL only. |
+| `settings` | object | No | Replace the full provider settings set |
+| `credentials` | object | No | Merge write-only provider credentials |
+
+<Callout icon="key">Requires `eventing.manage`.</Callout>
+
+### dome_webhooks_subscription_disable
+
+Stop new fanout. Delivery history is preserved.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Subscription name |
+
+<Callout icon="key">Requires `eventing.manage`.</Callout>
+
+### dome_webhooks_subscription_rotate_secret
+
+Rotate the signing secret for the subscription's destination. The new secret is revealed once. During the grace window the `webhook-signature` header carries a signature per active key.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Subscription name |
+
+<Callout icon="key">Requires `eventing.manage`.</Callout>
+
+### dome_webhooks_subscription_test
+
+Send a fixed `eventing.test` event through the subscription's destination. Verifies signing, headers, and the destination's own routing end-to-end.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Subscription name |
+
+<Callout icon="key">Requires `eventing.manage`.</Callout>
+
+### dome_webhooks_subscription_delete
+
+Delete the subscription: new routing stops and pending deliveries are canceled. Delivery history is preserved.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Subscription name |
+
+<Callout icon="key">Requires `eventing.manage`. Destructive.</Callout>
+
+## Deliveries
+
+### dome_webhooks_delivery_list
+
+List deliveries in the active workspace, optionally filtered.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `subscription_id` | string | No | Narrow to one subscription |
+| `destination_id` | string | No | Narrow to one destination |
+| `event_type` | string | No | Narrow to one event type |
+| `status` | string | No | One of `created`, `enqueued`, `delivering`, `retry_scheduled`, `succeeded`, `failed`, `canceled`, `expired`, `dlq` |
+| `event_id` | string | No | Every delivery for one source event |
+| `start_time` | string | No | Inclusive RFC3339 lower bound |
+| `end_time` | string | No | Inclusive RFC3339 upper bound |
+| `limit` | number | No | Page size (0 = server default) |
+| `page_token` | string | No | Cursor from a previous call |
+
+<Callout icon="key">Requires `eventing.view`.</Callout>
+
+### dome_webhooks_delivery_get
+
+Get a delivery with its attempt history.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `delivery_id` | string | Yes | Delivery ID (UUID) |
+| `include_body` | boolean | No | Include the delivered webhook body while retained — up to 30 days, or 24 hours after a successful delivery. |
+
+<Callout icon="key">Requires `eventing.view`.</Callout>
+
+### dome_webhooks_delivery_replay
+
+Replay a delivery. Creates a **new** delivery from the retained body — fresh `webhook-id`, same `Dome-Event-Id` — and sends another request to the destination. It may trigger downstream automation.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `delivery_id` | string | Yes | Delivery ID (UUID) to replay |
+
+<Callout icon="key">Requires `eventing.replay`.</Callout>
+
+### dome_webhooks_delivery_replay_failed
+
+Bulk-replay terminally-failed deliveries in a time window — the outage-recovery counterpart to `delivery_replay`. Safe to re-run: a delivery with a live or succeeded replay is not matched again, and canceled deliveries are never recovered.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `since` | string | Yes | Duration back from now (`24h`, `7d`) or RFC3339 timestamp. Within the last 30 days — the body-retention horizon. |
+| `subscription` | string | No | Narrow to one subscription name. Omit for all. |
+| `until` | string | No | RFC3339 upper bound. Defaults to now. |
+| `statuses` | string[] | No | Subset of `failed`, `expired`, `dlq`. Default all three. |
+| `max` | number | No | Deliveries per call, up to 500. Repeat to continue. |
+
+<Callout icon="key">Requires `eventing.replay`.</Callout>
+
+```json title="Example tool call"
+{
+  "name": "dome_webhooks_delivery_replay_failed",
+  "arguments": {
+    "since": "24h",
+    "subscription": "security-alerts",
+    "statuses": ["failed", "dlq"]
+  }
+}
+```
+
+Returns `matched`, `replayed`, `skipped (body expired)`, and `failed` counts.
+
+### dome_webhooks_delivery_cancel
+
+Cancel a delivery's pending retry so no further outbound request is sent.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `delivery_id` | string | Yes | Delivery ID (UUID) to cancel |
+
+<Callout icon="key">Requires `eventing.manage`. Destructive.</Callout>
+
+## Providers
+
+### dome_webhooks_provider_list
+
+List the off-the-shelf provider catalog: each provider's setting and credential fields, recommended event bundle, and authentication style. Call before `dome_webhooks_subscription_create` with `provider` to discover the required `settings` and `credentials`. No parameters.
+
+<Callout icon="key">Requires `eventing.view`.</Callout>
+
+<Callout type="info">
+**Dashboard-only views.** Delivery statistics live in the dashboard's Webhooks page. The event catalog is also available via [`dome audit catalog`](/operate/audit#browse-the-event-catalog) and MCP `dome_audit_catalog_*`. Agents list, inspect, and replay deliveries through the tools above.
+</Callout>
+
+## Next steps
+
+Create destinations and subscriptions from Operate:
+
+- [Subscribe to Events](/operate/webhooks)
+- [Webhooks](/concepts/audit/webhooks) concept
+- [Event catalog](/reference/events/catalog) reference for the types you can subscribe to
+- [Event contracts](/reference/events/contracts#webhooks) reference for the webhook envelope and headers

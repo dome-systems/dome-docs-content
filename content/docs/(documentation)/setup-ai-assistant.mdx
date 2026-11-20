@@ -1,0 +1,350 @@
+---
+title: Setup AI assistant
+sidebarTitle: Setup AI assistant
+description: 'Connect an AI assistant to Dome with the CLI, MCP, docs, and skills'
+---
+
+Set up an AI assistant to operate Dome alongside you. Use the CLI, MCP, docs, and skills for session, tools, and docs context:
+
+- **CLI** — install the binary, authenticate, and select the workspace the MCP server will inherit
+- **MCP** — `dome mcp serve` exposes role-scoped tools over JSON-RPC so the client can call Dome directly
+- **Docs** — a public docs MCP server, `llms.txt`, per-page `.md`, and agent-tab phrasing so the assistant follows how-tos instead of inventing steps
+- **Skills** — planned multi-step workflows for onboarding, policy deployment, and investigation
+
+Use the prompt below to hand setup to an assistant, or follow the sections in order yourself.
+
+<Prompt
+  description="Hand this to an AI agent. It installs the CLI if needed, connects MCP, verifies the session, and shows how it will use the Dome docs."
+  icon="sparkles"
+  actions={["copy", "cursor"]}
+>
+Connect me to Dome from this assistant so I can operate the platform from chat.
+
+First, show me this plan and ask me to confirm before running anything:
+
+1. Install the Dome CLI if it is missing (Homebrew with `brew trust`, or the direct download on [Install](https://developer.domesystems.ai/install))
+2. Sign me in with `dome auth login` (opens a browser), then sync contexts
+3. Select a workspace with `dome context use`
+4. Add the Dome MCP server to this client
+5. Verify the connection (workspace + tool discovery)
+6. Show me how you will use the Dome docs while we work
+
+Follow the commands at https://developer.domesystems.ai/agent/setup-ai-assistant.md exactly.
+
+Non-negotiable rules:
+
+- Narrate as you go. Before each step, tell me in one or two sentences what you are about to do and why it matters. Do not silently run the whole flow.
+- `dome auth login` opens a browser. Run it, then wait for me before continuing. After a successful sign-in, run `dome context sync`.
+- You cannot reload my MCP client. After writing MCP config, stop, tell me to reload if needed, and wait until I confirm Dome tools are visible.
+- Never print agent tokens, platform keys, or provider secrets in chat.
+- Prefer the Dome docs over guessing. Use https://developer.domesystems.ai/llms.txt to find pages, and append `.md` to any docs URL for markdown. Read https://developer.domesystems.ai/reference/mcp for tool schemas and https://developer.domesystems.ai/concepts/platform/permissions for RBAC.
+- Missing MCP tools usually mean my workspace role, not a broken install.
+- Never report a step as done without showing the command or tool output.
+- This is setup only. Do not create workspaces, register demo agents, or deploy rules unless I ask after setup.
+
+Write MCP config for whichever client I am in: Claude Code (`claude mcp add dome -- dome mcp serve`), Cursor MCP config, Claude Desktop `claude_desktop_config.json`, Codex (`codex mcp add dome -- dome mcp serve` or `~/.codex/config.toml`), or stdio for other MCP clients.
+
+Once I confirm tools are live, verify with workspace + agent list, then offer first prompts such as listing agents, querying recent audit, or simulating a decision.
+</Prompt>
+
+## Prerequisites
+
+Before you begin, you need:
+
+- A Dome account ([sign up](https://app.domesystems.ai))
+- An MCP-compatible client (Claude Code, Claude Desktop, Cursor, or any MCP client)
+
+Refer to [Install](/install) if you prefer to install the CLI yourself first.
+
+The MCP server uses your active CLI session for auth and role. Tool discovery is permission-aware and fail-closed: it only exposes tools that role can use, so a `viewer` cannot register agents or deploy rules. Missing tools usually mean RBAC scope, not a broken install. Refer to [Permissions](/concepts/platform/permissions) concept for the role-to-tool mapping.
+
+## CLI
+
+The CLI is how you install Dome locally, sign in, and pick the workspace context the MCP server inherits. There is no separate MCP token. Switch workspaces or roles at any time and the tool list updates on the next request.
+
+```bash
+dome auth login
+dome context sync
+dome context use <workspace>
+```
+
+Refer to [Install](/install) for Homebrew and direct binary download instructions.
+
+## MCP
+
+`dome mcp serve` speaks JSON-RPC 2.0 over stdio. Your client launches that process and discovers tools filtered by the active workspace role.
+
+Pick the integration that matches your client:
+
+<Tabs items={["Claude Code","Claude Desktop","Cursor","Codex","Other MCP Client"]}>
+  <Tab value="Claude Code">
+    Sign in, pick a workspace, then register the server with Claude Code:
+
+    ```bash
+    dome auth login
+    dome context use <workspace>
+    claude mcp add dome -- dome mcp serve
+    ```
+
+    Restart or reload Claude Code if tools do not appear. Tools auto-discover.
+  </Tab>
+  <Tab value="Claude Desktop">
+    Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+    ```json
+    {
+      "mcpServers": {
+        "dome": {
+          "command": "dome",
+          "args": ["mcp", "serve"]
+        }
+      }
+    }
+    ```
+
+    Restart Claude Desktop to connect.
+  </Tab>
+  <Tab value="Cursor">
+    Add to your Cursor MCP configuration:
+
+    ```json
+    {
+      "mcpServers": {
+        "dome": {
+          "command": "dome",
+          "args": ["mcp", "serve"]
+        }
+      }
+    }
+    ```
+  </Tab>
+  <Tab value="Codex">
+    Sign in, pick a workspace, then register the server with Codex:
+
+    ```bash
+    dome auth login
+    dome context use <workspace>
+    codex mcp add dome -- dome mcp serve
+    ```
+
+    Codex stores this in `~/.codex/config.toml`. You can also write it by hand:
+
+    ```toml
+    [mcp_servers.dome]
+    command = "dome"
+    args = ["mcp", "serve"]
+    ```
+
+    Confirm with `codex mcp list`, then type `/mcp` in a Codex session.
+  </Tab>
+  <Tab value="Other MCP Client">
+    Sign in, pick a workspace, then start the server on stdio and point your client at stdin/stdout:
+
+    ```bash
+    dome auth login
+    dome context use <workspace>
+    dome mcp serve
+    ```
+
+    Any MCP-compatible client that launches a stdio process works.
+  </Tab>
+</Tabs>
+
+### Verify the connection
+
+Single-tool round-trips are the cheapest sanity check. If the assistant returns your workspace name and an agent list, auth and discovery both work.
+
+```text title="Verify MCP connection"
+What workspace am I in? List the available agents.
+```
+
+The assistant calls `dome_context_current` and `dome_agents_list`. Each call lands in the audit trail with the same MCP attribution as any other modality.
+
+### Example prompts
+
+Once MCP is connected, every CLI command has a prompt equivalent. The assistant fills defaults from the tool schema. Ask for specific values when you need them.
+
+```text title="Register an agent"
+Register an agent named "my-first-agent".
+```
+
+```text title="Create an API key"
+Create an API key named "default" for agent "my-first-agent".
+```
+
+The API key is returned exactly once. Ask the assistant to display it in full and store it before continuing. It cannot be retrieved again.
+
+```text title="Deploy a Cedar rule"
+Deploy a Cedar rule that permits my-first-agent to call any tool:
+
+permit(
+  principal == Dome::Agent::"my-first-agent",
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"*"
+);
+```
+
+```text title="Simulate an authorization decision"
+Simulate whether my-first-agent can mcp:call on the database-query tool.
+```
+
+```text title="Query recent audit"
+Show the last 5 audit events.
+```
+
+### Compose multi-step workflows
+
+Single-tool prompts work, but the value of an MCP-connected assistant is composition: chaining audit, rule lookup, simulation, and registry queries inside one request.
+
+```text title="Investigate denied requests"
+Query audit events with result denied from the last 24 hours. For each event, look up the agent (by agent_id) and the matched rule (from the active bundle). Pick one event and run a simulation with the same agent, action, and resource to confirm the denial would still happen against the current policy.
+```
+
+Other useful compositions:
+
+```text title="Onboard a new agent end-to-end"
+Run these four steps in order: (1) register an agent named "research-bot", (2) create an API key named "primary" for it, (3) deploy a Cedar bundle permitting principal == Dome::Agent::"research-bot" to mcp:call resource == Dome::MCPTool::"search-docs", (4) simulate that exact action and resource and confirm the decision is ALLOW.
+```
+
+```text title="Switch workspaces"
+Switch to the staging workspace.
+```
+
+The tool list refreshes automatically. Tools outside the new workspace's role are hidden.
+
+### Tool groups
+
+The Dome MCP server exposes tools in these groups, filtered by your workspace role:
+
+| Group | Description |
+|-------|-------------|
+| [Context](/reference/mcp/context) | Switch workspaces, manage aliases, check auth status |
+| [Agents](/reference/mcp/agents) | Register, update, suspend, revoke agents and API keys |
+| [Rules](/reference/mcp/rules) | Deploy, validate, simulate, rollback Cedar policies |
+| [Audit](/reference/mcp/audit) | Query, inspect, export audit events |
+| [Platform](/reference/mcp/platform) | Platform status, API keys, configuration |
+| [Workspaces](/reference/mcp/workspaces) | Create workspaces, manage members, configure act-as |
+| [Tools](/reference/mcp/tools) | MCP server connections, catalogs, and managed authentication |
+| [Gateways](/reference/mcp/gateway) | Group tools and models behind named endpoints, grant agent access, set cost caps |
+| [Verification](/reference/mcp/verification) | OIDC and HMAC verification providers |
+
+### Role to tool exposure
+
+| Role | tools available |
+|------|-----------------|
+| **admin** | Every workspace tool: agents, gateway, rules, audit, members, configuration |
+| **operator** | agents, gateway, rules (deploy and rollback), audit (view, no export), API keys, configuration |
+| **security** | rules (deploy, rollback, simulate), audit (view and export), agent suspend, gateway view |
+| **developer** | agents, agent keys, rules view, audit view, gateway view |
+| **viewer** | Read-only queries and listings |
+
+See the [MCP Server Reference](/reference/mcp) for the complete tool list with parameters.
+
+The AI assistant itself can be a registered Dome agent. Connecting Claude Code (or any MCP client) as a registered agent with its own credentials means every action it takes is governed by Cedar and recorded in audit. Refer to [Interactive app](/tutorials/examples/interactive-agent) for an end-to-end pattern.
+
+## Docs
+
+These docs are published for AI consumption. Prefer them when the assistant needs bulk or targeted context instead of guessing CLI flags or MCP schemas.
+
+| Format | URL | Use case |
+|--------|-----|----------|
+| **llms.txt** | [`/llms.txt`](/llms.txt) | Index of pages with titles and URLs |
+| **Full text** | [`/llms-full.txt`](/llms-full.txt) | Complete documentation as plain text |
+| **Per-page markdown** | Append `.md` to any docs URL | Targeted context injection |
+| **agent setup instructions** | [`/agent/setup-ai-assistant.md`](/agent/setup-ai-assistant.md) | Confirm-first CLI + MCP setup this page hands to an assistant |
+
+### Connect the docs MCP server
+
+The public docs server is a separate MCP endpoint from `dome mcp serve`:
+
+- `https://developer.domesystems.ai/mcp` searches and reads public documentation. It needs no account and cannot operate a workspace.
+- `dome mcp serve` uses your signed-in CLI session to operate the Dome Platform. Its tools are filtered by your workspace role.
+
+Connect the docs server when you want the assistant to look up current product guidance as it works:
+
+<Tabs items={["Cursor","Claude Code","Codex","Other MCP Client"]}>
+  <Tab value="Cursor">
+    Add to your project or user MCP configuration:
+
+    ```json
+    {
+      "mcpServers": {
+        "dome-docs": {
+          "url": "https://developer.domesystems.ai/mcp"
+        }
+      }
+    }
+    ```
+  </Tab>
+  <Tab value="Claude Code">
+    ```bash
+    claude mcp add --transport http dome-docs https://developer.domesystems.ai/mcp
+    ```
+  </Tab>
+  <Tab value="Codex">
+    Add to `~/.codex/config.toml`, or `.codex/config.toml` for a single trusted project:
+
+    ```toml
+    [mcp_servers.dome-docs]
+    url = "https://developer.domesystems.ai/mcp"
+    ```
+
+    Confirm with `codex mcp list`, then type `/mcp` in a Codex session.
+  </Tab>
+  <Tab value="Other MCP Client">
+    Point any Streamable HTTP MCP client at:
+
+    ```text
+    https://developer.domesystems.ai/mcp
+    ```
+
+    For clients that only launch stdio servers, bridge the endpoint with `mcp-remote`:
+
+    ```json
+    {
+      "mcpServers": {
+        "dome-docs": {
+          "command": "npx",
+          "args": ["-y", "mcp-remote", "https://developer.domesystems.ai/mcp"]
+        }
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+The server exposes three read-only tools:
+
+| tool | Use |
+|------|-----|
+| `search` | Find relevant pages and passages |
+| `get_page` | Read one page as Markdown by path or URL |
+| `list_pages` | Browse the page index, optionally under one URL prefix |
+
+Verify it with: `Search the Dome docs for delegated identity, then read the most relevant page.`
+
+### Contextual menu
+
+Every page includes a contextual menu (top-right) for one-click AI integration:
+
+- **Copy page** copies the current page as Markdown
+- **Open in Claude / ChatGPT / Cursor** starts a conversation with the page URL preloaded
+
+### Agent tab in documentation
+
+Every operation page includes an **agent** tab alongside CLI, MCP, and API tabs. The agent tab shows the natural-language prompt in full (same titled text codeblock pattern as the examples above). Use those as guidance when building prompts or agent workflows.
+
+### Run a governed demo with an agent
+
+[Govern your first agent](/tutorials/get-started/govern-your-first-agent) carries a prebuilt Studio demo prompt for an AI agent: create a workspace, deploy rules, then give you the questions that prove allow, redact, and deny. Agent-facing instructions live at [`/agent/tutorials/get-started/govern-your-first-agent`](/agent/tutorials/get-started/govern-your-first-agent).
+
+## Skills
+
+Skills are multi-step workflows for agent onboarding, policy deployment, and incident investigation. They are unavailable. Use the CLI and MCP surfaces above for full platform access.
+
+## Next steps
+
+- [MCP](/reference/mcp) reference for the full tool catalog
+- [Govern your first agent](/tutorials/get-started/govern-your-first-agent) for a governed Studio demo
+- [Permissions](/concepts/platform/permissions) concept for the role-to-tool mapping
+- [Interactive app](/tutorials/examples/interactive-agent) to govern the assistant as a first-class Dome agent

@@ -1,0 +1,131 @@
+---
+title: Platform Admin
+sidebarTitle: Platform Admin
+description: "Set who may administer Dome, check platform health, and export an audit snapshot."
+---
+
+On Dome, a platform admin owns tenancy boundaries, workspace membership, who may change shared systems, and whether the estate stays operable and auditable. You decide who can administer Dome. You do not usually write every Cedar rule or attach every backend — operators and security run day-to-day Connect and Govern work inside the boundaries you set.
+
+<Prompt
+  description="Hand this to an AI agent. It provisions an admin workspace, lists members, checks health, and exports audit."
+  icon="sparkles"
+  actions={["copy", "cursor"]}
+>
+Run the Dome Platform Admin role tutorial in a tutorial workspace: list members, optionally assign a role if I give you a real teammate email, verify platform access and gateway inventory, and export today's audit snapshot.
+
+First, show me this plan and ask me to confirm before running anything:
+
+1. Confirm CLI auth, create studio-role-platform-admin, switch into it
+2. List workspace members
+3. If I provide a real teammate email, set their role; otherwise skip members set
+4. Run `dome auth status` and `dome gateways list`
+5. Export today's audit (empty file is OK — we're proving the pipeline)
+6. Offer clean up
+
+Follow the commands at https://developer.domesystems.ai/agent/tutorials/role/platform-admin.md exactly.
+
+Non-negotiable rules:
+
+- Narrate as you go. Stay in the admin lane — no Cedar authoring, no backend attachment.
+- Confirm the active context. Confirm `dome context current` starts with `studio-`.
+- Do not invent teammate emails. Ask me for a real address or skip role assignment.
+- Never report a step as done without showing the command output.
+- Link the console after membership changes. Derive base URL from `dome auth status` → `Server`.
+</Prompt>
+
+In this tutorial, you will create a dedicated workspace, inspect membership, optionally assign a role, verify platform access and gateway inventory, and export an audit snapshot.
+
+To do this, you will:
+
+<Steps>
+  <Step title="Create a workspace">
+    Create a workspace you can safely administer and delete.
+  </Step>
+  <Step title="Inspect and assign membership">
+    List members; set a role only if a real teammate email is available.
+  </Step>
+  <Step title="Check platform access">
+    Confirm authentication and inspect the workspace's gateways.
+  </Step>
+  <Step title="Export an audit snapshot">
+    Prove the compliance export pipeline runs.
+  </Step>
+</Steps>
+
+## Prerequisites
+
+For this tutorial, you will need:
+
+- The [Dome CLI](/install) installed and authenticated
+- A tenant `admin` role (or an org `owner` / `admin` via cascade) to create the workspace and manage workspace members. Refer to [Permissions](/concepts/platform/permissions).
+
+> This tutorial stays in the Manage lane. For backends and gateways refer to [Operator](/tutorials/role/operator). For Cedar and day-to-day audit investigation refer to [Security](/tutorials/role/security).
+
+## Create a workspace
+
+```bash
+dome workspaces create --name studio-role-platform-admin
+dome context sync
+dome context current
+```
+
+Confirm the workspace reads `studio-role-platform-admin`.
+
+## Inspect and assign membership
+
+List who is already on the workspace:
+
+```bash
+dome workspaces members list
+```
+
+Each member holds one workspace role: `admin`, `operator`, `security`, or `viewer` (refer to [Permissions](/concepts/platform/permissions) concept). Assign a role only when you have a real teammate email that already exists in your org:
+
+```bash
+dome workspaces members set --user teammate@example.com --role operator
+```
+
+If you do not have a second user handy, skip this command. The rest of the tutorial still exercises health and export.
+
+## Check platform access
+
+Confirm the CLI can reach the platform, then list the public gateways in the active workspace:
+
+```bash
+dome auth status
+dome gateways list
+```
+
+Pair that inventory with a quick glance at recent audit activity:
+
+```bash
+dome audit query --limit 10
+```
+
+An empty result is fine on a brand-new workspace.
+
+## Export an audit snapshot
+
+Platform admins prove the export pipeline works even when there is little traffic. Export today's events as JSON Lines:
+
+```bash
+dome audit export \
+  --since "$(date -u +%Y-%m-%dT00:00:00Z)" \
+  --format jsonl > platform-audit.jsonl
+```
+
+A zero-line file still means the command succeeded — you verified the path. Use `--format ocsf` or `cef` when a downstream SIEM expects those shapes.
+
+## Clean up
+
+```bash
+dome workspaces delete studio-role-platform-admin
+```
+
+## Next steps
+
+You learned how to inspect membership, check gateway health, and export an audit snapshot. Continue with:
+
+- [Operator](/tutorials/role/operator) to attach backends and expose gateways
+- [Security](/tutorials/role/security) for rules, filters, and evidence packages
+- [Permissions](/concepts/platform/permissions) concept for the full role-to-capability map

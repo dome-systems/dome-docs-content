@@ -1,0 +1,66 @@
+---
+title: Dome templates
+description: Find, evaluate, deploy, and publish governed Dome agent templates.
+---
+
+Dome templates are immutable, versioned agent applications. A template defines
+an agent topology, including its gateways, tools, models, rules, guards, and
+quotas, so you can evaluate a complete governed application instead of
+assembling its parts from scratch.
+
+## Find a template
+
+Start in the [Templates Library](https://developer.domesystems.ai/templates), which
+contains official Dome templates and community-published templates. Each
+template page explains what it provides, shows its agent topology, and gives
+you the exact immutable release to use.
+
+For example, [AI Documentation agent](https://developer.domesystems.ai/templates/dome-systems/ai-agent-for-documentation)
+is a chat agent with a read-only documentation gateway, a model pool, rules,
+and a daily spend limit. Use its **Topology** view to inspect those boundaries
+before you deploy it.
+
+### Try a template in Studio
+
+Studio is the recommended way to first evaluate any template. It deploys the
+selected immutable release into your Dome workspace, or creates a new
+workspace when you do not have one. It then opens the template's
+included experience without requiring your local machine to run an agent.
+
+For an example, [read the AI Documentation agent Studio instructions](https://developer.domesystems.ai/templates/dome-systems/ai-agent-for-documentation#usage),
+then [try it in Studio](https://developer.domesystems.ai/panel/patterns/chat?templates=dome-systems%2Fai-agent-for-documentation&managed=true&version=0.1.2).
+
+## What you can do
+
+Templates support both consuming a reviewed release and publishing one for
+others to use:
+
+- [Deploy agent with template](/develop/templates/run) — sign in, inspect and
+  pull an immutable release, generate Terraform, then provision it with the
+  Templates CLI.
+- [Publish template](/develop/templates/publish) — author a template release,
+  manage namespace publishers, and deprecate a bad version.
+
+## Install and prerequisites
+
+Use `npx @domesystems/templates` with Node.js 20 or later. `auth`, `view`,
+`pull`, and `generate` do not require the Dome CLI. Install the [Dome
+CLI](/install) before using `templates up`. Install Docker Compose only when
+you use `templates up` to start an external agent runtime locally.
+
+```bash title="Confirm the Templates CLI is available"
+npx @domesystems/templates --help
+```
+
+## Reference
+
+Use these guides when you need the exact commands or want to browse available
+releases:
+
+- [Deploy agent with template](/develop/templates/run#command-reference) for
+  the consumer CLI command reference
+- [Publish template](/develop/templates/publish#command-reference) for
+  publisher and lifecycle commands
+- [Dome CLI reference](/cli) for the CLI used by `templates up`
+- [Templates Library](https://developer.domesystems.ai/templates) to browse official
+  and community templates

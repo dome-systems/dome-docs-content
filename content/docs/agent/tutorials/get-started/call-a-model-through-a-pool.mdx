@@ -1,0 +1,305 @@
+---
+hidden: true
+title: Call a model through a pool — agent instructions
+sidebarTitle: Call a model through a pool
+description: "Machine-readable instructions for an AI agent running the Call a model through a pool tutorial"
+---
+
+These are the instructions an AI agent follows to run the [Call a model through a pool](/tutorials/get-started/call-a-model-through-a-pool) tutorial on your behalf. Read the tutorial instead if you are running the steps yourself.
+
+## Goal
+
+Put an LLM behind a named pool on the user's existing gateway, with the provider key held server-side and a Cedar rule permitting that pool. Teach spend quotas and set a five dollar monthly pool cap on Pro; on Free, explain quotas and continue without one. Prove the path with curl to `/v1/chat/completions` naming `employee-summary`. Then add a **second model** (same provider or other provider), attach it as failover (`--priority 1`), **switch priorities**, curl again with the identical request, and show audit naming different members for the two calls.
+
+Do **not** open the desk or write an SDK client in this tutorial. The next tutorial wires model + tools together in the desk.
+
+## Rules
+
+Follow these even if the rest of this page is unreachable.
+
+- **Confirm before you start.** Before running any commands, present the plan below and wait for the user to say proceed.
+- **Ask for the provider key.** Tell the user which provider you expect and ask them for the key when you reach that step. Do not search their environment, shell history, or files for one, and do not guess a provider. For the second member, ask whether they want another model on the same key or a second provider.
+- **Never print credentials.** Neither the provider API key nor the `dome_...` agent token may appear in chat, logs, or a file that is not gitignored. Pass the provider key to the CLI once.
+- **Teach the pool.** The client and the rules both name the pool. The connection is a backend member. Do not skip the pool and have the user call the connection directly.
+- **Authorize on `resource.pool`.** Do not authorize on the connection name. Adding a second member later must not require a rule change.
+- **Prove with curl.** Live calls are curl only: one before the switch, one after. Do not scaffold Python/OpenAI SDK code or start the desk unless the user explicitly asks after the curls succeed.
+- **Show routing.** Adding the second member and flipping priority is required, not optional. Explain that failover uses the priority-1 tier when the primary attempt fails; the live demo is the priority switch (same curl, different member in audit).
+- **Narrate as you go.** Before each step, tell the user in one or two sentences what you are about to do and why it matters (connection vs pool, server-side credentials, quota subjects, `llm:invoke` as a separate action, pool names versus provider model ids, priority tiers vs failover). Do not silently run the whole flow.
+- **Confirm the active context.** Run `dome context current` and confirm the workspace name starts with `studio-`. If it does not, stop and ask. Only change the workspace selected for this tutorial.
+- **Quotas are Pro.** Cost quotas are included on Pro. On Free, `dome quotas set` fails with a plan limit (`limit-max-cost-quotas`). Explain what quotas do, show the command, and continue without one. Do not treat a missing quota as a failed tutorial.
+- **Keep the cap low on Pro.** When a quota can be created, set five dollars per month on the pool. A real guardrail that is cheap to test is the point.
+- **Never widen governance to make a call pass.** Do not raise the cap or broaden the Cedar rule. Adding a second pool member for the routing demo is required; do not attach unrelated extra models beyond that.
+- **Spend the user's money sparingly.** Each successful call bills their provider account. Two curls (primary + after switch). Do not loop retries.
+- **Link the console.** After each create step, give the user a markdown link into the Dome console for the resource you just touched. Derive the base URL from `dome auth status` → `Server`.
+- **Show your evidence.** Never report a step as done without the command output that proves it.
+
+## Quick setup
+
+Before running any commands, present the user with this checklist and wait for confirmation:
+
+```
+Here's what I'll do to put a governed LLM pool behind your gateway.
+
+1. Confirm the workspace from the earlier tutorials is active
+2. Add a model connection with your provider key
+3. Create a pool, add the connection as a member, and attach the pool to Default
+4. Walk through spend quotas (Pro). Set a $5/month pool cap if your plan allows it; skip on Free
+5. Deploy a Cedar rule permitting inference on that pool (resource.pool), not the connection
+6. Form the LLM ingress URL on the Default gateway and export credentials
+7. Call the pool once with curl against /v1/chat/completions, naming employee-summary
+8. Add a second model, attach it as failover, switch priorities, curl again (same request)
+9. Show you the audit record — different members for the two calls (and spend if a quota was set)
+
+I'll need an OpenAI or Anthropic API key at step 2, and either a second model on that key or a second provider key at step 8. Calls bill your provider account.
+
+Shall I proceed?
+```
+
+Do not start step 1 until the user confirms.
+
+## Steps
+
+### 1. Confirm the workspace
+
+```bash
+dome context current
+```
+
+The workspace must read `studio-get-started`. If it does not, run `dome context current`. If that workspace does not exist, run the [Govern your first agent](/tutorials/get-started/govern-your-first-agent) setup first and say so, rather than inventing a different scenario.
+
+### 2. Add the model connection
+
+Ask the user for their provider and key now. Register the connection **without** attaching it to a gateway — the pool will carry the attachment.
+
+For OpenAI:
+
+```bash
+dome models add openai-mini \
+  --provider openai \
+  --model gpt-4o-mini \
+  --api-key "<provider key>"
+```
+
+For Anthropic:
+
+```bash
+dome models add claude-sonnet \
+  --provider anthropic \
+  --model claude-3-5-sonnet-20241022 \
+  --api-key "<provider key>"
+```
+
+Use the connection name the user's provider implies for the rest of these steps. Confirm it landed:
+
+```bash
+dome models get openai-mini
+```
+
+Link the models page: `<Server>/models`. Explain that the key now lives in Dome's secret store, and that the connection is a backend member, not what the client will name.
+
+### 3. Create the pool and add the member
+
+Create the pool and attach it to Default:
+
+```bash
+dome models pool create employee-summary \
+  --description "HR assistant employee summarization" \
+  --routing-strategy priority_weighted \
+  --failover-max all \
+  --gateway Default
+```
+
+Explain the pool settings: `priority_weighted` prefers by tier then weight; `--failover-max all` walks every eligible member before giving up.
+
+Then add the connection as its only member:
+
+```bash
+dome models pool member add employee-summary openai-mini \
+  --priority 0 \
+  --weight 1
+```
+
+Explain that `--priority 0` marks this member as primary, and Dome tries a `--priority 1` member only if the primary fails. A single-member pool still matters because the client and the rules both name `employee-summary` — you will add a second member after the first curl without changing either.
+
+Then confirm:
+
+```bash
+dome models pool get employee-summary
+dome models pool member list employee-summary
+```
+
+Do **not** add the second member yet. That is step 8, after the first curl proves the path.
+
+Link `<Server>/models` (or the pools view if linked from the console).
+
+### 4. Cap the spend on the pool
+
+Explain that a quota is a dollar cap enforced before the provider is called, and that cost quotas are included on **Pro**. Free workspaces cannot create them.
+
+On Pro, run:
+
+```bash
+dome quotas set \
+  --subject pool \
+  --pool employee-summary \
+  --limit 5 \
+  --window monthly \
+  --name "workspace cap"
+dome quotas list
+```
+
+Record the quota ID from the output. Explain that `--subject pool` caps every member that serves this pool.
+
+If `dome quotas set` fails with a plan limit such as `limit-max-cost-quotas`, tell the user quotas are a Pro feature, show what the command would have done, and continue to authorize the pool. Do not stop the tutorial or invent a workaround.
+
+### 5. Authorize the pool
+
+The gateway attachment makes `employee-summary` reachable. It does not decide who may call it. Tool rules from earlier tutorials cover `mcp:call`, not inference. Inference is a separate action, `llm:invoke`, on `Dome::LLMModel`.
+
+Tell the user the intent before writing the file: allow `hr-assistant` to call models in the `employee-summary` pool, and deny every other inference call. Scope the rule to the pool name rather than a connection like `openai-mini`, so a failover member added later inherits the same permit.
+
+Write `hr-assistant-llm.cedar`:
+
+```cedar
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"llm:invoke",
+  resource is Dome::LLMModel
+) when {
+  resource.pool == "employee-summary"
+};
+
+forbid(
+  principal is Dome::Agent,
+  action == Dome::Action::"llm:invoke",
+  resource
+) unless {
+  resource has pool && resource.pool == "employee-summary"
+};
+```
+
+Deploy and verify without spending anything. Use `--resource-type llm_pool` so simulation stamps `resource.pool` the way a live pool-routed call does:
+
+```bash
+dome rules apply hr-assistant-llm.cedar --agent hr-assistant --name hr-assistant-llm
+dome rules simulate --agent hr-assistant --action llm:invoke \
+  --resource employee-summary --resource-type llm_pool
+```
+
+Expect `ALLOW`. Then simulate a pool name that does not exist and expect `DENY`. Do not skip this check; it is cheaper than a failed live call.
+
+Explain that Dome rewrites pool-name literals to pool UUIDs on deploy, so the user authors names and the platform stores ids.
+
+### 6. Point at the LLM ingress
+
+Point curl at the Default gateway's [LLM ingress](/concepts/gateways/llm-gateway). Model traffic shares the same `/gateways/<id>` gateway prefix as the tools ingress from the first tutorial, and uses `/v1/chat/completions` instead of `/mcp`:
+
+```
+https://<gateway-host>/gateways/<DEFAULT_GATEWAY_ID>/v1/chat/completions
+```
+
+Retrieve the placeholders the same way as [Connect your client](/tutorials/get-started/govern-your-first-agent#connect-your-client):
+
+```bash
+dome context current
+dome gateways list
+```
+
+If the user no longer has an agent token, mint one with `dome agents create-key hr-assistant --name pool-curl` and write it into a gitignored env file — never print it in chat.
+
+Export once. `DOME_GATEWAY_URL` stops at the gateway:
+
+```bash
+export DOME_GATEWAY_URL="https://GATEWAY_HOST/gateways/DEFAULT_GATEWAY_ID"
+export DOME_TOKEN="AGENT_API_KEY"
+```
+
+### 7. Call the pool
+
+Before the curl, show how the request differs from calling the provider directly:
+
+| Field | Value |
+|---|---|
+| URL | `$DOME_GATEWAY_URL/v1/chat/completions` |
+| Authorization | agent bearer token (`dome_…`), not the provider key |
+| `model` | `employee-summary` — the pool name, not `gpt-4o-mini` or `openai-mini` |
+
+Explain that Dome picks which member serves the call, and the client never names the upstream model or connection. Then call once:
+
+```bash
+curl -sS -X POST "$DOME_GATEWAY_URL/v1/chat/completions" \
+  -H "Authorization: Bearer $DOME_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "employee-summary",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Summarize this employee in one sentence: E001 Alice Johnson, Senior Engineer in Engineering."
+      }
+    ]
+  }'
+```
+
+Show the response body. Confirm the call named `employee-summary`. Keep `DOME_GATEWAY_URL` and `DOME_TOKEN` exported for the second curl.
+
+Map any failure to its cause rather than retrying blindly: `400 select a gateway` means the `/gateways/<id>` segment is missing, `403 model not available in this gateway` means the pool is not attached to Default or has no members, `404 no connection for requested model` means a provider model id or connection name was passed where a pool name belongs, `429 llm: quota exceeded` means the cap fired, and `401` means the provider key was used in place of the agent token.
+
+### 8. Add a second member and switch routing
+
+Ask whether the user wants **same provider** (another model on the same key) or **other provider** (second vendor key). Do not invent a key.
+
+Same provider examples:
+
+- Primary was `openai-mini` → add `openai-full` with `gpt-4o`, attach at `--priority 1`
+- Primary was `claude-sonnet` → add `claude-haiku` with `claude-3-5-haiku-20241022`, attach at `--priority 1`
+
+Other provider: add the opposite vendor connection and attach at `--priority 1`.
+
+```bash
+dome models pool member list employee-summary
+```
+
+Explain: healthy calls still hit priority `0`; priority `1` is the failover tier used when the primary attempt fails (`--failover-max all`). Curl and Cedar still name only `employee-summary`.
+
+Flip priorities so the new member becomes primary (substitute the real connection names):
+
+```bash
+dome models pool member update employee-summary <original-primary> \
+  --priority 1 \
+  --weight 1
+
+dome models pool member update employee-summary <new-member> \
+  --priority 0 \
+  --weight 1
+
+dome models pool member list employee-summary
+```
+
+Run the **identical** curl from step 7 again. Show the response. Offer to flip priorities back so the original primary remains default for the desk tutorial.
+
+### 9. Show the spend and the record
+
+```bash
+dome audit query --limit 20
+```
+
+Point out the attempted and completed `model.call` events attributed to `hr-assistant`; the completed stage carries token usage and the **member that served each call**. The two curls should show different members if the priority switch worked. Denials appear as completed `model.call` events with `result=denied` and the shared `denial` block. Link `<Server>/audit/events`.
+
+If a quota was set on Pro, also run:
+
+```bash
+dome quotas list
+```
+
+Point out that the used figure moved. Offer, but do not perform unprompted, a cap enforcement test: lowering the limit below current spend makes the next call return `429` without reaching the provider.
+
+```bash
+dome quotas update <QUOTA_ID> --limit 0.01
+```
+
+If the user runs it, restore the original limit afterward with another `update`. On Free, skip the quota commands entirely.
+
+### 10. Offer the exit
+
+Point the user at [Build a governed app](/tutorials/get-started/build-a-governed-app) next. Keep the `studio-get-started` workspace — later tutorials in this track reuse it. Do not tear it down or remove the pool.

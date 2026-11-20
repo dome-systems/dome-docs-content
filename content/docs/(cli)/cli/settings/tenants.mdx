@@ -1,0 +1,100 @@
+---
+title: dome tenants
+description: List, inspect, and create tenants under your active organization
+---
+
+`dome tenants` lists, inspects, and creates the tenants under your active organization. For the Act-As provider selection a single tenant carries, use [`dome tenant`](/cli/settings/tenant). List, get, and create are gated on the org-level `tenants.manage` permission (held by org `admin` or `owner`); `get` additionally admits any caller whose active session is scoped to the requested tenant.
+
+| Command | |
+|---------|---|
+| [List tenants](#list-tenants) | `dome tenants list` |
+| [Get tenant](#get-tenant) | `dome tenants get <tenant-id>` |
+| [Create tenant](#create-tenant) | `dome tenants create` |
+
+## List tenants
+
+```bash
+dome tenants list
+```
+
+List tenants under your active organization.
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--org-id` | string | No | Target org UUID. Defaults to the active context's org. |
+
+**Permission:** Org-level `tenants.manage` (held by org `owner` or `admin`).
+
+```bash title="List tenants in the active org"
+dome tenants list
+```
+
+```bash title="Target a specific org"
+dome tenants list --org-id 7d2c…
+```
+
+Output is a table of `ID`, `NAME`, `PLAN`, and `CREATED`. Pass `--format json` for the raw response.
+
+## Get tenant
+
+```bash
+dome tenants get <tenant-id>
+```
+
+Get a single tenant by id. The caller is admitted if either (a) their active session is scoped to the requested tenant, or (b) they hold org `admin` or `owner` on the requested tenant's org.
+
+| Argument / Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `<tenant-id>` | string | Yes | Tenant UUID |
+| `--org-id` | string | No | Target org UUID. Defaults to the active context's org. |
+
+**Permission:** Tenant-scoped session for the requested tenant **or** org-level `tenants.manage` on the requested tenant's org.
+
+```bash title="Get a tenant in the active org"
+dome tenants get 5b1e…
+```
+
+```bash title="Get a tenant from a specific org"
+dome tenants get 5b1e… --org-id 7d2c…
+```
+
+Output is a key/value table including ID, name, plan, org id, default gateway, join policy, and created timestamp. Pass `--format json` for the raw response.
+
+## Create tenant
+
+```bash
+dome tenants create
+```
+
+Create a new tenant under your active organization. The caller becomes the initial tenant admin.
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--name` | string | Yes | Tenant display name |
+| `--plan` | string | No | Tenant plan: `essential` (default), `managed`, `enterprise`, `complete` |
+| `--join-policy` | string | No | How non-members join: `open`, `request`, or `invite_only`. Omit to take the server default (`invite_only`). |
+| `--org-id` | string | No | Target org UUID. Defaults to the active context's org. |
+
+**Permission:** Org-level `tenants.manage` on the org named in `--org-id` (held by org `owner` or `admin`). The permission check runs against the request's target org, not your active context — a caller authorized on org X cannot create a tenant in org Y by overriding `--org-id`.
+
+```bash title="Create a tenant under the active org"
+dome tenants create --name acme-prod --plan managed
+```
+
+```bash title="Create with an explicit join policy"
+dome tenants create --name acme-prod --plan managed --join-policy request
+```
+
+```bash title="Target a specific org"
+dome tenants create --name acme-staging --org-id 7d2c…
+```
+
+The success line echoes the resolved join policy so you can verify what the server applied. Unknown values return `InvalidArgument`. See [Join policies](/manage/environments#join-policies) for what each value means. The `get` view surfaces the current Join Policy row.
+
+<Callout type="info">
+  `dome tenants create` works directly after `dome auth login` — no prior `dome context use` is required. As long as `--org-id` (or the default active org) names an org you hold `tenants.manage` on, the request succeeds.
+</Callout>
+
+<Callout type="info">
+  Creating a new organization is operator-only. Contact Dome to provision a new org.
+</Callout>

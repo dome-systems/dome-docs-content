@@ -1,0 +1,9 @@
+{
+  "pages": [
+    "index",
+    "rules",
+    "guards",
+    "escalations",
+    "quotas"
+  ]
+}

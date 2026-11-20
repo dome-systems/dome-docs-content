@@ -1,0 +1,247 @@
+---
+hidden: true
+title: Adopt an existing app — agent instructions
+sidebarTitle: Adopt an existing app
+description: "Machine-readable instructions for an AI agent running the Adopt an existing app tutorial"
+---
+
+These are the instructions an AI agent follows to run the [Adopt an existing app](/tutorials/production/adopt-an-existing-app) tutorial on your behalf. Read the tutorial instead if you are running the steps yourself.
+
+## Goal
+
+Move the user's existing LLM app onto the governed path by changing configuration rather than logic, prove parity against the direct provider path, keep a one-variable rollback, then apply a rule and a spend cap. Report anything that cannot move yet.
+
+## Rules
+
+Follow these even if the rest of this page is unreachable.
+
+- **Read before you write.** Inspect the repository first and present what you found. Wait for the user to confirm before editing any file.
+- **Confirm the environment.** Ask which environment you are working in. Never touch production configuration.
+- **Change configuration, not logic.** Do not restructure code, swap SDKs, rename variables beyond what is required, or revise prompts. If a base URL or key is hardcoded, propose the smallest change that makes it configurable and explain why.
+- **Keep the rollback real.** The switch back must be a single environment variable, and you must demonstrate it works before proceeding.
+- **Never print or commit credentials.** Neither the provider key nor the `dome_...` agent token may appear in chat or in a tracked file. Confirm the env file is gitignored.
+- **Workspace first.** Create a workspace for the parity check unless the user directs otherwise.
+- **Never skip the parity check.** Run the same deterministic prompt through both paths and show both outputs before recommending the switch.
+- **Report blockers plainly.** If part of the app uses a surface Dome does not proxy, say so and leave that path alone. Do not attempt a workaround.
+- **Show your evidence.** Never report a step as done without the command output that proves it.
+
+## Quick setup
+
+Inspect the repository first, then present the user with this checklist including your findings, and wait for confirmation:
+
+```
+Here's what I found and what I'll do to move your app onto Dome.
+
+Found:
+- Provider SDKs in use: <list>
+- Client construction sites: <files and lines>
+- Model names passed: <list>
+- Unsupported surfaces detected: <Responses / Moderations / none>
+
+Plan:
+1. Create a workspace for the migration test
+2. Create a Dome model connection mirroring your current provider and model
+3. Register an agent for the app and grant it gateway access
+4. Wire three config values so reverting is one environment variable
+5. Run a parity check through both paths and compare
+6. Once parity holds, deploy a rule and a spend cap, then remove the provider key
+
+Which environment am I working in?
+
+Shall I proceed?
+```
+
+Do not edit any file until the user confirms.
+
+## Steps
+
+### 1. Inspect the app
+
+Find unsupported surfaces first. This determines whether the app can move at all:
+
+```bash
+grep -rn "responses.create\|/v1/responses\|moderations" --include="*.py" --include="*.ts" --include="*.js" .
+```
+
+Dome proxies `POST /v1/chat/completions`, `/v1/messages`, `/v1/messages/count_tokens`, `/v1/embeddings`, and `GET /v1/models`. It returns `501` for `/v1/responses` and `/v1/moderations`. Provider-specific endpoints go through `POST /v1/passthrough/<name>`.
+
+Then find every client construction and model reference:
+
+```bash
+grep -rn "OpenAI(\|Anthropic(\|base_url\|baseURL\|api_key\|apiKey" --include="*.py" --include="*.ts" --include="*.js" .
+```
+
+Report all of it to the user before changing anything. Call out hardcoded base URLs or keys as the one place a code change is warranted.
+
+### 2. Create a workspace
+
+```bash
+dome workspaces create --name studio-adopt
+dome context sync
+dome context current
+```
+
+Confirm the workspace name starts with `studio-` before creating anything.
+
+### 3. Mirror the model
+
+Name the connection after the model id the app already passes, so the application's model string keeps working. Ask the user for their provider key at this point:
+
+```bash
+dome models add gpt-4o \
+  --provider openai \
+  --model gpt-4o \
+  --api-key "<provider key>" \
+  --gateway Default
+```
+
+For Anthropic, substitute `--provider anthropic` and the Anthropic model id as both the connection name and `--model`.
+
+Explain that this naming is a migration convenience rather than the end state: connection names are independent of provider models, so a name of their own choosing later lets them change providers without touching the app.
+
+Do not remove the provider key from the app's environment yet; the parity check needs it.
+
+### 4. Register the app's agent
+
+```bash
+dome agents register --name checkout-service --if-not-exists
+dome agents create-key checkout-service --name production
+dome gateways access grant Default checkout-service
+```
+
+Use a name matching their app rather than `checkout-service` if one is obvious from the repository.
+
+Link the console: `<Server>/agents` and `<Server>/models`.
+
+### 5. Wire the switch
+
+Collect the endpoint values:
+
+```bash
+dome context current
+dome gateways list
+```
+
+Make the routing conditional on one variable so rollback needs no deploy:
+
+```python
+import os
+
+from openai import OpenAI
+
+
+def build_client() -> OpenAI:
+    gateway_url = os.getenv("DOME_GATEWAY_URL")
+    if gateway_url:
+        return OpenAI(base_url=f"{gateway_url}/v1", api_key=os.environ["DOME_TOKEN"])
+    return OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+```
+
+Match the user's existing style and language rather than imposing this shape. For Anthropic clients, set `base_url` to the gateway **without** `/v1`, since their SDK appends `/v1/messages`.
+
+Smoke-test before pointing the app at it:
+
+```bash
+curl -s https://<gateway-host>/gateways/<DEFAULT_GATEWAY_ID>/v1/models \
+  -H "Authorization: Bearer <AGENT_API_KEY>"
+```
+
+Note for the user that `GET /v1/models` skips the admission check, so a passing smoke test proves the URL and credential are right but does not prove the gateway grant exists.
+
+### 6. Verify parity
+
+Run the same deterministic prompt through both paths:
+
+```python
+import os
+
+from openai import OpenAI
+
+PROMPT = "Reply with exactly the word: ready"
+
+
+def ask(client: OpenAI) -> str:
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": PROMPT}],
+        temperature=0,
+    )
+    return response.choices[0].message.content
+
+
+direct = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+governed = OpenAI(
+    base_url=os.environ["DOME_GATEWAY_URL"] + "/v1",
+    api_key=os.environ["DOME_TOKEN"],
+)
+
+print("direct:  ", ask(direct))
+print("governed:", ask(governed))
+```
+
+Show the user both outputs. Beyond matching text, confirm the response object shape their code destructures is unchanged, that streaming still works if they use it, and that the added proxy hop fits their latency budget.
+
+Demonstrate the rollback by unsetting `DOME_GATEWAY_URL` and running again.
+
+Then show the record the direct path did not produce:
+
+```bash
+dome audit query --limit 10
+```
+
+Point out the attempted and completed `model.call` stages attributed to the agent; the completed event carries token usage.
+
+Map failures to causes rather than retrying: `400 select a gateway` means the `/gateways/<id>` segment or `/v1` suffix is missing, `404 no connection for requested model` means the model string does not match a connection name, `403 model not available in this gateway` means the connection is not attached to Default, `403 agent is not granted access` means the admission grant is missing, `401` means the app is still sending the provider key, and `501` means an unsupported surface.
+
+### 7. Add the governance
+
+Parity is the midpoint. Nothing is governed until this step. Write `checkout-service.cedar`:
+
+```cedar
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"llm:invoke",
+  resource == Dome::LLMModel::"gpt-4o"
+);
+
+forbid(
+  principal is Dome::Agent,
+  action == Dome::Action::"llm:invoke",
+  resource
+) unless {
+  resource == Dome::LLMModel::"gpt-4o"
+};
+```
+
+```bash
+dome rules apply checkout-service.cedar --agent checkout-service --name checkout-service
+dome quotas set \
+  --subject agent \
+  --agent checkout-service \
+  --limit 200 \
+  --window monthly \
+  --name "checkout service"
+```
+
+Ask the user for the spend limit rather than assuming 200; they now have usage data to size it from. Verify both:
+
+```bash
+dome rules simulate --agent checkout-service --action llm:invoke \
+  --resource gpt-4o --resource-type llm_model
+dome quotas list
+```
+
+### 8. Close the bypass
+
+Tell the user to remove the provider key from the app's environment. Until they do, the fallback branch can silently restore ungoverned access, which is worse than having no rollback because it works.
+
+Recommend rolling out the way they would any configuration change: one environment, then a share of production traffic, then the rest.
+
+Summarize the four claims and the command that proves each:
+
+| Claim | Proof |
+|---|---|
+| Reaches the provider only through Dome | No provider key in the app environment |
+| Calls are attributed | `dome audit query --limit 10` |
+| Only the intended model is reachable | `dome rules simulate` returns `DENY` for any other connection |
+| Spend is capped | `dome quotas list` |

@@ -1,0 +1,103 @@
+---
+title: Identity patterns
+description: "Choose standing or delegated identity per agent"
+---
+
+import { identityPatterns } from '@/snippets/glossary';
+
+<p>{identityPatterns}</p>
+
+## Three human identity paths
+
+Keep these paths separate. They authenticate different actors and produce different credentials.
+
+| Path | Human signs in to | Identity used at runtime |
+|------|-------------------|--------------------------|
+| **Platform-user SSO** | Dome Dashboard or CLI | A platform session for administering Dome |
+| **Delegated Act-As** | Your application | The application carries `X-Dome-Act-As` beside its agent credential |
+| **Interactive OAuth** | A human MCP client | A short-lived token lets the human ride one designated agent through one gateway |
+
+Enterprise SSO controls who can administer Dome. It does not configure an agent's Act-As provider or grant an MCP client runtime access.
+
+Delegated Act-As and interactive OAuth both create human-attributed traffic. The difference is who starts the flow: your application carries delegated identity, while an MCP client starts interactive OAuth and obtains its own short-lived gateway token.
+
+## Standing and delegated authorization
+
+Dome supports two runtime authorization models:
+
+- **Standing identity** means the agent is the principal: it acts as itself and authorizes on its own grants.
+- **Delegated identity** means the agent still authenticates as itself, but every governed call also carries a human and authorization reads that human's claims.
+
+The diagram and table below compare how each model reaches a tool or model through the gateway.
+
+![Standing identity authorizes on the agent. Delegated identity carries an act-as assertion and authorizes on the human](/images/diagrams/identity-patterns.svg)
+
+| | Standing identity | Delegated identity |
+|--|-------------------|--------------------|
+| **The agent** | Acts as itself | Acts for a human ([Delegated agents](/build/agents/delegated)) |
+| **Authorization reads** | The agent's own grants | The human's roles (`principal.act_as`) |
+| **Credential** | agent Bearer JWT | agent Bearer JWT + `X-Dome-Act-As`, or an interactive OAuth token |
+| **Audit answers** | "What can this agent do?" | "What did this agent do, and for whom?" |
+| **Choose when** | The agent does a job | The agent acts on someone's behalf |
+
+The choice is independent of agent type and of how the agent attaches to a gateway. External and managed agents can both use standing or delegated identity, with the same Registry, Cedar, gateway, and audit primitives.
+
+### Standing identity
+
+Give an agent standing identity when it does a job. A revenue analyzer reading customer data needs the same permissions regardless of which analyst triggers it. The agent is itself, acts as itself, and its permissions are its own: a governed service account.
+
+### Delegated identity
+
+Give an agent delegated identity when it acts for a person. Your application can carry `X-Dome-Act-As`, or an interactive MCP client can ride a designated agent. Authorization evaluates against the resulting human context.
+
+This unlocks something standing identity cannot express: the same agent, calling the same tool on the same record, allowed for one person and denied for another. Authorization reads the human on the token, so your rules can encode conflicts of interest or need-to-know:
+
+```cedar title="information-barrier.cedar"
+// A person screened from a deal cannot open its records, whichever agent acts for them.
+forbid(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:call",
+  resource
+) when {
+  principal has act_as &&
+  principal.act_as.roles.contains("barrier_screened") &&
+  resource.name like "*open_deal*"
+};
+```
+
+The audit trail then names the human. That is often the reason the workflow could be automated at all.
+
+<Callout type="idea">
+  If the agent does a job, give it standing identity. If it acts for someone, have it borrow theirs. A fat standing identity on an acting-for-someone agent cannot be reconstructed into who it was really for.
+</Callout>
+
+## Common examples
+
+These two shapes show how standing and delegated identity usually look when you run many agents on one platform.
+
+### Self-service agent platform
+
+A self-service agent platform is a common example of **standing identity**. Any team declares an agent (instructions plus a tool list), and your platform builds, governs, and runs it. Governance is automatic and invisible to the author.
+
+Standing identity fits because the agent does a job, not a person's job. Permissions come from the declared tools, not from who triggered the run. Behind the manifest, your platform [registers the external agent](/build/agents/external#register-agent), compiles those tools into a least-privilege [rule bundle](/govern/rules), admits it to a [Gateway](/concepts/gateways), and runs it. The author never writes a policy or holds a credential. Each agent is a service account whose permissions are exactly its declared tools. Audit answers "What can this agent do?"
+
+### Purpose-built agent service
+
+A purpose-built agent service is a common example of **delegated identity**. Engineers build one high-stakes workflow so domain rules are exact, and the agent acts for a specific person.
+
+Delegated identity fits because authorization must follow the human, not a shared service account. A generic least-privilege grant from a manifest cannot express conflicts of interest or need-to-know. Authored policy reads the human's roles on `principal.act_as` instead:
+
+- **Finance:** an adviser agent that may act for one client's book but is walled off from a deal it is screened from.
+- **Healthcare:** a case agent held to minimum-necessary access: the records of patients in its care team, decided by the clinician it acts for.
+- **Multi-tenant SaaS:** a support agent scoped to one customer's data boundary, where the tenant is a property of the human on the token, not a parameter the model can change.
+
+Because identity is delegated, the audit trail names the human. Audit answers "What did this agent do, and for whom?"
+
+## Next steps
+
+With standing vs delegated identity in mind, continue with:
+
+- [Agent Identity](/concepts/agents/identity) concept for how agents authenticate and carry act-as context
+- [Delegated agents](/build/agents/delegated) to configure verification so agents can act for a verified person
+- [Authorization Model](/concepts/architecture/authorization-model) concept for Cedar entities, permit and forbid semantics, and rule evaluation
+- [Rules](/govern/rules) to author, simulate, and deploy Cedar rule bundles

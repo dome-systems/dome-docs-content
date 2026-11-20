@@ -1,0 +1,193 @@
+---
+hidden: true
+title: Multi-Adapter Tools Agent
+description: "Governing an agent that connects to multiple external services"
+---
+
+A multi-adapter tools agent reaches several backends through the gateway — CRM, analytics, payments, internal APIs. Each backend has different sensitivity, authentication, and compliance posture, so a single compromise cascades across services.
+
+Governance treats every backend as its own authorizable surface with its own policy. Per-backend Cedar rules grant narrow, named access to the exact tools the agent needs on each service. Act-as identity propagates end-to-end, so backends authorize the real user, not the bot. Field classifications travel with each backend, and every cross-service call lands in a unified audit trail.
+
+## Threat Model
+
+| Threat | Description |
+|--------|-------------|
+| **Over-privileged tool access** | The agent has broader access than it needs, reaching backends it should never call |
+| **Credential leakage between backends** | A vulnerability in one backend exposes credentials for another through shared agent context |
+| **Unauthorized cross-service data flow** | The agent reads from a sensitive backend and writes that data to a less-secured one |
+| **Backend configuration drift** | Backend credentials or field classifications fall out of sync with actual service security posture |
+
+## Governance Approach
+
+| Threat | Dome Capability | How It Helps |
+|--------|----------------|--------------|
+| Over-privileged tool access | [Authorize](/govern/rules), [Pass identity for delegated agents](/develop#pass-identity-for-delegated-agents) | Per-backend Cedar rules grant only the specific tools each agent needs |
+| Credential leakage between backends | [Attach Backends](/connect/tools#add-tool), [Route Traffic](/develop#route-traffic) | The gateway manages credentials per-backend — agents never see backend credentials |
+| Unauthorized cross-service data flow | [Guards](/govern/guards), [Authenticate Identities](/develop#authenticate) | Field classifications prevent sensitive data from leaving its backend, act-as identity enforces user-level access |
+| Backend configuration drift | [Stream Live Events](/operate/observe), [Audit and Export](/operate/audit) | Audit trail captures every backend interaction for drift detection and compliance review |
+
+## Implementation
+
+<Steps>
+  <Step title="Register the agent with required act-as identity">
+    Register the agent and label the service domains it serves. The `service_domain` metadata is what the rules in step 3 read:
+
+    ```bash
+    dome agents register \
+      --name "multi-tools-agent" \
+      --metadata service_domain=revenue \
+      --actas-method oidc \
+      --actas-provider vp_workspace_oidc \
+      --actas-required
+    ```
+
+    Setting `--actas-required` ensures every request carries end-user identity. The gateway rejects requests without a valid act-as header. Once the backends exist, allow them on the agent with `dome agents update multi-tools-agent --tool analytics-api/query --tool crm-api/lookup --tool payments-api/read`.
+
+    <Callout type="info">
+      `vp_workspace_oidc` is a placeholder ID for a [workspace verification provider](/build/agents/delegated#create-a-verification-provider). Create one for your IdP and pass its returned ID, or skip the provider step and inline the discovery URL on the agent with `--actas-oidc-url <discovery-url>`.
+    </Callout>
+  </Step>
+  <Step title="Configure backends with field classifications">
+    Add each backend with its own credentials and field classifications:
+
+    ```bash
+    # Analytics backend — read-only, no sensitive fields. --gateway
+    # makes each connection reachable; the agent also needs a grant to the Gateway
+    # (see /build/gateways#add-resource-memberships).
+    dome tools add \
+      --name "analytics-api" \
+      --url "https://analytics.internal:8443" \
+      --protocol streamable-http \
+      --auth-method api-key \
+      --credential-type shared \
+      --authorization "Bearer $ANALYTICS_TOKEN" \
+      --gateway Default
+
+    # CRM backend — contains PII, requires identity forwarding
+    dome tools add \
+      --name "crm-api" \
+      --url "https://crm.internal:8443" \
+      --protocol streamable-http \
+      --header-actas "X-Dome-Act-As" \
+      --auth-method api-key \
+      --credential-type shared \
+      --authorization "Bearer $CRM_TOKEN" \
+      --field-classification email=PII,phone=PII,address=PII \
+      --gateway Default
+
+    # Payment backend — highly sensitive
+    dome tools add \
+      --name "payments-api" \
+      --url "https://payments.internal:8443" \
+      --protocol streamable-http \
+      --auth-method api-key \
+      --credential-type shared \
+      --authorization "Bearer $PAYMENTS_TOKEN" \
+      --field-classification card_number=SENSITIVE,account_id=SENSITIVE \
+      --gateway Default
+    ```
+  </Step>
+  <Step title="Define per-backend Cedar rules">
+    Write authorization rules that grant different access levels per backend:
+
+    ```bash
+    dome rules validate multi-tools-rules.cedar
+    dome rules apply multi-tools-rules.cedar --name "multi-tools-policy"
+    ```
+
+    See the [Policy Example](#policy-example) below for the Cedar rule content.
+  </Step>
+  <Step title="Simulate the rules">
+    Verify the rules against historical events before they take effect:
+
+    ```bash
+    dome rules simulate multi-tools-rules.cedar
+    ```
+  </Step>
+  <Step title="Monitor cross-backend activity">
+    Stream audit events filtered to the agent to watch for unexpected cross-service access patterns:
+
+    ```bash
+    dome audit stream --agent multi-tools-agent
+    ```
+  </Step>
+</Steps>
+
+## Policy Example
+
+```cedar title="multi-tools-rules.cedar"
+// Permit the registered agent read-only access to analytics tools.
+permit(
+  principal == Dome::Agent::"multi-tools-agent",
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"analytics-api"
+) when {
+  context.method == "read"
+};
+
+// Permit CRM access only when act-as identity is present
+permit(
+  principal == Dome::Agent::"multi-tools-agent",
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"crm-api"
+) when {
+  principal has act_as
+};
+
+// Forbid CRM write operations unless act-as identity has the editor role
+forbid(
+  principal,
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"crm-api"
+) when {
+  context.method == "write" &&
+  !(principal.act_as.roles.contains("editor"))
+};
+
+// Permit the registered agent read-only access to payments.
+permit(
+  principal == Dome::Agent::"multi-tools-agent",
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"payments-api"
+) when {
+  context.method == "read"
+};
+
+// Forbid all write operations on payments
+forbid(
+  principal,
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"payments-api"
+) when {
+  context.method == "write"
+};
+
+// Keep the CRM closed to any agent outside the revenue domain.
+forbid(
+  principal,
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"crm-api"
+) unless {
+  principal has metadata &&
+  principal.metadata has service_domain &&
+  principal.metadata.service_domain == "revenue"
+};
+
+// Permit tool discovery so the agent sees its available tools
+permit(
+  principal == Dome::Agent::"multi-tools-agent",
+  action == Dome::Action::"mcp:discover",
+  resource
+);
+```
+
+<Callout type="warning">
+  The payment backend rules demonstrate defense in depth: the `forbid` on write operations applies even when a permit matches. Layer forbid rules to create hard boundaries that no permit can bypass.
+</Callout>
+
+## Next steps
+
+- [Adapters](/sdks/python/adapters) for framework wrappers
+- [Tools](/connect/tools) to attach catalogs and credentials
+- [Gateways](/build/gateways) for membership and grants
+- [Authorize Access](/govern/rules) to permit and forbid tool calls

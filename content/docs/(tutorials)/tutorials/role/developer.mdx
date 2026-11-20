@@ -1,0 +1,306 @@
+---
+title: Developer
+sidebarTitle: Developer
+description: "Register an agent, call tools through a gateway, and confirm allow and deny in audit."
+---
+
+On Dome, a developer owns the agent as a workload: you register it, mint its credentials, point it at a gateway, and verify that governed calls succeed or fail for the reasons you expect. Operators usually attach shared backends. Security usually owns the baseline rules. In this workspace you finish the loop yourself so you can see the full path.
+
+<Prompt
+  description="Hand this to an AI agent. It stands up a workspace agent, then hands you curl or Python calls that prove allow and deny."
+  icon="sparkles"
+  actions={["copy", "cursor"]}
+>
+Run the Dome Developer role tutorial in a tutorial workspace: register an agent, attach demo-hr, deploy a minimal Cedar allowlist, then hand me curl or Python calls that prove allow and deny, plus audit.
+
+First, show me this plan and ask me to confirm before running anything:
+
+1. Confirm CLI auth, create studio-role-developer, switch into it
+2. Register role-dev-agent and mint an API key (do not print the token)
+3. Attach demo-hr to Default and grant the agent gateway access
+4. Deploy a Cedar allowlist (directory tools only; deny salary)
+5. Hand me Verify tabs (curl and Python) for list_employees (allow) and get_salary (deny)
+6. Show audit for those decisions, then offer clean up
+
+Follow the commands at https://developer.domesystems.ai/agent/tutorials/role/developer.md exactly.
+
+Non-negotiable rules:
+
+- Narrate as you go. Before each step, tell me in one or two sentences what you are about to do and why it matters.
+- Confirm the active context. After switching context, run `dome context current` and confirm the workspace name starts with `studio-`. If it does not, stop and ask me.
+- Never print the `dome_...` agent token in chat. Write it into a gitignored `.env` for the verify step.
+- Do not call the governed tools yourself to demo outcomes. After setup, hand me the curl/Python commands and expected results, then stop.
+- After each create/grant/deploy step, give me a markdown link into the Dome console. Derive the base URL from `dome auth status` → `Server`.
+- Never report a step as done without showing the command output.
+</Prompt>
+
+In this tutorial, you will register an agent, attach the demo HR tools behind Default, deploy a narrow Cedar allowlist, and prove allow vs deny from curl or Python — then see both decisions in audit.
+
+To do this, you will:
+
+<Steps>
+  <Step title="Create a workspace">
+    Create a dedicated workspace for this role walk.
+  </Step>
+  <Step title="Register an agent">
+    Mint identity and an API key for the workload.
+  </Step>
+  <Step title="Attach tools and grant access">
+    Put `demo-hr` on Default and admit the agent.
+  </Step>
+  <Step title="Deploy authorization rules">
+    Allow directory tools; deny compensation.
+  </Step>
+  <Step title="Verify allow and deny">
+    Call the gateway with curl or Python.
+  </Step>
+  <Step title="Confirm in audit">
+    Read the decisions attributed to your agent.
+  </Step>
+</Steps>
+
+## Prerequisites
+
+For this tutorial, you will need:
+
+- The [Dome CLI](/install) installed and authenticated (`dome auth login`, then `dome auth status`)
+- A tenant `admin` role (or an org `owner` / `admin` via cascade) to create the workspace, plus permission to deploy rules. Refer to [Permissions](/concepts/platform/permissions).
+
+> This tutorial runs entirely in a workspace. In a production workspace, attaching backends is typically an [operator](/tutorials/role/operator) action and deploying rules a [security](/tutorials/role/security) action. A developer still needs enough Connect and Govern context to integrate and debug.
+
+## Create a workspace
+
+A [workspace](/concepts/platform/scopes) is a dedicated workspace with the same capabilities as production. Provision one for this role track:
+
+```bash
+dome workspaces create --name studio-role-developer
+```
+
+The command creates `studio-role-developer` and selects it as the active context. Confirm it:
+
+```bash
+dome context sync
+dome context current
+```
+
+Confirm the workspace reads `studio-role-developer` before continuing.
+
+## Register an agent
+
+An [agent](/concepts/agents/identity) is the workload identity every governed call is attributed to. Register one, then mint a credential the gateway will accept as `Authorization: Bearer`:
+
+```bash
+dome agents register --name role-dev-agent --if-not-exists
+dome agents create-key role-dev-agent --name service
+```
+
+Save the `Token: dome_…` value once into a gitignored `.env`. Tokens are shown once and cannot be recovered — mint another key if you lose it.
+
+## Attach tools and grant access
+
+A [tool](/connect/tools) is a backend the gateway calls on the agent's behalf. The agent never sees its URL. Register the public demo HR server and attach it to Default:
+
+```bash
+dome tools add \
+  --name demo-hr \
+  --url https://demo-mcp.domesystems.ai/mcp \
+  --protocol streamable-http \
+  --auth-method none \
+  --gateway Default
+```
+
+The connection name prefixes every tool (`demo-hr/hr/list_employees`, and so on). Admit the agent at Default so the gateway accepts its requests:
+
+```bash
+dome gateways access grant Default role-dev-agent
+```
+
+That grant admits the agent and permits resources currently in Default. The next step narrows what the agent may actually call.
+
+## Deploy authorization rules
+
+Cedar decides every `mcp:call`. This allowlist keeps directory tools open and blocks compensation (and everything else) with `forbid … unless`:
+
+```cedar title="role-dev-agent.cedar"
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:discover",
+  resource
+);
+
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:call",
+  resource
+) when {
+  resource in [
+    Dome::MCPTool::"demo-hr/hr/list_employees",
+    Dome::MCPTool::"demo-hr/hr/get_employee",
+    Dome::MCPTool::"demo-hr/hr/org_chart"
+  ]
+};
+
+forbid(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:call",
+  resource
+) unless {
+  resource in [
+    Dome::MCPTool::"demo-hr/hr/list_employees",
+    Dome::MCPTool::"demo-hr/hr/get_employee",
+    Dome::MCPTool::"demo-hr/hr/org_chart"
+  ]
+};
+```
+
+Deploy it scoped to this agent:
+
+```bash
+dome rules apply role-dev-agent.cedar --agent role-dev-agent --name role-dev-agent
+```
+
+Expect `Bundle deployed: role-dev-agent`. Optionally simulate before a live call:
+
+```bash
+dome rules simulate --agent role-dev-agent --action mcp:call \
+  --resource demo-hr/hr/list_employees --resource-type mcp_tool
+
+dome rules simulate --agent role-dev-agent --action mcp:call \
+  --resource demo-hr/finance/get_salary --resource-type mcp_tool
+```
+
+Expect `ALLOW`, then `DENY`.
+
+## Verify allow and deny
+
+Build the tools ingress URL from your workspace gateway host and Default's id:
+
+```bash
+dome context current
+dome gateways list
+```
+
+Export once:
+
+```bash
+export DOME_GATEWAY_URL="https://GATEWAY_HOST/gateways/DEFAULT_GATEWAY_ID"
+export DOME_TOKEN="dome_..."
+```
+
+Post MCP JSON-RPC `tools/call` to `$DOME_GATEWAY_URL/mcp`. Use curl or Python — same payloads, same outcomes.
+
+<Tabs items={["API via curl","Python"]}>
+  <Tab value="API via curl">
+    **List employees** — allowed:
+
+    ```bash
+    curl -sS -X POST "$DOME_GATEWAY_URL/mcp" \
+      -H "Authorization: Bearer $DOME_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+          "name": "demo-hr/hr/list_employees",
+          "arguments": {}
+        }
+      }'
+    ```
+
+    Expect demo employees in `result`, including `E001`.
+
+    **Get salary** — denied:
+
+    ```bash
+    curl -sS -X POST "$DOME_GATEWAY_URL/mcp" \
+      -H "Authorization: Bearer $DOME_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/call",
+        "params": {
+          "name": "demo-hr/finance/get_salary",
+          "arguments": { "employee_id": "E001" }
+        }
+      }'
+    ```
+
+    Expect a JSON-RPC error (authorization deny), not payroll data.
+  </Tab>
+  <Tab value="Python">
+    Requires `httpx` (`pip install httpx`). Same gateway URL and token as above:
+
+    ```python title="verify_calls.py"
+    import json
+    import os
+
+    import httpx
+
+    url = os.environ["DOME_GATEWAY_URL"].rstrip("/") + "/mcp"
+    token = os.environ["DOME_TOKEN"]
+
+    def call(name: str, arguments: dict | None = None) -> None:
+        response = httpx.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": name, "arguments": arguments or {}},
+            },
+            timeout=30.0,
+        )
+        print(json.dumps(response.json(), indent=2))
+
+    # Allowed — directory
+    call("demo-hr/hr/list_employees")
+
+    # Denied — compensation
+    call("demo-hr/finance/get_salary", {"employee_id": "E001"})
+    ```
+
+    ```bash
+    python verify_calls.py
+    ```
+
+    Expect employees in the first response and an authorization error in the second.
+  </Tab>
+</Tabs>
+
+## Confirm in audit
+
+Every decision is attributed to the agent. List recent events:
+
+```bash
+dome audit query --limit 20
+```
+
+Focus on denials:
+
+```bash
+dome audit query --results denied --limit 10
+```
+
+You should see the allowed `list_employees` call and the denied `get_salary` call under `role-dev-agent`.
+
+## Clean up
+
+Delete the workspace to remove the agent, rules, and grants together:
+
+```bash
+dome workspaces delete studio-role-developer
+```
+
+## Next steps
+
+You learned how to register an agent, call tools through a gateway, and confirm allow and deny in audit. Continue with:
+
+- [security](/tutorials/role/security) to author, simulate, and tighten rules and guards
+- [operator](/tutorials/role/operator) to attach backends and expose gateways
+- [Govern your first agent](/tutorials/get-started/govern-your-first-agent) for the full Get Started path with filters and an MCP client

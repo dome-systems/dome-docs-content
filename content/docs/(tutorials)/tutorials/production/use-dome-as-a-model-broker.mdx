@@ -1,0 +1,312 @@
+---
+title: Use Dome as a model broker
+sidebarTitle: Model broker
+description: "Let Cursor, Claude Code, or Codex call any model with your provider key held server-side and every completion audited."
+---
+
+Your assistant already calls a model every time you chat with it. That call carries its own problems: a provider key sitting in the client's config, spend nobody notices until the invoice, and a model locked to whatever provider the client shipped with.
+
+<Prompt
+  description="Hand this to an AI agent. It registers itself as a Dome agent, holds a provider key in Dome, and rewrites its own model configuration to go through Dome."
+  icon="sparkles"
+  actions={["copy", "cursor"]}
+>
+Set yourself up to make your own model calls through Dome's model broker instead of calling the provider directly.
+
+First, show me this plan and ask me to confirm before running anything:
+
+1. Install the Dome CLI if missing, sign in (opens a browser), then sync contexts
+2. Create a tutorial workspace
+3. Add a model connection with my provider API key, attached to the Default gateway
+4. Register a `code-assistant` agent and mint its API key
+5. Grant the agent gateway access and deploy a Cedar bundle that permits `llm:invoke`
+6. Rewrite your own model configuration (base URL and key) to route through Dome
+7. Tell me to reload, then make one completion and show me the resulting audit event
+
+Follow the commands at https://developer.domesystems.ai/agent/tutorials/production/use-dome-as-a-model-broker.md exactly.
+
+Non-negotiable rules:
+
+- Ask me for my provider API key before you need it, and tell me which provider you expect. Do not look for one in my shell history, environment, or files.
+- Narrate as you go. Before each step, tell me in one or two sentences what you are about to do and why it matters.
+- Confirm the active context. After switching context, confirm the workspace name starts with `studio-`. If it does not, stop and ask me.
+- Never print my provider API key or the `dome_...` agent token in chat. Write the agent token directly into config, and confirm any file holding it is gitignored.
+- You cannot reload your own model configuration. After writing it, stop and tell me you need a restart, and wait for my confirmation before making a real call.
+- Never report a step as done without showing the command output.
+
+Once reloaded, make one completion to prove the path, then run `dome audit query --limit 5` and show me the resulting `model.call` event.
+</Prompt>
+
+In this tutorial, you will hold a provider key in Dome, register your assistant, and repoint its own inference (not a script, the assistant itself) at the Dome gateway. The provider never learns Dome is in front of it; it just sees a different caller.
+
+<Steps>
+  <Step title="Prepare your environment">
+    Sign in and create a dedicated workspace.
+  </Step>
+  <Step title="Add a model connection">
+    Register a provider model and hold its key in Dome.
+  </Step>
+  <Step title="Create the agent">
+    Register an agent for your assistant and mint its API key.
+  </Step>
+  <Step title="Authorize inference">
+    Grant gateway access and permit `llm:invoke`.
+  </Step>
+  <Step title="Point your assistant at Dome">
+    Rewrite Cursor, Claude Code, or Codex's own model configuration.
+  </Step>
+  <Step title="Verify the results">
+    Make one completion and confirm the audit event.
+  </Step>
+</Steps>
+
+## Prerequisites
+
+For this tutorial, you will need:
+
+- The Dome CLI. Refer to [Install](/install) for Homebrew and direct-download instructions.
+- A tenant `admin` role (or an org `owner` / `admin` via cascade) to create the workspace, plus permission to deploy rules.
+- An API key for OpenAI, Anthropic, or both. Dome calls the provider on your behalf, so the spend lands on your provider account. A key for each provider lets you try swapping which model answers a given client, later in this tutorial.
+- Cursor, Claude Code, or Codex, each configurable with a custom model base URL and key.
+
+## Prepare your environment
+
+Sign in and create a tutorial workspace:
+
+```bash
+dome auth login
+dome workspaces create --name studio-connect-assistant
+dome context sync
+dome context current
+```
+
+If you already have `studio-connect-assistant` from [Use Dome as an MCP gateway](/tutorials/production/use-dome-as-an-mcp-gateway), reuse it. This tutorial does not touch that gateway's tools.
+
+Confirm the workspace before continuing:
+
+```bash
+dome context current
+```
+
+## Add a model connection
+
+A [model connection](/connect/models) is one upstream LLM endpoint and the credential Dome uses to reach it. The endpoint a client points at is a wire protocol, not a provider. Dome's Anthropic-shaped endpoint and its OpenAI-compatible endpoint can each resolve to any connection you name. The model behind a connection does not have to match the client calling it.
+
+Add whichever provider you have a key for. Add both if you want to try the swap later in this tutorial:
+
+<Tabs items={["Anthropic","OpenAI"]}>
+  <Tab value="Anthropic">
+    ```bash
+    dome models add claude-broker \
+      --provider anthropic \
+      --model claude-3-5-sonnet-20241022 \
+      --api-key "$ANTHROPIC_API_KEY" \
+      --gateway Default
+    ```
+  </Tab>
+  <Tab value="OpenAI">
+    ```bash
+    dome models add openai-broker \
+      --provider openai \
+      --model gpt-4o \
+      --api-key "$OPENAI_API_KEY" \
+      --gateway Default
+    ```
+  </Tab>
+</Tabs>
+
+`--gateway Default` attaches it directly, without a pool. A [pool](/connect/pools) buys you failover and weighted routing across several connections. Reach for one once you have more than one model to route across; a single connection does not need it.
+
+Confirm the connection is registered:
+
+```bash
+dome models get claude-broker   # or openai-broker
+```
+
+## Create the agent
+
+Every call through a gateway is authorized and audited against this agent identity, not against Cursor, Claude Code, or Codex as a product.
+
+Register an [agent](/concepts/agents/identity) for your assistant, then mint a credential:
+
+```bash
+dome agents register --name code-assistant --if-not-exists
+dome agents create-key code-assistant --name model-client
+```
+
+The `Token: dome_…` value is shown once. Save it. You paste it into your client's model configuration in a few steps.
+
+<Callout type="info">
+[Use Dome as an MCP gateway](/tutorials/production/use-dome-as-an-mcp-gateway) uses a different identity path: interactive sign-in instead of a static key. The two tutorials are independent; running one does not create the agent the other expects.
+</Callout>
+
+## Authorize inference
+
+Grant access to the [Gateway](/build/gateways) if you have not already:
+
+```bash
+dome gateways access grant Default code-assistant
+```
+
+`llm:invoke` is a separate action from `mcp:call`, so a tool-calling permit does not cover inference.
+
+Create `code-assistant-llm.cedar`:
+
+```cedar title="code-assistant-llm.cedar"
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"llm:invoke",
+  resource is Dome::LLMModel
+);
+```
+
+`resource is Dome::LLMModel` scopes the permit to this workspace's model connections, not a specific one, so adding a second model later needs no rule change.
+
+Deploy it scoped to this agent:
+
+```bash
+dome rules apply code-assistant-llm.cedar --agent code-assistant --name code-assistant-llm
+```
+
+## Point your assistant at Dome
+
+Each client reads its base URL and key differently.
+
+One call resolves both base URLs, so there is nothing to assemble by hand:
+
+```bash
+dome gateways get Default --json
+```
+
+Copy `endpoints.anthropic_base_url` for Claude Code, or `endpoints.openai_base_url` for Cursor and Codex. `{AGENT_API_KEY}` is the `dome_…` token from the previous step.
+
+<Callout type="info">
+The client and the model are independent. Every client below asks for a Dome connection by name, not a vendor model id. Claude Code can request `openai-broker` and run GPT through its native Anthropic-shaped interface. Codex or Cursor can request `claude-broker` and run Claude through their OpenAI-shaped one.
+</Callout>
+
+<Tabs items={["OpenAI","Claude","Cursor"]}>
+  <Tab value="OpenAI">
+    Codex speaks the OpenAI-compatible protocol Dome exposes at `endpoints.openai_base_url`. Its `model` setting names a Dome connection, not a vendor model id.
+
+    Use `openai-broker` for its native GPT connection, or `claude-broker` to have Codex run Claude instead.
+
+    **Terminal.** Export the agent token in the shell that launches `codex`, then add Dome as a provider in `~/.codex/config.toml`:
+
+    ```bash
+    export DOME_AGENT_TOKEN="AGENT_API_KEY"
+    ```
+
+    ```toml title="~/.codex/config.toml"
+    [model_providers.dome]
+    name = "Dome"
+    base_url = "OPENAI_BASE_URL"
+    env_key = "DOME_AGENT_TOKEN"
+    wire_api = "chat"
+
+    model_provider = "dome"
+    model = "openai-broker"   # or "claude-broker"
+    ```
+
+    **Desktop / IDE extension.** A GUI-launched Codex does not inherit variables exported in a terminal session, so `env_key` needs the token available at the OS level.
+
+    Set it once, then restart the app so it picks up the change:
+
+    ```bash
+    # macOS
+    launchctl setenv DOME_AGENT_TOKEN "AGENT_API_KEY"
+    ```
+
+    On Windows or Linux, set it from your system's environment variable settings instead. The `config.toml` block above does not change. Only how the token reaches the process does.
+  </Tab>
+  <Tab value="Claude">
+    Claude Code speaks the Anthropic protocol Dome exposes at `endpoints.anthropic_base_url`. `ANTHROPIC_MODEL` names a Dome connection the same way.
+
+    Set it to `claude-broker` for its native connection, or to `openai-broker` to have Claude Code run GPT instead.
+
+    **Terminal.** Export all three in the shell that launches `claude`:
+
+    ```bash
+    export ANTHROPIC_BASE_URL="ANTHROPIC_BASE_URL_VALUE"
+    export ANTHROPIC_API_KEY="AGENT_API_KEY"
+    export ANTHROPIC_MODEL="claude-broker"   # or "openai-broker"
+    ```
+
+    **Desktop / IDE extension.** A GUI-launched Claude Code does not inherit a terminal's exported variables.
+
+    Write the same three values into `~/.claude/settings.json` instead, under `env`:
+
+    ```json title="~/.claude/settings.json"
+    {
+      "env": {
+        "ANTHROPIC_BASE_URL": "ANTHROPIC_BASE_URL_VALUE",
+        "ANTHROPIC_API_KEY": "AGENT_API_KEY",
+        "ANTHROPIC_MODEL": "claude-broker"
+      }
+    }
+    ```
+
+    Claude Code reads this file on launch, so it covers the IDE extension the same way the exports cover the terminal.
+  </Tab>
+  <Tab value="Cursor">
+    Open **Cursor Settings → models** and add a custom OpenAI-compatible model for each connection you want to reach:
+
+    - **API key:** `AGENT_API_KEY`
+    - **Override OpenAI Base URL:** `OPENAI_BASE_URL` (`endpoints.openai_base_url` from the command above)
+    - **model name:** `openai-broker` or `claude-broker`
+
+    Add both as separate custom models and pick whichever one you want per chat. Cursor sends the name you typed as-is; Dome resolves it to that connection regardless of the underlying provider.
+  </Tab>
+</Tabs>
+
+## Verify the results
+
+Restart your client, then ask it anything.
+
+The response itself proves nothing about the path, so check audit instead:
+
+```bash
+dome audit query --limit 5
+```
+
+Expect a completed `model.call` event naming `claude-broker` or `openai-broker`, attributed to `code-assistant`, with token usage. If you set `ANTHROPIC_MODEL=openai-broker` or pointed Codex at `claude-broker`, that event is the proof. The client's native provider and the model that actually answered are different, and Dome is what bridged them.
+
+<Accordions>
+<Accordion title="Troubleshooting">
+  - `401` from the gateway.
+
+    The key in your client's model config is the provider's key, not the Dome agent token. This endpoint authenticates the agent; the provider credential never leaves Dome.
+
+  - `403` with a `permission_error`.
+
+    Cedar denied the call. Reproduce it without spending anything:
+
+    ```bash
+    dome rules simulate --agent code-assistant --action llm:invoke \
+      --resource claude-broker --resource-type llm_model
+    ```
+
+  - `404` with `no connection for requested model`.
+
+    You put a provider model id (like `gpt-4o`) in the client's model field instead of the Dome connection name. Check what this workspace exposes:
+
+    ```bash
+    dome models list
+    ```
+
+  - Anthropic request returns `404`.
+
+    You pasted `openai_base_url` into an Anthropic-shaped client. Use `endpoints.anthropic_base_url` instead; the Anthropic SDK appends `/v1/messages` on its own.
+
+  - Nothing shows up in audit.
+
+    The client did not pick up the new environment or settings. Fully restart it rather than reloading a window, and re-check the exported variables (or `settings.json` / OS-level environment) that the process actually inherited.
+</Accordion>
+</Accordions>
+
+## Next steps
+
+Your assistant's own inference (not just a demo script) now runs through Dome. Continue with:
+
+- [Set Usage Limits](/govern/quotas) to cap what your assistant can spend per day or month before it becomes a surprise invoice
+- [Call a model through a pool](/tutorials/get-started/call-a-model-through-a-pool) to add failover across two models behind the same name
+- [Use Dome as an MCP gateway](/tutorials/production/use-dome-as-an-mcp-gateway) if you have not governed this assistant's tool calls yet

@@ -1,0 +1,146 @@
+---
+title: Escalations
+sidebarTitle: Escalate decisions
+description: Route selected authorization decisions through versioned approval workflows
+---
+
+<PreviewBadge />
+
+Route sensitive authorization decisions through an operator approval workflow. Attach an escalation to a Cedar policy when a request needs review before it proceeds.
+
+## Requirements
+
+Before you begin:
+
+- Ask an organization owner or administrator to opt the organization into preview features.
+- Select a workspace and authenticate the Dome CLI.
+- Hold `escalations.manage` to configure workflows and `rules.deploy` to attach one to a policy.
+- Grant reviewers `escalations.resolve` to resolve judgments.
+
+## How escalations work
+
+An escalation is a versioned workspace workflow. Its authorization trigger selects an entry step for a baseline `permit`, `forbid`, or `no_match` result.
+
+An operator judgment pauses the matching request. A reviewer resolves the judgment with `approve` or `deny`, then the next evaluation follows that branch.
+
+Judgments are single-use. A completed request consumes its resolved judgments, so an identical later request creates a new review.
+
+## Create an escalation
+
+Create the workflow configuration as protojson. This example sends permitted and unmatched requests to review, then allows or denies the request from the reviewer’s verdict.
+
+```json title="approval-workflow.json"
+{
+  "trigger": {
+    "authorization": {
+      "policyPermitStep": "review",
+      "policyForbidStep": "deny",
+      "policyNoMatchStep": "review"
+    }
+  },
+  "steps": {
+    "review": {
+      "judgment": {
+        "approveStep": "allow",
+        "denyStep": "deny",
+        "operator": {}
+      }
+    },
+    "allow": {
+      "outcome": {
+        "outcome": "ESCALATION_OUTCOME_AUTHORIZATION_ALLOW"
+      }
+    },
+    "deny": {
+      "outcome": {
+        "outcome": "ESCALATION_OUTCOME_AUTHORIZATION_DENY"
+      }
+    }
+  }
+}
+```
+
+Create the escalation from the file:
+
+```bash title="Create an escalation"
+dome escalations create high-risk-review \
+  --description "Require an operator decision for high-risk tool calls." \
+  --config-from approval-workflow.json
+```
+
+The trigger kind is derived from the configuration and cannot change. Each config change deploys a new active version.
+
+## Attach the workflow to a policy
+
+Write an `escalate` policy that names the escalation. Deploying the bundle resolves the workspace name.
+
+```txt title="workspace/high-risk-review.cedar"
+escalate<Dome::Escalation::"high-risk-review">(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:call",
+  resource is Dome::MCPTool
+) when {
+  resource.connection_name == "github"
+};
+```
+
+Deploy the policy with your normal rules workflow. An escalation policy does not grant access by itself; it routes matching authorization outcomes through the workflow.
+
+When a request reaches a pending judgment, it does not proceed. Resolve the judgment, then retry the request so the workflow can apply its terminal outcome.
+
+## Resolve a judgment
+
+List pending judgments after a request reaches the review step:
+
+```bash title="List pending judgments"
+dome escalations judgments list high-risk-review --status pending
+```
+
+Inspect the judgment before recording a final verdict. It identifies the triggering request and the rules that routed it to review:
+
+```bash title="Inspect a judgment"
+dome escalations judgments get high-risk-review {{JUDGMENT_ID}}
+```
+
+Judgments retain audit context, not the raw request body. Use the attached rule and audit trail to understand why a request requires review.
+
+Record a final verdict:
+
+```bash title="Approve a judgment"
+dome escalations judgments resolve high-risk-review {{JUDGMENT_ID}} \
+  --verdict approve
+```
+
+Use `--verdict deny` to refuse the request. A reviewer cannot change a resolved judgment. Each verdict applies to one triggering request; a later matching request creates a new judgment.
+
+## Review and roll back versions
+
+List the workflow’s history before changing a production path:
+
+```bash title="List escalation versions"
+dome escalations versions high-risk-review
+```
+
+Roll back by copying an earlier configuration into a new active version:
+
+```bash title="Roll back an escalation"
+dome escalations rollback high-risk-review --to-version 2
+```
+
+Rollback preserves history. It never reactivates an older version in place.
+
+## Operational guidance
+
+- Start with a narrow policy that targets one action and resource family.
+- Give only designated reviewers the `escalations.resolve` permission.
+- Inspect `escalation.run` and `escalation.judgment.resolve` audit events when reviewing a decision path. [Audit exports](/manage/export) can send that history to your SIEM.
+- Treat a workflow error as a denied request. The escalation evaluation fails closed.
+
+## Next steps
+
+- [Write rules](/govern/rules) to attach authorization logic.
+- [Use the CLI](/cli/govern/escalations) to manage workflows from a terminal.
+- [Use the MCP tools](/reference/mcp/escalations) to manage workflows from an MCP client.
+- [Use the REST API](/api/tag/escalations/list-escalations) to manage workflows from an application.
+- [Inspect audit events](/operate/audit) to trace workflow activity.
+- [Manage Access](/manage/access) to grant reviewer permissions.

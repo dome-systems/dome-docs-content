@@ -1,0 +1,43 @@
+---
+title: dome orgs
+description: Manage organization-level Act-As provider selection
+---
+
+`dome orgs` manages governance settings for one organization. The current command surface selects the default and required Act-As verification providers inherited by its tenants and workspaces.
+
+| Command | |
+|---------|---|
+| [Get Act-As selection](#get-act-as-selection) | `dome orgs actas get` |
+| [Update Act-As selection](#update-act-as-selection) | `dome orgs actas update` |
+
+## Get Act-As selection
+
+```bash
+dome orgs actas get
+```
+
+Show the organization's default and required provider IDs.
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--org` | string | No | Organization UUID. Defaults to the active context's organization |
+
+## Update Act-As selection
+
+```bash
+dome orgs actas update \
+  --default-provider {{PROVIDER_ID}} \
+  --required-provider {{PROVIDER_ID}}
+```
+
+Set the organization's default or required provider. The provider must be organization-scoped.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--org` | string | Organization UUID. Defaults to the active context's organization |
+| `--default-provider` | string | Default verification provider UUID |
+| `--required-provider` | string | Required verification provider UUID |
+
+This is a full replace: omitted provider flags clear their fields. An organization-level required provider forces Act-As for every non-bound agent in the organization and overrides required selections at tenant and workspace scope.
+
+Refer to [Act-As provider selection](/cli/connect/verification-providers#act-as-provider-selection) for inheritance and precedence.

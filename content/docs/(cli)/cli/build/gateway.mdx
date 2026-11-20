@@ -1,0 +1,270 @@
+---
+title: dome gateways
+description: Manage gateways, their members, and agent access grants
+---
+
+`dome gateways` manages workspace-scoped groupings of callable resources — MCP tool connections, LLM pools, and direct LLM model connections — plus the agent access grants that govern each grouping. Refer to [Gateways](/build/gateways) for the concept model.
+
+Resource-side mirrors live under [`dome tools gateways`](/cli/connect/tools#gateway-membership) and [`dome models pool gateways`](/cli/connect/models#gateway-membership) (each with `list`, `add`, `remove`). Attach at create time with `--gateway` on `dome tools add`, `dome models add`, and `dome models pool create`.
+
+| Command | |
+|---------|---|
+| [List gateways](#list-gateways) | `dome gateways list` |
+| [Get gateway](#get-gateway) | `dome gateways get <name-or-id>` |
+| [Create gateway](#create-gateway) | `dome gateways create <name>` |
+| [Update gateway](#update-gateway) | `dome gateways update <name-or-id>` |
+| [Enable gateway](#enable-gateway) | `dome gateways enable <name-or-id>` |
+| [Disable gateway](#disable-gateway) | `dome gateways disable <name-or-id>` |
+| [Set default gateway](#set-default-gateway) | `dome gateways set-default <name-or-id>` |
+| [Delete gateway](#delete-gateway) | `dome gateways delete <name-or-id>` |
+| [Add tool](#add-tool) | `dome gateways tools add <gateway> <tool-id>` |
+| [Remove tool](#remove-tool) | `dome gateways tools remove <gateway> <tool-id>` |
+| [Add tool source](#add-tool-source) | `dome gateways tool-sources add <gateway> <connection>` |
+| [Remove tool source](#remove-tool-source) | `dome gateways tool-sources remove <gateway> <connection>` |
+| [Add model pool](#add-model-pool) | `dome gateways model-pools add <gateway> <pool>` |
+| [Remove model pool](#remove-model-pool) | `dome gateways model-pools remove <gateway> <pool>` |
+| [Add model](#add-model) | `dome gateways models add <gateway> <model>` |
+| [Remove model](#remove-model) | `dome gateways models remove <gateway> <model>` |
+| [List access](#list-access) | `dome gateways access list <gateway>` |
+| [Grant access](#grant-access) | `dome gateways access grant <gateway> <agent>` |
+| [Revoke access](#revoke-access) | `dome gateways access revoke <gateway> <agent>` |
+| [Grant access to all agents](#grant-access-to-all-agents) | `dome gateways access grant-all <gateway>` |
+| [Revoke access from all agents](#revoke-access-from-all-agents) | `dome gateways access revoke-all <gateway>` |
+| [Enable interactive access](#enable-interactive-access) | `dome gateways interactive enable <gateway>` |
+| [Disable interactive access](#disable-interactive-access) | `dome gateways interactive disable <gateway>` |
+
+## Gateways
+
+### List gateways
+
+```bash
+dome gateways list
+```
+
+List gateways in the active workspace: name, default marker, ID, state, and canonical endpoint path (`/gateways/<id>`). Alias: `ls`.
+
+The endpoint column shows one path per gateway — the single URL every client points at. The Dome SDK and Anthropic clients use it as-is; MCP clients append `/mcp`; OpenAI-compatible clients append `/v1`. Refer to [Endpoint shape](/build/gateways#build-the-runtime-endpoint).
+
+### Get gateway
+
+```bash
+dome gateways get <name-or-id>
+```
+
+Show a gateway's members — tools, tool sources (connections), LLM pools, and direct model connections — plus its canonical endpoint path (`/gateways/<id>`), state, default marker, and grant settings.
+
+### Create gateway
+
+```bash
+dome gateways create <name>
+```
+
+Create a gateway. Starts active with empty membership; attach resources with the membership commands or `--gateway` at resource create.
+
+| Flag | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| `--description` | string | No | — | Human-readable description |
+
+```bash
+dome gateways create prod-tools --description "Production MCP tools for the ops agent"
+```
+
+### Update gateway
+
+```bash
+dome gateways update <name-or-id>
+```
+
+Rename or edit the description. Toggle state with [`enable`](#enable-gateway) / [`disable`](#disable-gateway).
+
+| Flag | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| `--name` | string | No | — | New gateway name |
+| `--description` | string | No | — | New description |
+
+### Enable gateway
+
+```bash
+dome gateways enable <name-or-id>
+```
+
+Re-enable a disabled gateway. Membership and grants are preserved.
+
+### Disable gateway
+
+```bash
+dome gateways disable <name-or-id>
+```
+
+Disable a gateway. Its endpoint fails closed until re-enabled.
+
+### Set default gateway
+
+```bash
+dome gateways set-default <name-or-id>
+```
+
+Mark a gateway as the workspace default — the pre-checked (but overridable) gateway in the dashboard's tool, pool, and model create dialogs. A suggestion only; it enforces no membership and grants no access. Setting a new default clears the previous one. A disabled default is never pre-selected.
+
+### Delete gateway
+
+```bash
+dome gateways delete <name-or-id>
+```
+
+Delete a gateway. Its memberships are removed, but the underlying tools, pools, and model connections are unchanged. Aliases: `rm`, `remove`.
+
+<Callout type="warning">
+  Callers pointed at this gateway's `/gateways/<id>/…` endpoint will fail closed after deletion. Repoint them at another gateway first.
+</Callout>
+
+## Tools
+
+### Add tool
+
+```bash
+dome gateways tools add <gateway-name-or-id> <tool-id>
+```
+
+Add a single MCP tool to a gateway. `<tool-id>` is the observed tool's ID from [`dome tools catalog list`](/cli/connect/tools#list-tools). To include every tool from a connection — with newly discovered tools joining automatically — use [`tool-sources add`](#add-tool-source) instead.
+
+### Remove tool
+
+```bash
+dome gateways tools remove <gateway-name-or-id> <tool-id>
+```
+
+Remove a single MCP tool. Alias: `rm`.
+
+## Tool sources
+
+### Add tool source
+
+```bash
+dome gateways tool-sources add <gateway-name-or-id> <connection-name-or-id>
+```
+
+Add an MCP server connection as a tool source. The gateway includes every tool observed on the connection; newly discovered tools propagate automatically.
+
+### Remove tool source
+
+```bash
+dome gateways tool-sources remove <gateway-name-or-id> <connection-name-or-id>
+```
+
+Remove the tool source. Tools that joined only through this source stop being included. Alias: `rm`.
+
+## Model pools
+
+### Add model pool
+
+```bash
+dome gateways model-pools add <gateway-name-or-id> <pool-name-or-id>
+```
+
+Add an LLM pool. The gateway exposes the pool's models at its `/gateways/<id>/v1` endpoint.
+
+### Remove model pool
+
+```bash
+dome gateways model-pools remove <gateway-name-or-id> <pool-name-or-id>
+```
+
+Alias: `rm`.
+
+## Models
+
+### Add model
+
+```bash
+dome gateways models add <gateway-name-or-id> <model-name-or-id>
+```
+
+Add a direct (un-pooled) LLM model connection. The gateway exposes the model without going through a pool — useful when a single provider serves one purpose.
+
+### Remove model
+
+```bash
+dome gateways models remove <gateway-name-or-id> <model-name-or-id>
+```
+
+Alias: `rm`.
+
+## Access
+
+### List access
+
+```bash
+dome gateways access list <name-or-id>
+```
+
+List agents and whether each is currently granted access to the gateway. Revoked agents are excluded — they cannot exchange their API key for a JWT, so they can never reach a gateway. Suspended agents remain in the list because suspension is reversible.
+
+```bash
+dome gateways access list prod-tools --json
+```
+
+### Grant access
+
+```bash
+dome gateways access grant <gateway-name-or-id> <agent-name-or-id>
+```
+
+Grant one agent access. Requires the agent-access permission set (`agents.register` + `rules.deploy`).
+
+### Revoke access
+
+```bash
+dome gateways access revoke <gateway-name-or-id> <agent-name-or-id>
+```
+
+Revoke one agent's access.
+
+### Grant access to all agents
+
+```bash
+dome gateways access grant-all <name-or-id>
+```
+
+Grant every current and future workspace agent access to this gateway. Requires `rules.deploy` + `gateways.manage`.
+
+### Revoke access from all agents
+
+```bash
+dome gateways access revoke-all <name-or-id>
+```
+
+Clear the all-agents grant. Per-agent grants are unaffected.
+
+## Interactive access
+
+### Enable interactive access
+
+```bash
+dome gateways interactive enable <name-or-id> \
+  --email <email> \
+  --subject <idp-subject>
+```
+
+Enable browser sign-in for human MCP clients. Requires `gateways.manage` and `rules.deploy`.
+
+The command creates or updates a visible interactive agent named `gateway-interactive-<id>`. Human traffic spends that agent's quotas and uses its rules.
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--email` | string[] | Conditional | Allowed email; repeatable and case-sensitive |
+| `--subject` | string[] | Conditional | Allowed IdP subject; repeatable and case-sensitive |
+
+Pass at least one email or subject. The command replaces both allow-lists with exactly the supplied values. Interactive login does not match group allow-lists.
+
+Use `dome gateways get <name-or-id>` to inspect the interactive agent and current allow-lists. Use its `mcp_url` as the remote server URL in the MCP client.
+
+### Disable interactive access
+
+```bash
+dome gateways interactive disable <name-or-id>
+```
+
+Disable new sign-ins and token renewal. The interactive agent and allow-lists remain for later re-enabling; existing access tokens expire within minutes.
+
+Cap gateway LLM spend with [`dome quotas`](/cli/govern/quota) (`--subject gateway --gateway <name>`).

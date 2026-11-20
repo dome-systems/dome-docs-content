@@ -1,0 +1,131 @@
+---
+title: Core concepts
+sidebarTitle: Overview
+description: How Dome governs agents, resources, and requests
+---
+
+**Core concepts** explain what each Dome piece is, how the pieces fit together, and when to choose one design over another.
+
+Dome separates **components** you define (agents, resources, gateways), **controls** you apply to traffic (rules, escalations, guards, quotas), and **audit** that records what happened. Agents reach tools and models through a gateway while Dome holds the upstream credentials. On each call, the controls decide what is allowed, what needs review, what content may pass, and how much spend is left.
+
+If you have not picked a role yet, start with [Personas](/personas) or [What is Dome?](/what-is-dome).
+
+## Read in dependency order
+
+From the system map down to the evidence trail:
+
+1. **[Architecture](/concepts/architecture)** covers components, controls, audit, and the request path.
+2. **[Scopes](/concepts/platform/scopes)** explains organization → tenant → workspace isolation.
+3. **[Identity Patterns](/concepts/identity-patterns)** compares standing vs delegated identity.
+4. **[Agents](/concepts/agents)**, **[Resources](/concepts/resources)**, and **[gateways](/concepts/gateways)** are the components you define.
+5. **[rules](/concepts/controls/rules)**, **[escalations](/concepts/controls/escalations)**, **[guards](/concepts/controls/guards)**, and **[quotas](/concepts/controls/quotas)** are the controls that govern traffic.
+6. **[Audit events](/concepts/audit)** is the evidence trail across both planes.
+
+## Architecture
+
+The system map and request path.
+
+<Cards>
+  <Card title="Architecture" href="/concepts/architecture">
+    How agents, resources, gateways, controls, and audit relate.
+  </Card>
+  <Card title="Authorization model" href="/concepts/architecture/authorization-model">
+    Cedar permit and forbid, effective policy, and fail-closed evaluation.
+  </Card>
+  <Card title="Data plane" href="/concepts/architecture/dataplane">
+    The hot-path runtime that enforces configuration synced from Dome.
+  </Card>
+</Cards>
+
+## Identity
+
+Choose how an agent presents itself before you wire credentials.
+
+<Cards>
+  <Card title="Identity patterns" href="/concepts/identity-patterns">
+    Standing identity versus delegated identity (act-as) at design time.
+  </Card>
+  <Card title="Agent identity" href="/concepts/agents/identity">
+    API keys, session tokens, and verified end-user claims on the wire.
+  </Card>
+</Cards>
+
+## Components
+
+Things you define so a workload can reach tools and models.
+
+<Cards>
+  <Card title="Agents" href="/concepts/agents">
+    The principals for authentication, authorization, and audit.
+  </Card>
+  <Card title="Agent lifecycle" href="/concepts/agents/agent-lifecycle">
+    The states an agent moves through, and what each state permits.
+  </Card>
+  <Card title="Resources" href="/concepts/resources">
+    Tools, models, and pools. Dome stores the upstream credentials; agents never hold them.
+  </Card>
+  <Card title="Gateways" href="/concepts/gateways">
+    Membership and agent grants behind one URL.
+  </Card>
+  <Card title="Tools gateway" href="/concepts/gateways/tools-gateway">
+    The MCP ingress on that URL, not a separate gateway type.
+  </Card>
+  <Card title="LLM gateway" href="/concepts/gateways/llm-gateway">
+    The model ingress on that URL, not a separate gateway type.
+  </Card>
+</Cards>
+
+## Controls
+
+Things you apply after a call is admitted.
+
+<Cards>
+  <Card title="Rules" href="/concepts/controls/rules">
+    Scoped Cedar bundles that authorize what an agent may do.
+  </Card>
+  <Card title="Escalations" href="/concepts/controls/escalations">
+    Review selected authorization decisions before a request proceeds.
+  </Card>
+  <Card title="Guards" href="/concepts/controls/guards">
+    Content inspection on request and response paths.
+  </Card>
+  <Card title="Quotas" href="/concepts/controls/quotas">
+    Spend caps over a window, including pool spillover.
+  </Card>
+</Cards>
+
+## Platform and audit
+
+Tenancy boundaries, who may administer Dome, and the evidence left behind.
+
+<Cards>
+  <Card title="Scopes" href="/concepts/platform/scopes">
+    The organization, tenant, and workspace hierarchy.
+  </Card>
+  <Card title="Permissions" href="/concepts/platform/permissions">
+    Platform RBAC for people and API clients, separate from Cedar for agents.
+  </Card>
+  <Card title="Audit events" href="/concepts/audit">
+    One trail across configuration changes and runtime decisions.
+  </Card>
+  <Card title="Webhooks" href="/concepts/audit/webhooks">
+    Signed copies of selected events delivered to your endpoints.
+  </Card>
+</Cards>
+
+## Next steps
+
+<Cards>
+  <Card title="Connect" href="/connect">
+    Register agents, attach resources, and grant gateway access.
+  </Card>
+  <Card title="Govern" href="/govern">
+    Write rules, configure escalations, assign guards, and set quotas.
+  </Card>
+  <Card title="Operate" href="/operate">
+    Investigate audit events, stream live activity, and subscribe to webhooks.
+  </Card>
+  <Card title="Develop" href="/develop">
+    Send credentials, gateway URLs, and Act-As claims from the application.
+  </Card>
+</Cards>

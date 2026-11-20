@@ -1,0 +1,143 @@
+---
+title: Rules assistant
+sidebarTitle: Rules assistant
+description: Draft, validate, and refine Dome rules from the dashboard with an LLM-powered assistant
+---
+
+The rules assistant drafts and refines Dome authorization rules from natural language in the dashboard rules editor. Dome validates each draft and routes assistant calls through the model broker like any other agent.
+
+## Overview
+
+The assistant runs as a Dome agent in the workspace.
+
+1. Enable the assistant on the workspace. Dome registers a `cedar-assistant` agent and provisions its key.
+2. Open the rules editor. The chat thread lives in the right rail and shares context with the editor, including open files, agents, tools, and models.
+3. Send a prompt. Dome calls the model through the Dome model broker, validates each draft, and surfaces it as a draft you can apply.
+4. Apply or discard. Applied drafts land in the editor with changed lines highlighted. Deploy through the normal [Apply Rules](/govern/rules#apply-rules) flow.
+
+Drafts are never deployed automatically. The assistant proposes. You apply and deploy.
+
+### Editor scope
+
+The assistant grounds every draft to the bundle you have open.
+
+| Editor scope | What the assistant proposes |
+|--------------|----------------------------|
+| Workspace | rules in the workspace bundle. Tightening a single agent's access surfaces a suggestion to move the rule to that agent's bundle. |
+| agent | rules in that agent's bundle only. The model refuses to author cross-agent rules from this scope. |
+
+Switch scope by opening the agent's rules tab in the editor. The chat picks up the new scope on the next message.
+
+### Limits
+
+The assistant enforces these limits.
+
+- **Per-workspace rate limit** on chat messages and draft requests. Bursts beyond the limit surface as a `rate_limited` error in the chat.
+- **No tool-call replay across turns.** The assistant sees current workspace state (open files, agents, tools, models) on every turn but not its own prior tool calls.
+- **Limited chat markdown.** Bold, inline code, and `cedar`-fenced code blocks render in chat.
+
+## Requirements
+
+Before you begin, authenticate to Dome and select a workspace.
+
+### Permissions
+
+Assistant settings, chat, and draft apply use platform permissions. The same permissions apply across the dashboard, CLI, and MCP. Each operation restates its permission inline.
+
+| Default roles | Permission | Grants |
+|---------------|------------|--------|
+| `admin`, `operator` | `config.manage` | Enable, disable, purge, or edit assistant settings |
+| `admin`, `operator`, `security` | `rules.deploy` | Chat and apply drafts |
+| All workspace roles | `rules.view` | View threads and messages or read settings |
+
+## Enable the assistant
+
+Enable the rules assistant from the rules editor right rail. On an un-provisioned workspace, the rail shows an empty state with a single **Enable** button. Enabling provisions the `cedar-assistant` agent and key. The assistant then becomes available in the rules editor for every user with `rules.deploy`.
+
+Members without `config.manage` never see the Enable CTA — the rail opens straight to chat if the assistant is already provisioned.
+
+<Callout icon="key">Requires `config.manage`.</Callout>
+
+## Disable the assistant
+
+Disable the assistant from the inline settings view in the rules editor rail when you want to suspend the integration without deleting state. Open the thread dropdown and choose **Settings** (or use the empty-state affordance when disabled), then disable. Use **Back to chat** to return to the thread. Re-enable from the same view to resume with the same threads and history.
+
+Members without `config.manage` never see the Settings dropdown item.
+
+<Callout icon="key">Requires `config.manage`.</Callout>
+
+## Purge the assistant
+
+Purge the assistant from the Danger zone of the inline settings view when you need to remove it completely. Purge deletes the agent, key, threads, and messages for this workspace. Use purge before re-onboarding a workspace from scratch.
+
+<Callout icon="key">Requires `config.manage`.</Callout>
+
+<Callout type="warning">
+Purge is destructive. It deletes the agent, key, threads, and messages for this workspace.
+</Callout>
+
+## Configure context
+
+Configure which workspace context each message ships to the model from the same inline settings view. Toggle individual categories off to keep that data out of every prompt.
+
+<Callout icon="key">Requires `config.manage`.</Callout>
+
+| Toggle | Sends to the model |
+|--------|-------------------|
+| Editor file contents | The rule files currently open in the editor. |
+| agents catalog | agent names and IDs. |
+| tools catalog | MCP tool names and IDs. |
+| models catalog | LLM connection names and IDs. |
+| Schema attribute keys | The custom attribute keys your workspace contributes to authorization entities. |
+| rule deployment history | Recent rule-bundle deployments for the workspace and the agent the editor is open on, so the assistant can reason about what changed and roll-back history. |
+
+## Govern assistant traffic
+
+Govern the assistant the way you govern any other agent. Every request carries the metadata key `cedar_asst=true`, so workspace-scope rules can target it without enumerating per-workspace agent IDs.
+
+```cedar title="restrict-rules-assistant.cedar"
+// Limit the assistant to a single approved model
+forbid(
+  principal,
+  action == Dome::Action::"llm:invoke",
+  resource is Dome::LLMModel
+)
+when {
+  principal.metadata.cedar_asst == "true"
+}
+unless {
+  resource.name == "anthropic-claude-sonnet"
+};
+```
+
+The same pattern applies to model lists, embeddings, and any other action. Every call the assistant makes is a normal gateway request you can shape with rules.
+
+## Chat behavior
+
+The chat surfaces draft work and diagnostics while you work.
+
+- **Streaming responses.** Text streams token-by-token. If no tokens arrive for 60 seconds, the chat surfaces a "Stream stalled" error.
+- **Tool chips.** Each rule validation and draft proposal appears as a chip with a spinner while it runs. Click a chip to inspect inputs and results.
+- **Stop.** Cancels the in-flight response and clears any running chips.
+- **Validation diagnostics.** Failures auto-expand with `file:line` and a message. After three consecutive validation failures the assistant pauses and asks for a draft instead. Empty messages return a prompt to type something first.
+- **Drafts.** Render inline in the chat. Apply moves the files into the editor with changed lines highlighted. The highlight clears on a successful deploy.
+- **Thread titles.** The assistant sets a title on the first turn.
+
+## Assistant tools
+
+The assistant calls workspace tools through the model broker. Treat their results as ground truth — the model does not invent decisions before a tool returns.
+
+| tool | Role |
+|------|------|
+| `validate` | Validates draft Cedar against the engine. Surfaces `file:line` diagnostics. |
+| `simulate` | Dry-runs one authorization decision against deployed or draft rules. Returns ALLOW or DENY, the deciding rule id, and a per-scope trace. Read-only. |
+| `propose_draft` | Surfaces a draft you can apply to the editor. Never deploys. |
+| `get_bundle_version` | Reads the active or historical bundle metadata for the current editor scope. |
+
+`simulate` answers "can this agent do that?" with a real engine decision. The customer tenant is resolved from the authenticated workspace at message time — the model cannot override it. Permission is enforced at the SSE boundary against the same `rules.deploy` scope as chat.
+
+## Next steps
+
+- [Write and apply Rules](/govern/rules#write-rules) through the normal rule lifecycle
+- [Simulate Rules](/govern/rules/simulate) before changing production behavior
+- [Authorization model](/concepts/architecture/authorization-model) concept for entity attributes a draft may reference

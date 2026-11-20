@@ -1,0 +1,220 @@
+---
+title: Export
+sidebarTitle: Export data
+description: 'Configure batch export destinations, continuous SIEM streaming, formats, schedules, and forwarder health'
+---
+
+import { dataExport } from '@/snippets/glossary';
+
+<p>{dataExport}</p>
+
+## Overview
+
+Forwarders and one-shot destination pushes read the same audit trail. Configuration and runtime events ship together unless you filter.
+
+Refer to [Audit events](/operate/audit) to query or reconstruct events, including gateway decisions. Refer to [Audit events](/concepts/audit) concept for the unified trail model. Ad-hoc exports to stdout or a file use [`dome audit export`](/cli/operate/audit#export-events) and [`dome_audit_export`](/reference/mcp/audit#audit-export).
+
+The typical workflow is:
+
+1. [Choose a format](#choose-a-format) your downstream pipeline understands.
+2. [Configure a destination](#configure-a-destination) and store its credentials as integration secrets.
+3. [Schedule recurring exports](#schedule-recurring-exports) or push once with the export REST endpoint.
+4. [Inspect export runs](#inspect-export-runs) and [monitor forwarder health](#monitor-forwarder-health).
+5. Optionally [stream audit evidence to a SIEM](#stream-audit-evidence-to-a-siem) for continuous Datadog or Grafana Loki delivery.
+
+[Map SIEM fields](#map-siem-fields) when you consume OCSF or CEF. [Ingest external audit events](#ingest-external-audit-events) when systems outside the gateway must contribute to the same trail.
+
+The sections below cover formats, destinations, schedules, run inspection, forwarder health, SIEM field mapping, and external ingestion.
+
+## Requirements
+
+Before you begin:
+
+- Authenticate to Dome and select a workspace
+- Have destination credentials ready to store as integration secrets
+- Know which format and connector your pipeline requires
+
+### Permissions
+
+Export configuration and schedules require platform permissions for integrations and audit export. Each operation states what it configures or returns.
+
+| Default roles | Permission | Grants |
+|---------------|------------|--------|
+| `admin`, `operator` | `integrations.manage` | Configure export destinations and related settings |
+| `admin`, `operator`, `security` | `audit.export` | Run and schedule audit export; enable or resume SIEM streams |
+| All workspace roles | `audit.view` | List SIEM streams and read stream status |
+
+## Choose a format
+
+Pick the format your downstream pipeline understands. Destination connectors and the CLI / MCP export surfaces accept the same values where noted.
+
+| Format | Extension | Content-Type | Use for |
+|--------|-----------|--------------|---------|
+| `jsonl` | `.jsonl` | `application/x-ndjson` | NDJSON, one event per line for log shippers, `tail -f`, and `jq`. CLI / MCP only. |
+| `json` | `.json` | `application/json` | Pretty-printed JSON array for archives. |
+| `csv` | `.csv` | `text/csv` | Spreadsheet-friendly flat rows. File-based connectors only. |
+| `ocsf` | `.ocsf.json` | `application/json` | OCSF v1.1.0 for Splunk, Microsoft Sentinel, and Google Chronicle. |
+| `cef` | `.cef` | `text/plain` | Common Event Format for ArcSight, QRadar, and generic syslog. |
+
+CLI and MCP exports page until the requested cap or cursor exhaustion. They fail instead of writing a silently shortened artifact when a page is incomplete, a cursor repeats, or the request would exceed 10,000 events. A payload type newer than the client is preserved as unresolved; it does not remove the event.
+
+## Configure a destination
+
+Configure an export integration before creating a schedule. Each destination reads the same audit query and serializes matching events in its selected format. Refer to [Audit events](/operate/audit) for the filter model those queries use.
+
+| Connector | Formats | Destination |
+|-----------|---------|-------------|
+| **Amazon S3** | `csv`, `json`, `ocsf`, `cef` | Bucket + prefix. Object key suffixed with the format extension |
+| **Google Cloud Storage** | `csv`, `json`, `ocsf`, `cef` | Bucket + prefix. Object key suffixed with the format extension |
+| **Datadog Logs** | `json`, `ocsf`, `cef` | Datadog Log Intake API (Cloud SIEM consumes `ocsf` natively. CSV is rejected) |
+
+Write connector credentials as integration secrets, then push once with the export REST endpoint.
+
+```http
+POST /v1/audit/export
+Content-Type: application/json
+
+{
+  "instance_id": "{{INTEGRATION_INSTANCE_ID}}",
+  "connector": "s3",
+  "format": "ocsf",
+  "filter": {
+    "start_time": "2026-05-01T00:00:00Z",
+    "end_time":   "2026-06-01T00:00:00Z"
+  }
+}
+```
+
+The handler validates `format` up front and rejects unknown values with `400`. S3 and GCS write a single object per call, named `<start>_to_<end>.<ext>` under the configured prefix. Datadog batches events in groups of 1000 to the Log Intake API.
+
+## Schedule recurring exports
+
+Create an `audit_export` job for the configured destination. Set the interval, time, format, and event filters together.
+
+```http
+POST /api/v1/workspaces/{{WORKSPACE_ID}}/jobs
+Content-Type: application/json
+
+{
+  "job_type": "audit_export",
+  "config": {
+    "instance_id": "{{INTEGRATION_INSTANCE_ID}}",
+    "format": "ocsf",
+    "filters": {
+      "event_classes": ["EVENT_CLASS_GOVERNING"]
+    }
+  },
+  "interval_value": 1,
+  "interval_unit": "day",
+  "time_of_day": "02:00",
+  "enabled": true
+}
+```
+
+You can use `hour`, `day`, `week`, or `month` intervals. Weekly schedules accept `day_of_week`. Daily, weekly, and monthly schedules use UTC `time_of_day`.
+
+Update or disable a schedule with `PATCH /api/v1/workspaces/{{WORKSPACE_ID}}/jobs/{{JOB_ID}}`. Delete it when the forwarder should stop permanently.
+
+## Inspect export runs
+
+Read a scheduled job to inspect its ten most recent runs.
+
+```http
+GET /api/v1/workspaces/{{WORKSPACE_ID}}/jobs/{{JOB_ID}}
+```
+
+Each run reports `running`, `success`, or `failed`, plus start time, finish time, error, and result. Investigate failures before the next scheduled window.
+
+List every export schedule in a workspace.
+
+```http
+GET /api/v1/workspaces/{{WORKSPACE_ID}}/jobs?job_type=audit_export
+```
+
+## Monitor forwarder health
+
+Treat a configured integration as connected, then use recent run state to assess delivery. The table below maps each state to the next action.
+
+| State | Action |
+|-------|--------|
+| Not configured | Create credentials and an integration instance. |
+| No runs yet | Confirm the schedule is enabled and wait for its first window. |
+| Running | Check again after the current window completes. |
+| Success | Verify the destination received the expected object or batch. |
+| Failed | Read the run error, repair credentials or destination settings, and retry. |
+
+The dashboard's **Integration & Forwarder Health** panel lists available export destinations and their connection state.
+
+## Stream audit evidence to a SIEM
+
+Continuous SIEM streaming delivers new audit evidence to Datadog or Grafana Loki as it is accepted. It is separate from batch export above and from [webhooks](/operate/webhooks).
+
+Streaming is forward-only from the moment you enable it. Dome does not backfill history. Your organization plan must include SIEM streaming.
+
+Connect Datadog or Grafana Loki under [Integrations](/operate/integrations) in the dashboard first. CLI and MCP can list connected instances, then enable and manage the stream.
+
+### Permissions
+
+| Default roles | Permission | Grants |
+|---------------|------------|--------|
+| All workspace roles | `audit.view` | List streams and read status |
+| `admin`, `operator`, `security` | `audit.export` | Enable, disable, or resume a stream |
+
+### Enable and manage a stream
+
+<Callout icon="key">Mutations require `audit.export`. Status and list require `audit.view`.</Callout>
+
+<Tabs items={["CLI","MCP","Dashboard"]}>
+  <Tab value="CLI">
+    ```bash
+    dome audit siem list
+    dome audit siem enable <slug-or-id>
+    dome audit siem status <slug-or-id>
+    dome audit siem disable <slug-or-id>
+    dome audit siem resume <slug-or-id>
+    ```
+
+    `enable` creates a stream. If one already exists (running or stopped), enable is refused — use `resume`. `disable` stops delivery but keeps the cursor, so backlog while off remains deliverable. `resume --skip-to-now` abandons undelivered backlog permanently (requires `--yes` non-interactively).
+
+    <Callout icon="terminal">Reference: [`dome audit siem`](/cli/operate/audit#siem)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tools: `dome_audit_siem_list`, `dome_audit_siem_enable`, `dome_audit_siem_status`, `dome_audit_siem_disable`, `dome_audit_siem_resume`
+
+    <Callout icon="cpu">Reference: [`dome_audit_siem_enable`](/reference/mcp/audit#siem-enable)</Callout>
+  </Tab>
+  <Tab value="Dashboard">
+    Open the Datadog or Grafana Loki integration instance and use the SIEM stream controls on that page.
+  </Tab>
+</Tabs>
+
+Delivery states include `active`, `erroring`, and `paused`. Dome can auto-pause after sustained delivery failure or a retention gap. Resume after you repair the destination.
+
+`enabled` is the delivery switch; `state` is retained health. Read them together. A disabled stream can retain `state=active` because it was healthy when stopped, and proto JSON can omit `enabled=false`. It is not delivering unless `enabled=true`. A destination has no stream until its first enable, so list omits never-enabled destinations and status returns not found.
+
+Resume without `--skip-to-now` is refused whenever the retained cursor has aged out, even if the stream never reached a recorded `retention_gap` pause. The refusal itself is authoritative; do not infer whether skipping is required only from `paused_reason`.
+
+Do not confuse this with [`dome audit stream`](/operate/observe), which is the live investigation tail in the dashboard or terminal.
+
+## Map SIEM fields
+
+OCSF and CEF exports carry the request-origin fields from the audit envelope so SOC pivots by IP, user agent, or HTTP verb work without re-joining sources. Configuration events typically populate these fields. Many gateway decisions leave `request_surface` unset. Refer to [Audit events](/concepts/audit#why-attribution-differs-by-source) concept for why attribution differs by event type.
+
+| Audit envelope | OCSF (`ocsf`) | CEF (`cef`) |
+|----------------|---------------|-------------|
+| `request_surface.source_ip` | `src_endpoint.ip` | `src` |
+| `request_surface.user_agent` | `unmapped.dome_user_agent` | `requestClientApplication` |
+| `request_surface.http_method` | `unmapped.dome_http_method` | `requestMethod` |
+| `actor.id` | `actor.user.uid` | `suid` |
+
+## Ingest external audit events
+
+External systems push audit events into the unified trail via the REST ingestion endpoint, consolidating agent activity from systems outside the gateway. Refer to [Audit events](/operate/audit) to query ingested events.
+
+## Next steps
+
+- [Audit events](/concepts/audit) concept for the one trail every surface reads from
+- [Audit events](/operate/audit) how-to to query retained and ingested events
+- [Subscribe to Events](/operate/webhooks) how-to for near-real-time signed deliveries
+- [Event contracts](/reference/events/contracts) reference for the envelope and ingest routes
+- [Event catalog](/reference/events/catalog) reference for every event type you can export

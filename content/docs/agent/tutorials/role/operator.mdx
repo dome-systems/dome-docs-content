@@ -1,0 +1,96 @@
+---
+hidden: true
+title: Operator — agent instructions
+sidebarTitle: Operator
+description: "Machine-readable instructions for an AI agent running the Operator role tutorial"
+---
+
+These are the instructions an AI agent follows to run the [Operator](/tutorials/role/operator) tutorial on your behalf. Read the tutorial instead if you are running the steps yourself.
+
+## Goal
+
+Create `studio-role-operator`, attach `demo-hr` to Default, register tutorial `role-ops-agent` for a smoke grant, deploy a minimal `list_employees` permit, hand the user one curl/Python smoke call, show audit.
+
+## Rules
+
+- **Confirm before you start.** Present the plan and wait for proceed.
+- **Narrate substrate why** (backends, gateway, grants) — not a full developer or security walkthrough.
+- **Call out scaffolding.** `role-ops-agent` is dedicated for the smoke test, not developer onboarding.
+- **Confirm the active context.** Confirm workspace starts with `studio-`.
+- **Never print the agent token.** Write to a gitignored `.env`.
+- **Hand off verify.** Do not call governed tools yourself to demo.
+- **Link the console** after create/grant/deploy. Derive base URL from `dome auth status` → `Server`.
+- **Show evidence.** Never report done without command output.
+
+## Quick setup
+
+```
+Here's what I'll do for the Operator role tutorial.
+
+1. Provision studio-role-operator
+2. Attach demo-hr to Default
+3. Register role-ops-agent (scaffolding), grant Default
+4. Deploy minimal Cedar for list_employees
+5. Hand you one curl/Python smoke call
+6. Show audit, then offer clean up
+
+Shall I proceed?
+```
+
+## Steps
+
+### 1. Provision workspace
+
+```bash
+dome workspaces create --name studio-role-operator
+dome context sync
+dome context current
+```
+
+### 2. Attach demo-hr
+
+```bash
+dome tools add \
+  --name demo-hr \
+  --url https://demo-mcp.domesystems.ai/mcp \
+  --protocol streamable-http \
+  --auth-method none \
+  --gateway Default
+dome gateways get Default
+```
+
+### 3. Smoke-test agent + grant
+
+```bash
+dome agents register --name role-ops-agent --if-not-exists
+dome agents create-key role-ops-agent --name smoke
+dome gateways access grant Default role-ops-agent
+```
+
+Write token to `.env` only.
+
+### 4. Minimal Cedar
+
+Write and apply `role-ops-agent.cedar` exactly as in the human tutorial (discover + `list_employees` only).
+
+```bash
+dome rules apply role-ops-agent.cedar --agent role-ops-agent --name role-ops-agent
+```
+
+### 5. Hand off smoke verify
+
+Collect gateway URL from `dome context current` + `dome gateways list`. Hand the user [Smoke-test the substrate](/tutorials/role/operator#smoke-test-the-substrate).
+
+### 6. Audit
+
+```bash
+dome audit query --limit 10
+```
+
+Mention optional `dome audit stream` for live tail.
+
+### 7. Clean up (optional)
+
+```bash
+dome workspaces delete studio-role-operator
+```

@@ -1,0 +1,30 @@
+{
+  "title": "Docs",
+  "root": true,
+  "icon": "FileText",
+  "pages": [
+    "introduction",
+    "---Get started---",
+    "what-is-dome",
+    "install",
+    "quickstart",
+    "setup-ai-assistant",
+    "personas",
+    "---Core concepts---",
+    "...concepts",
+    "---Build---",
+    "...build",
+    "---Connect---",
+    "...connect",
+    "---Govern---",
+    "...govern",
+    "---Operate---",
+    "...operate",
+    "---Manage---",
+    "...manage",
+    "---[/images/Dome_Icons_Code_App.png]Develop---",
+    "...develop",
+    "---Reference---",
+    "...reference"
+  ]
+}

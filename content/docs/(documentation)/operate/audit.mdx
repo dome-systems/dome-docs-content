@@ -1,0 +1,433 @@
+---
+title: Audit events
+sidebarTitle: Audit events
+description: Query audit events by class, result, actor, resource, correlation, and payload
+---
+
+import { auditEvent } from '@/snippets/glossary';
+
+<p>{auditEvent}</p>
+
+Refer to [Audit events](/concepts/audit) concept for how the trail is shaped.
+
+## Overview
+
+Audit v1 is the public envelope and service version; the current event registry is the schema-v4 catalog. Stream Live Events shows the same record in real time. Export delivers retained history downstream. Continuous SIEM streaming is a separate forward-only path on [Export data](/manage/export#stream-audit-evidence-to-a-siem).
+
+The typical workflow is:
+
+1. [Browse the event catalog](#browse-the-event-catalog) when you need field names and filterable payload keys.
+2. [Query events](#query-events) with class, actor, resource, correlation, or payload filters.
+3. [Get an event](#get-event) by ID when you need the full envelope.
+4. [List](#list-activity-chains) or [get](#get-activity-chain) an activity chain, or [emit](#emit-activity-chain) an `activity_id` for a run.
+
+## Requirements
+
+Before you begin:
+
+- Authenticate to Dome and select a workspace
+- Have audit events in the workspace, or emit activity so chains appear
+
+### Permissions
+
+Audit reads require platform permissions. People and scoped API keys query the trail. Agent credentials are not the usual path for investigation.
+
+All workspace roles can query events, get an event by ID, and list or get activity chains with `audit.view`. Org `owner` and `admin` can also use org-scoped `audit.view` to [query across the organization](#query-events-across-an-organization). Live streaming on [Stream Live Events](/operate/observe) uses the same permission. Batch and scheduled delivery live under [Export Data](/manage/export).
+
+| Default roles | Permission | Grants |
+|---------------|------------|--------|
+| All workspace roles | `audit.view` | Query events, get by ID, list and get activity chains |
+| Org `owner` or `admin` | Org `audit.view` | Query events across every tenant and workspace in the org |
+
+## Browse the event catalog
+
+List every audit event type Dome emits, then show field detail for one type. The same catalog powers the dashboard Event Catalog tab.
+
+<Callout icon="key">Requires `audit.view`.</Callout>
+
+<Tabs items={["CLI","MCP","Dashboard"]}>
+  <Tab value="CLI">
+    ```bash
+    dome audit catalog list
+    dome audit catalog show tool.call
+    ```
+
+    List is complete and unpaginated. Filter locally, then call show for field detail.
+
+    <Callout icon="terminal">Reference: [`dome audit catalog`](/cli/operate/audit#catalog)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tools: `dome_audit_catalog_list`, `dome_audit_catalog_show`
+
+    ```json
+    { "event_type": "tool.call" }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_audit_catalog_show`](/reference/mcp/audit#catalog-show)</Callout>
+  </Tab>
+  <Tab value="Dashboard">
+    Open **Settings → Eventing → Event Catalog** to browse payload fields, sample bodies, and JSON schemas.
+  </Tab>
+</Tabs>
+
+## Query events
+
+Query recent audit events. The default page returns the latest 50. Combine class, result, actor, resource, correlation, payload, and time filters to narrow the trail.
+
+<Callout icon="key">Requires `audit.view`.</Callout>
+
+Common flags: `--limit`, `--types`, `--classes`, `--results`, `--agent-id`, `--since`, `--until`, and repeatable `--payload-filter`. Full flags: refer to the CLI, MCP, and API references in the callouts below.
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome audit query --limit 10
+    ```
+
+    <Callout icon="terminal">Reference: [`dome audit query`](/cli/operate/audit#query-events)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_audit_query`
+
+    ```json
+    { "limit": 10 }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_audit_query`](/reference/mcp/audit#audit-query)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    GET /v1/audit/events?page_size=10
+    ```
+
+    Filtered:
+
+    ```json
+    {
+      "event_types": ["tool.call"],
+      "stages": ["STAGE_ATTEMPTED", "STAGE_COMPLETED"],
+      "event_classes": ["EVENT_CLASS_GOVERNING"],
+      "results": ["RESULT_DENIED"],
+      "agent_id": "<uuid>",
+      "page_size": 50
+    }
+    ```
+
+    <Callout icon="code">Reference: [`QueryEvents`](/api/tag/audit/query-events)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Query recent audit events"
+    Query the last 10 audit events.
+    ```
+  </Tab>
+</Tabs>
+
+The response returns matched events plus a cursor. CLI, MCP, and dashboard use short enum tokens. The raw API uses full constants. Refer to [enum rendering](/reference/events/contracts#enum-rendering) reference.
+
+```json
+{
+  "events": [{
+    "event_id": "<uuid>",
+    "event_type": "tool.call",
+    "event_class": "governing",
+    "stage": "completed",
+    "result": "allowed",
+    "occurred_at": "2026-05-30T10:30:00Z",
+    "scope": { "kind": "workspace", "workspace_id": "ws_..." },
+    "actor": { "kind": "agent", "id": "agent_..." },
+    "primary_resource": { "kind": "tool_connection", "id": "conn_..." },
+    "request_surface": { "surface": "gateway_mcp" },
+    "correlation": { "trace_id": "0af7651916cd43dd8448eb211c80319c" },
+    "payload": { "@type": "type.googleapis.com/dome.audit.v1.ToolCallV1", "toolName": "database-query" }
+  }],
+  "next_page_token": "..."
+}
+```
+
+The pre-v1 `total` counter is gone. Use the cursor to walk the full result set.
+
+## Query events across an organization
+
+Read audit across every tenant and workspace in one organization from an organization-scoped session or API key. Scope is derived from the authenticated identity; the request does not accept `org_id`. Set `workspace_id` only when you want to narrow an organization- or tenant-scoped read to one workspace.
+
+<Callout icon="key">Requires org-scoped `audit.view` (org `owner` or `admin`, or an org-scoped API key with `audit.view`).</Callout>
+
+<Tabs items={["API"]}>
+  <Tab value="API">
+    ```http
+    GET /v1/audit/events?event_classes=EVENT_CLASS_GOVERNING&results=RESULT_DENIED&start_time=2026-07-01T00:00:00Z&page_size=100
+    ```
+
+    <Callout icon="code">Reference: [`QueryEvents`](/api/tag/audit/query-events)</Callout>
+  </Tab>
+</Tabs>
+
+`QueryActivityChains` remains workspace- and tenant-scoped. Org-scoped chains are not available yet.
+
+CLI and MCP audit tools stay workspace-scoped today. Use the API (or an org-scoped platform key against `QueryEvents`) for org-wide reads.
+
+### Paginate results
+
+Each response includes `next_page_token`. An empty token means the page was the last one.
+
+```bash
+dome audit query --limit 200
+# ... copy the printed "Next page token: ..." value
+dome audit query --limit 200 --page-token <token>
+```
+
+```json
+{ "page_size": 200, "page_token": "<token-from-previous-response>" }
+```
+
+### Filter by class and result
+
+Use class and result together to find denials, security signals, or audit access. Refer to [event classes](/reference/events/catalog#event-classes) reference for the catalog.
+
+```bash
+# Every authorization deny in the workspace
+dome audit query --classes governing --results denied
+
+# All audit-access events — who looked at what
+dome audit query --classes audit_access
+
+# Failed logins and rejected agent-token exchanges
+dome audit query --classes security --results denied --since 2026-06-01T00:00:00Z
+```
+
+### Filter by actor and producer
+
+Slice by who acted and which service emitted the event.
+
+```bash
+dome audit query --actor-kind scheduled_job
+dome audit query --producer-service gateway --request-surface gateway_mcp
+```
+
+For a gateway, use `producer_gateway_id` through the [QueryEvents API](/api/tag/audit/query-events).
+
+### Filter by resource
+
+```bash
+dome audit query \
+  --primary-resource-kind rule_bundle \
+  --primary-resource-id <bundle-uuid>
+```
+
+### Reconstruct a request chain
+
+Filter on a `trace_id` to return events from one request. Refer to [correlation](/reference/events/contracts#correlation) reference for the `trace_id`, `operation_id`, and `parent_event_id` contract.
+
+```bash
+dome audit query --trace-id 0af7651916cd43dd8448eb211c80319c
+```
+
+### Filter by payload
+
+Apply [payload filters](/reference/events/contracts#payload-filters) to a query.
+
+```bash
+# Every tool call that targeted database-query
+dome audit query --payload-filter "tool.call:toolName=database-query"
+
+# Multiple values, multiple filters
+dome audit query \
+  --payload-filter "tool.call:toolName=database-query,vector-search" \
+  --types authorization.evaluate --results denied
+```
+
+Use the JSON form for `exists`:
+
+```bash
+dome audit query --payload-filter '[
+  {"event_type":"tool.call","field":"toolName","operator":"exists"}
+]'
+```
+
+<Callout type="info">
+`tool.call` and `model.call` payloads carry bounded content references rather than raw request arguments by default. Cedar rules still evaluate `resource.arguments.<key>`.
+</Callout>
+
+### Filter by time range
+
+```bash
+dome audit query \
+  --since 2026-05-01T00:00:00Z \
+  --until 2026-06-01T00:00:00Z
+```
+
+## Get event
+
+Retrieve a single audit event by ID. Scope is derived from the caller's session. There is no `workspace_id` argument.
+
+<Callout icon="key">Requires `audit.view`.</Callout>
+
+<Tabs items={["CLI","MCP","API"]}>
+<Tab value="CLI">
+```bash
+dome audit get <event-id>
+```
+<Callout icon="terminal">Reference: [`dome audit get`](/cli/operate/audit#get-event)</Callout>
+</Tab>
+<Tab value="MCP">
+Tool: `dome_audit_get_event`
+```json
+{ "event_id": "<uuid>" }
+```
+<Callout icon="cpu">Reference: [`dome_audit_get_event`](/reference/mcp/audit#audit-get-event)</Callout>
+</Tab>
+<Tab value="API">
+```http
+GET /v1/audit/events/<uuid>
+```
+<Callout icon="code">Reference: [`GetEvent`](/api/tag/audit/get-event)</Callout>
+</Tab>
+</Tabs>
+
+Governing decision events that applied a loaded rule bundle include [decision provenance](/reference/events/contracts#decision-provenance) in the payload (`bundle_etag`, `contributing_bundles`, `rule_id`). The dashboard decision explainer deep-links those bundles to `/rules/bundles?scope=<kind>&scopeId=<id>`.
+
+## List activity chains
+
+List activity chains in the active workspace. A chain is listed when any of its events matches the filter. Summary counts reflect the full chain. Refer to [activity chains](/reference/events/contracts#correlation) reference for their contract.
+
+<Callout icon="key">Requires `audit.view`.</Callout>
+
+```bash
+# Recent chains in the active workspace
+dome audit chains --limit 20
+
+# Chains that contain a denied governing event
+dome audit chains --classes governing --results denied
+
+# Chains for one agent in the last 24 hours
+dome audit chains --agent-id agent_01HQ... --since 2026-06-05T00:00:00Z
+```
+
+<Callout icon="terminal">Reference: [`dome audit chains`](/cli/operate/audit#list-chains)</Callout>
+
+```json
+{
+  "chains": [{
+    "activity_id": "case-12345",
+    "workspace_id": "ws_...",
+    "event_count": 47,
+    "first_at": "2026-06-05T10:30:00Z",
+    "last_at": "2026-06-05T10:34:21Z",
+    "allowed_count": 41,
+    "denied_count": 3,
+    "error_count": 1,
+    "agents": ["agent_..."],
+    "event_types": ["tool.call", "authorization.evaluate"],
+    "server_owned_count": 0,
+    "caller_asserted_count": 47
+  }],
+  "next_page_token": ""
+}
+```
+
+## Get activity chain
+
+Retrieve every event in one activity chain. Pass an `activity_id` to QueryEvents (or `dome audit chain`) to return events in cursor order.
+
+```bash
+# All events in one chain
+dome audit chain case-12345
+
+# Live tail one chain
+dome audit stream --activity-id case-12345
+
+# Filter the chain's events further
+dome audit query --activity-id case-12345 --classes governing --results denied
+```
+
+<Callout icon="terminal">Reference: [`dome audit chain`](/cli/operate/audit#show-chain)</Callout>
+
+## Denied operations
+
+A refusal is the denied result of the operation itself. For example, a refused tool invocation is `event_type=tool.call`, `stage=completed`, and `result=denied`. The shared `denial` block names why. There is no separate denial event type.
+
+`denial.reason` is a closed vocabulary: `permission_denied`, `wrong_caller_type`, `tenant_mismatch`, `unauthenticated`, `immutable_entity`, `service_disabled`, `policy_denied`, `stale_policy`, `guard_blocked`, `act_as_rejected`, `credential_required`, `rate_limited`, `oversize`, `quota_exceeded`, `plan_limit`, `billing_locked`, `subscription_canceled`, and `org_suspended`.
+
+Read `denial.required_permission` only when `reason=permission_denied`. Plan, quota, guard, and identity refusals are not permission deficits.
+
+Treat `denial.detail` as operator context, not a stable programmatic contract.
+Responses deliberately avoid exposing internal scope-resolution chains. Filter
+and automate on `reason` and, where present, `required_permission`.
+
+```bash
+# Every denied operation in the last hour
+dome audit query --results denied --since 1h
+
+# Denied tool calls caused by a stale tenant scope
+dome audit query \
+  --types tool.call \
+  --results denied \
+  --deny-reasons tenant_mismatch
+
+# Guard-blocked tool and model calls
+dome audit query \
+  --types tool.call,model.call \
+  --results denied \
+  --deny-reasons guard_blocked
+```
+
+A `tenant_mismatch` row on a dashboard-initiated action almost always means the browser session's tenant scope drifted from the workspace's owning tenant — sign out and back in to re-scope the session.
+
+## Emit activity chain
+
+Set `activity_id` on the emit side so events from one unit of work correlate. Pick an ID that maps to that unit, such as a case ID, job run, or conversation UUID. Chains are workspace-local, so human-meaningful IDs are safe.
+
+<Tabs items={["CLI","Python SDK","HTTP"]}>
+<Tab value="CLI">
+Set `--activity` (or `DOME_ACTIVITY_ID`) so every API call in the run carries `X-Dome-Activity-Id`.
+
+```bash
+export DOME_ACTIVITY_ID="case-12345"
+dome agents register --name worker
+dome rules deploy ./rules
+dome audit query --limit 5
+dome audit chain case-12345
+```
+
+`--activity` overrides `DOME_ACTIVITY_ID`. There is no implicit mint.
+</Tab>
+<Tab value="Python SDK">
+Wrap Dome API reads in `client.session()`. Pass an explicit ID to correlate work across processes.
+
+```python
+with client.session() as session:
+    page = client.control.query_audit_events(
+        AuditQuery(event_types=("tool.call",), page_size=50),
+    )
+    event = client.control.get_audit_event(page.events[0].id)
+```
+</Tab>
+<Tab value="HTTP">
+Send `X-Dome-Activity-Id` on every API request. Dome stamps the ID with caller-asserted trust and strips the header before third-party LLM or MCP egress.
+
+```http
+GET /v1/audit/events
+X-Dome-Activity-Id: case-12345
+```
+</Tab>
+</Tabs>
+
+## Migrate legacy event queries
+
+| Legacy audit query | Schema-v4 query |
+|--------------------|-----------------|
+| `mcp.tool_call.attempted` / `mcp.tool_call.completed` | `tool.call` plus `stage=attempted` / `stage=completed` |
+| `llm.model_call.attempted` / `llm.model_call.completed` | `model.call` plus the stage filter |
+| `mcp.tool_request.filtered`, `mcp.tool_result.filtered`, or LLM filter types | `guard.filter.evaluate`; use payload `direction`, connection type, tool, or model fields |
+| `access.denied` | The operation type plus `result=denied`; use `--deny-reasons` for the shared `denial.reason` |
+| `agent.registered`, `agent.suspended`, and other past-tense lifecycle names | Present-tense operations such as `agent.register`, `agent.suspend`, and `agent.revoke` |
+
+Webhook subscriptions keep the public `dome.webhook.v1` catalog. Do not rewrite webhook event names to audit names; where they differ, the webhook name remains authoritative on webhook deliveries.
+
+## Next steps
+
+- [Event catalog](/reference/events/catalog) reference for every event type and its class
+- [Event contracts](/reference/events/contracts) reference for the Audit v1 envelope, enum forms, and filter syntax
+- [Stream Live Events](/operate/observe) to stream events as they happen
+- [Export Data](/manage/export) to ship retained records to SIEM and archival sinks
+- [Subscribe to Events](/operate/webhooks) to push signed events to external systems

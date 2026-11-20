@@ -1,0 +1,137 @@
+---
+title: Import and export configuration
+description: Export Dome configuration and import it through the active MCP context
+---
+
+These tools export configuration from the active workspace, tenant, or organization and import a reviewed bundle into the active target scope. The target scope comes from the MCP context. Dome derives scope identifiers, so no tool accepts them as arguments.
+
+Refer to [Import and export configuration](/manage/import-export) for supported resource families, scope coverage, and dashboard instructions.
+
+## Export
+
+### dome_export_list
+
+List exportable resources in the active scope, grouped by family.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- |
+| — | — | — | No parameters |
+
+<Callout icon="key">Requires `export.manage`, plus view permission for each returned resource family.</Callout>
+
+The result includes resource type, ID, name, and dependencies. It names omitted families when the caller lacks view permission.
+
+### dome_export
+
+Export selected configuration as a `.tf` bundle that `dome_import` accepts.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `all` | boolean | No | Export every available resource. |
+| `families` | array | No | Resource families to export, such as `["gateways"]`. |
+| `resource_ids` | array | No | Resource IDs from `dome_export_list`. |
+| `include_dependencies` | boolean | No | Include resources the selection references. |
+
+<Callout icon="key">Requires `export.manage`, plus view permission for every selected resource family.</Callout>
+
+Choose `all`, `families`, or `resource_ids`. Secrets are never exported. The returned `bundle.files[0].content` contains the `.tf` file, variables replace secrets and environment-specific values, and excluded resources include their reasons.
+
+```json title="Export gateways with dependencies"
+{
+  "name": "dome_export",
+  "arguments": {
+    "families": ["gateways"],
+    "include_dependencies": true
+  }
+}
+```
+
+## Import
+
+### dome_import_inspect
+
+Validate a bundle without creating a job.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- |
+| `files` | array | Yes | `.tf` files as `{ "name": "...", "content": "..." }` objects. |
+
+Inspection returns declared variables, resources, required permissions, missing permissions for the active scope, and validation errors. Variables marked `scope_derived`, including `workspace_id`, `tenant_id`, and `org_id`, are filled by Dome and must not be supplied.
+
+### dome_import
+
+Create an import job for a reviewed bundle.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- |
+| `files` | array | Yes | `.tf` files as `{ "name": "...", "content": "..." }` objects. |
+| `variables` | object | No | Variable values by name. |
+| `plan_only` | boolean | No | Preview the changes without applying them. |
+
+<Callout icon="key">Requires `import.manage`, plus every permission needed to create or update the imported resources.</Callout>
+
+Call `dome_import_inspect` first, then use `plan_only: true` to review the plan. A regular import matches existing resources by their natural identity, creates the rest, and refuses any plan that destroys or replaces a resource.
+
+```json title="Plan an import"
+{
+  "name": "dome_import",
+  "arguments": {
+    "files": [
+      {
+        "name": "dome.tf",
+        "content": "..."
+      }
+    ],
+    "variables": {
+      "api_token": "..."
+    },
+    "plan_only": true
+  }
+}
+```
+
+### dome_import_status
+
+Get an import job and its recent progress events.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- |
+| `job_id` | string | Yes | Import job ID. |
+
+<Callout icon="key">Requires `import.manage`.</Callout>
+
+Statuses are `preparing`, `running`, `planned`, `succeeded`, `failed`, `refused`, or `canceled`. A refused plan identifies each blocked resource and reason.
+
+### dome_import_list
+
+List import jobs in the active scope, newest first.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- |
+| `limit` | number | No | Maximum jobs to return. Defaults to 20. |
+
+<Callout icon="key">Requires `import.manage`.</Callout>
+
+### dome_import_cancel
+
+Request cancellation before an import begins applying.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- |
+| `job_id` | string | Yes | Import job ID. |
+
+<Callout icon="key">Requires `import.manage`.</Callout>
+
+A job that is already applying completes and reports its result.
+
+### dome_import_outputs
+
+Reveal one-time credentials produced by a completed import.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- |
+| `job_id` | string | Yes | Import job ID. |
+
+<Callout icon="key">Requires `import.manage`. Only the creator of the job can reveal its outputs.</Callout>
+
+Dome returns the values exactly once, then removes them. Store them securely.

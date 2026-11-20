@@ -1,0 +1,8 @@
+{
+  "title": "Hands-on Labs",
+  "root": true,
+  "icon": "GraduationCap",
+  "pages": [
+    "...tutorials"
+  ]
+}

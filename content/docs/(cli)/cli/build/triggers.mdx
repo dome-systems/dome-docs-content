@@ -1,0 +1,150 @@
+---
+title: dome triggers
+description: Schedule managed-agent runs and start them from signed webhooks
+---
+
+`dome triggers` manages schedules and inbound webhooks that start managed-agent runs. Refer to [Managed agents](/build/agents/managed) for the operating model.
+
+| Command | |
+| --- | --- |
+| [Create trigger](#create-trigger) | `dome triggers create` |
+| [List triggers](#list-triggers) | `dome triggers list` |
+| [Get trigger](#get-trigger) | `dome triggers get [name-or-id]` |
+| [Update trigger](#update-trigger) | `dome triggers update [name-or-id]` |
+| [Delete trigger](#delete-trigger) | `dome triggers delete [name-or-id]` |
+| [Fire trigger](#fire-trigger) | `dome triggers fire [name-or-id]` |
+| [List trigger runs](#list-trigger-runs) | `dome triggers runs [name-or-id]` |
+| [Enable target](#enable-target) | `dome triggers targets enable [trigger] [target]` |
+| [Disable target](#disable-target) | `dome triggers targets disable [trigger] [target]` |
+
+## Create trigger
+
+```bash
+dome triggers create \
+  --name nightly-triage \
+  --kind schedule \
+  --cron "0 2 * * *" \
+  --timezone America/Los_Angeles \
+  --target nightly-triage \
+  --max-concurrent 1
+```
+
+Create a schedule or webhook trigger in the active workspace. Supply fields directly or load a full `CreateTriggerRequest` from a JSON or YAML file.
+
+| Flag | Type | Required | Description |
+| --- | --- | --- | --- |
+| `--name` | string | Yes* | Trigger name |
+| `--kind` | string | Yes* | `schedule` or `webhook` |
+| `--description` | string | No | Operator label |
+| `--cron` | string | Schedule | Cron expression; minimum interval is five minutes |
+| `--timezone` | string | No | IANA time zone for a schedule; defaults to UTC |
+| `--input` | string | No | First user message for every fired run |
+| `--target` | string[] | No | Managed agent name or ID; repeat to attach several targets |
+| `--max-concurrent` | int | No | Maximum concurrent runs across targets; `0` is unlimited |
+| `--disabled` | bool | No | Create the trigger switched off |
+| `--catch-up` | string | Schedule | Missed-occurrence policy: `once`, `all`, or `skip` |
+| `--catch-up-deadline` | duration | Schedule | Latest time a missed occurrence can run; `0` is one schedule interval |
+| `--max-retries` | int | No | Infrastructure retry budget; `0` disables retries |
+| `--file`, `-f` | string | Yes* | Path to a JSON or YAML `CreateTriggerRequest`; use `-` for stdin |
+
+*Provide fields directly or use `--file`.
+
+A webhook trigger returns its URL and signing secret once. Sign each request with Standard Webhooks v1. Use a fresh `webhook-id` for every distinct message; reuse it only when retrying the same delivery. Dome accepts repeated IDs for 24 hours but starts no additional run. A schedule has a default concurrency limit of one; a webhook has unlimited concurrency by default.
+
+## List triggers
+
+```bash
+dome triggers list [--agent <name-or-id>]
+```
+
+List triggers in the active workspace.
+
+| Flag | Type | Description |
+| --- | --- | --- |
+| `--agent` | string | Show only triggers that target this managed agent |
+
+## Get trigger
+
+```bash
+dome triggers get [name-or-id]
+```
+
+Show a trigger's configuration, targets, state, concurrency limit, and schedule policy. This command has no command-specific flags.
+
+## Update trigger
+
+```bash
+dome triggers update [name-or-id] [flags]
+```
+
+Update only the fields supplied. `--target` replaces the target list; use `targets enable` or `targets disable` to change one target without replacing the others.
+
+| Flag | Type | Description |
+| --- | --- | --- |
+| `--name` | string | Rename the trigger |
+| `--description` | string | Replace the description |
+| `--cron` | string | Replace the schedule expression |
+| `--timezone` | string | Replace the schedule time zone |
+| `--input` | string | Replace the default run input |
+| `--target` | string[] | Replace the target list; repeat for several targets |
+| `--clear-targets` | bool | Remove every target |
+| `--max-concurrent` | int | Replace the concurrency cap; `0` is unlimited |
+| `--catch-up` | string | Replace the missed-occurrence policy |
+| `--catch-up-deadline` | duration | Replace the missed-occurrence deadline |
+| `--max-retries` | int | Replace the infrastructure retry budget; `0` disables retries |
+| `--enabled` | bool | Switch the trigger on |
+| `--disabled` | bool | Switch the trigger off |
+
+The trigger kind cannot change. Delete the trigger and create another to switch between a schedule and webhook.
+
+## Delete trigger
+
+```bash
+dome triggers delete [name-or-id]
+```
+
+Permanently delete a trigger and cancel its pending runs. This command has no command-specific flags.
+
+## Fire trigger
+
+```bash
+dome triggers fire [name-or-id] --input "Review new issues."
+```
+
+Queue one run for every enabled target that can run now.
+
+| Flag | Type | Description |
+| --- | --- | --- |
+| `--input` | string | Optional first user message; overrides the trigger's configured input for this fire |
+
+## List trigger runs
+
+```bash
+dome triggers runs [name-or-id] --limit 50
+```
+
+List runs fired by a trigger, newest first.
+
+| Flag | Type | Description |
+| --- | --- | --- |
+| `--limit` | int | Maximum runs to return (default: 50; maximum: 200) |
+
+## Enable target
+
+```bash
+dome triggers targets enable [trigger] [target]
+```
+
+Enable one managed-agent target without changing the trigger's other targets. The target can be a managed agent name, ID, or `managed_agent:<name-or-id>`. This command has no command-specific flags.
+
+## Disable target
+
+```bash
+dome triggers targets disable [trigger] [target]
+```
+
+Disable one managed-agent target without removing it from the trigger. Other enabled targets continue to run. This command has no command-specific flags.
+
+## Permissions
+
+Reading triggers and their runs requires `managedagents.view`. Creating, updating, deleting, and changing targets requires `managedagents.manage`. Firing a trigger requires `managedagents.invoke`.

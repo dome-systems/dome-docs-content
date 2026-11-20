@@ -1,0 +1,9 @@
+{
+  "title": "Resources",
+  "defaultOpen": true,
+  "pages": [
+    "tools",
+    "models",
+    "model-pools"
+  ]
+}

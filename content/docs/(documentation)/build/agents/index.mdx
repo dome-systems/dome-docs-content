@@ -1,0 +1,87 @@
+---
+title: Agents
+sidebarTitle: Agents
+description: Register agents, issue credentials, allow resources, and manage lifecycle
+---
+
+import { agent } from '@/snippets/glossary';
+
+<p>{agent}</p>
+
+Refer to [Agents](/concepts/agents) concept for how agent identity works.
+
+## Overview
+
+Dome separates an agent's identity from its credentials and access. Registering an agent creates a durable identity for the application or process, but does not grant access. An API key lets the runtime authenticate as that identity. Allowed resources, gateway membership, and [rules](/govern/rules) determine what requests Dome permits.
+
+Because credentials and access are separate, you can rotate a key without changing permissions or change permissions without issuing a new key.
+
+## Agent types
+
+Dome has three agent types:
+
+- An **external agent** runs in your own runtime. Register it on [External agents](/build/agents/external), then issue the credentials that let it call Dome.
+- A **managed agent** runs on Dome. Configure its prompt, model, gateway, and triggers on [Managed agents](/build/agents/managed).
+- An **interactive agent** is system-provisioned for signed-in human gateway traffic. Configure it through [Interactive access](/build/gateways/interactive-mcp-access).
+
+External and managed agents use the same agent identity, gateway grants, rules, lifecycle, and audit trail. Choose between them based on where the worker should run, not on the permissions it needs.
+
+<Cards>
+  <Card title="External agent" href="/build/agents/external">
+    Register and operate an agent that runs in your own runtime.
+  </Card>
+  <Card title="Managed agent" href="/build/agents/managed">
+    Configure an agent that Dome runs from a prompt, model, gateway, and triggers.
+  </Card>
+</Cards>
+
+For external and managed agents, configure [delegated identity](/build/agents/delegated) only when access must depend on the person the agent acts for. Interactive agents receive the signed-in person's identity through interactive access. When one agent spawns others, set a [parent](#hierarchy) at registration time.
+
+## Allowed resources
+
+An agent reaches only the resources you allow it: model pools, individual models, MCP tools, and gateways. When an agent allows a gateway, Dome lets it use that endpoint.
+
+Allowing a resource is shorthand for creating a rule. Each entry generates a rule in the agent's rule bundle, which the gateway enforces on the next request without a separate deploy. Because it creates rules, allowing a resource needs `rules.deploy` in addition to permission to edit the agent. This lets a developer register an agent and change its metadata without changing which resources it reaches.
+
+Each selection generates the actions it implies:
+
+| You allow | Actions Dome permits |
+|-----------|----------------------|
+| model pool or model | `llm:invoke` |
+| tool | `mcp:call`, `mcp:discover` |
+| gateway | `llm:invoke`, `mcp:call`, `mcp:discover` |
+
+When the shorthand cannot express a condition, such as a time window, a PII field, or an act-as claim, create [rules](/govern/rules) directly. A generated bundle adds to workspace defaults rather than replacing them.
+
+You can set allowed resources while registering or updating an agent.
+
+## Delegated identity
+
+An agent can act for a person rather than only for itself. When it presents an act-as claim, Dome verifies the claim before authorizing the request, and the audit trail records the end user alongside the agent.
+
+On the agent you choose the verification method (`oidc`, `hmac`, `bound`, or `none`), whether a claim is mandatory on every request, which provider to use, and optional allow-lists by group, email, or subject. An agent with no restrictions accepts any verified identity. Like allowed resources, these settings generate rules, so changing them needs `rules.deploy`.
+
+Workspace providers, the workspace floor, and claim-aware rules are on [Delegated agents](/build/agents/delegated). You can configure per-agent settings while registering or updating an agent.
+
+## Hierarchy
+
+An agent can have a parent. The parent and its descendants form a hierarchy, which helps when one agent spawns or manages others and you want to act on them together. A hierarchy grants no access on its own, and each agent reaches only what you allow it.
+
+A hierarchy can be at most 10 levels deep, and a parent and child must belong to the same tenant. You can set an agent's parent while registering it. An update cannot change it afterward. How lifecycle operations reach descendants is under [Agent lifecycle](/concepts/agents/agent-lifecycle).
+
+## Token lifetime
+
+Each agent carries its own access-token lifetime. Set it while registering or updating the agent with `--token-ttl` (CLI) or `token_ttl` (MCP and API), as a duration such as `15m`. The default is `10m`, and the accepted range is `1m` to `24h`.
+
+Shorten the lifetime for ephemeral jobs. Lengthen it only when refresh overhead justifies the larger exposure window. Clearing the value returns the agent to the `10m` default.
+
+## Next steps
+
+- [External agents](/build/agents/external) to register an agent you run.
+- [Managed agents](/build/agents/managed) to configure an agent Dome runs.
+- [Delegated agents](/build/agents/delegated) when access must depend on the person the agent acts for.
+- [Tools](/connect/tools) and [Models](/connect/models) an agent can call.
+- [gateways](/build/gateways) for membership and grants.
+- [Develop](/develop) to authenticate and route runtime traffic.
+- [Agent lifecycle](/concepts/agents/agent-lifecycle) concept for states and cascades.
+- [Agent concepts](/concepts/agents) for the identity and authorization model.

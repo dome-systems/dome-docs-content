@@ -1,0 +1,65 @@
+---
+title: Roles
+description: Manage custom roles and their permission sets
+---
+
+Custom roles are named permission sets at an organization, tenant, or workspace scope. Their permissions cascade to child scopes. All role tools require the matching scope context and permissions.
+
+## Roles
+
+### dome_roles_list
+
+List built-in and custom roles assignable at a scope.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `scope_kind` | string | No | `workspace`, `tenant`, or `org`; defaults to the active workspace |
+| `scope_id` | string | No | Scope ID; defaults to the active context |
+
+### dome_roles_get
+
+Show one custom role's definition and current holders.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Custom role name |
+| `scope_kind`, `scope_id` | string | No | Scope to inspect |
+
+### dome_roles_create
+
+Create a custom role with the supplied permission IDs.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Role name |
+| `permissions` | array of string | Yes | Permission IDs granted by the role |
+| `description` | string | No | Role description |
+| `scope_kind`, `scope_id` | string | No | Scope for the role |
+
+### dome_roles_update
+
+Change a custom role's name, description, or complete permission set. Renaming keeps its existing holders assigned.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Current role name |
+| `new_name`, `description` | string | No | Replacement metadata |
+| `permissions` | array of string | No | Replacement permission IDs |
+| `scope_kind`, `scope_id` | string | No | Scope for the role |
+
+### dome_roles_delete
+
+Delete a custom role. If it has holders, choose how to handle them by reassigning or removing their memberships. The tool refuses an unsafe deletion.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Role name |
+| `reassign_to` | string | No | Role that receives every holder |
+| `remove_members` | bool | No | Remove every holder instead |
+| `scope_kind`, `scope_id` | string | No | Scope for the role |
+
+## Next steps
+
+- [Manage Access](/manage/access) for memberships, roles, and platform API keys
+- [`dome roles`](/cli/settings/roles) for the CLI reference
+

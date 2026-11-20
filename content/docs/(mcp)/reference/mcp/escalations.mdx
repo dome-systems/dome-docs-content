@@ -1,0 +1,123 @@
+---
+title: Escalations
+description: Create escalation workflows and resolve review judgments from an MCP client
+---
+
+<PreviewBadge />
+
+Manage [escalation workflows](/govern/escalations) and resolve review judgments from an MCP client. Each configuration change publishes a new active version and preserves history.
+
+<Callout icon="key">
+  All tools use workspace context. `escalations.view` reads workflows and judgments. `escalations.manage` changes workflows. `escalations.resolve` resolves judgments.
+</Callout>
+
+## Workflows
+
+### dome_escalations_list
+
+List active workflows in the workspace.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `page_size` | number | No | Maximum results. Defaults to `10`; maximum `50`. |
+| `page_token` | string | No | Cursor from the previous response. |
+
+### dome_escalations_get
+
+Fetch a workflow's active configuration.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `escalation` | string | Yes | Workflow name or UUID. |
+
+### dome_escalations_create
+
+Create a workflow and its first active version. The configuration selects the immutable trigger kind.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Unique workflow name in the workspace. |
+| `description` | string | No | One-line description. |
+| `config_json` | string | Yes | ProtoJSON `dome.escalations.v1.EscalationConfig`. |
+
+### dome_escalations_update
+
+Update workflow metadata or publish a new active configuration version.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `escalation` | string | Yes | Workflow name or UUID. |
+| `new_name` | string | No | New workflow name. |
+| `description` | string | No | New description. |
+| `config_json` | string | No | ProtoJSON configuration to publish as a new version. |
+
+Pass at least one optional parameter. You cannot change the trigger kind.
+
+### dome_escalations_delete
+
+Delete a workflow and its version history.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `escalation` | string | Yes | Workflow name or UUID. |
+
+## Versions
+
+### dome_escalations_versions
+
+List a workflow's version history, newest first.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `escalation` | string | Yes | Workflow name or UUID. |
+| `page_size` | number | No | Maximum results. Defaults to `10`; maximum `50`. |
+| `page_token` | string | No | Cursor from the previous response. |
+
+### dome_escalations_rollback
+
+Copy an earlier configuration into a new active version.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `escalation` | string | Yes | Workflow name or UUID. |
+| `to_version` | number | Yes | Version number to copy forward. |
+
+## Judgments
+
+### dome_escalations_judgments_list
+
+List judgments for one workflow, newest first.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `escalation` | string | Yes | Workflow name or UUID. |
+| `status` | string | No | `pending` (default) or `resolved`. |
+| `page_size` | number | No | Maximum results. Defaults to `10`; maximum `50`. |
+| `page_token` | string | No | Cursor from the previous response. |
+
+### dome_escalations_judgments_get
+
+Fetch one judgment's status and verdict.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `escalation` | string | Yes | Workflow name or UUID. |
+| `judgment_id` | string | Yes | Judgment UUID. |
+
+### dome_escalations_judgments_resolve
+
+Record the final verdict for a pending judgment.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `escalation` | string | Yes | Workflow name or UUID. |
+| `judgment_id` | string | Yes | Judgment UUID. |
+| `verdict` | string | Yes | `approve` or `deny`. |
+
+Each verdict applies to one request. A resolved judgment cannot change.
+
+## Next steps
+
+- [Configure escalations](/govern/escalations) and attach a Cedar policy
+- [Use the CLI](/cli/govern/escalations) from a terminal
+- [Use the REST API](/api/tag/escalations/list-escalations) from an application

@@ -1,0 +1,51 @@
+---
+title: Resources
+description: Why Dome models tools, model connections, and model pools as callable resources
+---
+
+import { resource } from '@/snippets/glossary';
+
+<p>{resource}</p>
+
+## High-level overview
+
+A resource is a workspace record for something callable. Dome stores how to reach it, how to authenticate outbound, and how it participates in gateways and rules. The agent never holds the upstream credential. Membership on a [Gateway](/concepts/gateways) makes the resource addressable. [Rules](/concepts/controls/rules) decide whether a specific call is allowed.
+
+Dome supports three resource types:
+
+| Type | What it represents | Typical call path |
+|------|--------------------|-------------------|
+| **tool** | An MCP server (or related tool backend) | gateway `/gateways/<id>/mcp` |
+| **model connection** | One LLM provider endpoint and credential | gateway `/gateways/<id>/v1/...` by connection name |
+| **model pool** | A named group of model connections with routing and failover | gateway `/gateways/<id>/v1/...` by pool name |
+
+Attaching resources and calling them looks like this:
+
+1. An operator adds a Notion MCP tool and an Anthropic model connection, puts both on a gateway, and grants an agent access.
+2. The agent discovers tools over MCP and names a model or pool on chat requests.
+3. Dome authenticates the agent, checks gateway membership and rules, injects credentials on egress, and audits the outcome against that resource.
+
+Resources are the callable side of Connect. Gateways package which ones an agent can reach.
+
+### Reachability vs authorization
+
+A resource can exist without being callable. Until it is a member of a gateway an agent may use, it stays **Unreachable**. Membership and access grants package reachability. Rules, guards, and quotas still decide what happens after the call is admitted. Refer to [Gateways](/concepts/gateways) concept.
+
+### Tools vs models
+
+Tools act on the world through MCP (and related protocols). Models produce completions through the LLM ingress. Both are resources, but they use different gateway path suffixes, credential shapes, and guard kinds. Pools apply only to model traffic.
+
+### Direct models vs pools
+
+Agents can name a model connection directly or name a pool. Prefer a pool when the client should stay stable while you swap providers, weight traffic, or fail over. Prefer a direct connection when one endpoint should always serve that name. Details are on the [Models](/concepts/resources/models) concept and [Pools](/concepts/resources/model-pools) concept.
+
+## Next steps
+
+With that resources model in mind, continue with:
+
+- [Architecture](/concepts/architecture#resources) concept for where resources sit among components
+- [Tools](/concepts/resources/tools) concept for MCP connections, credentials, and catalogs
+- [Models](/concepts/resources/models) concept for provider connections and attributes
+- [Pools](/concepts/resources/model-pools) concept for routing, failover, and resolution
+- [Gateways](/concepts/gateways) concept for membership and reachability
+- [Tools](/connect/tools), [Models](/connect/models), and [Pools](/connect/pools) to configure them

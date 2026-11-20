@@ -1,0 +1,109 @@
+---
+title: Publish template
+description: Publish an immutable Dome agent template and manage its lifecycle in the Templates Registry.
+---
+
+The Templates Registry distributes immutable, source-only Dome agent templates.
+Use this page to publish a release, manage who can publish in a namespace, and
+deprecate a bad version. To consume a published release, see [Deploy agent with template](/develop/templates/run).
+
+The examples use `npx`, so a global Templates CLI installation is not required.
+Publishing requires Node.js 20 or later, a clean Git checkout, GitHub
+authorization for the source repository, and Registry publisher access.
+
+## Publish a template
+
+Publish from the directory containing `dome.yaml`. A release is immutable: increase `metadata.version` before publishing a correction.
+
+```bash title="Validate first"
+npx @domesystems/templates publish --dry-run
+
+# Publish the next SemVer version after validation succeeds.
+npx @domesystems/templates publish
+```
+
+The Registry publishes source only: `dome.yaml` and referenced assets such as prompts, rules, and guards. It rejects generated Terraform, Compose files, locks, and credentials. The CLI requires a clean Git checkout and GitHub authorization for the source repository.
+
+At minimum, `dome.yaml` must have a valid API version and kind, a scoped package name, SemVer version, title, GitHub HTTPS source repository and relative source path, and one or more uniquely named managed or external agents.
+
+```yaml title="dome.yaml"
+apiVersion: templates.domesystems.ai/v1
+kind: Template
+
+metadata:
+  name: acme/incident-triage
+  version: "1.0.0"
+  title: Triage production incidents
+  summary: Route and summarize incoming incidents.
+  source:
+    repository: https://github.com/acme/agent-templates
+    path: incident-triage
+
+models:
+  - name: incident-model
+    provider_id: anthropic
+    provider_config: { model: claude-sonnet-5 }
+    auth_method: api-key
+    credential_type: shared
+    secret_values: { Authorization: var.anthropic_api_key }
+
+agents:
+  - name: incident-triage
+    type: managed
+    gateway: incident-tools
+    default_model: triage-pool
+    system_prompt:
+      path: agents/incident-triage/instructions.md
+```
+
+For a GitHub organization package, the package scope must equal the repository owner. The signed-in GitHub account must be a repository administrator and the Dome Templates Registry GitHub App must have access to that repository.
+
+## Manage publisher access
+
+Use `auth status` to see roles. Namespace owners and publishers can deprecate releases; namespace owners manage membership.
+
+```bash title="Invite a publisher"
+npx @domesystems/templates access invite acme \
+  teammate@acme.com --role publisher
+
+# The invited person signs in, then accepts the one-time code.
+npx @domesystems/templates access accept <code>
+
+# Inspect or change access.
+npx @domesystems/templates access list acme
+npx @domesystems/templates access role acme teammate@acme.com --role owner --yes
+npx @domesystems/templates access remove acme teammate@acme.com --yes
+```
+
+## Deprecate a bad release
+
+Do not unpublish immutable releases. Deprecate an exact version with a reason so new consumers resolve to the newest non-deprecated version, while existing pinned deployments remain recoverable.
+
+```bash
+npx @domesystems/templates deprecate \
+  acme/incident-triage@1.2.1 \
+  "Incorrect quota policy" \
+  --yes
+```
+
+To remove the warning after a review:
+
+```bash
+npx @domesystems/templates deprecate \
+  acme/incident-triage@1.2.1 \
+  --clear --yes
+```
+
+The Library marks deprecated versions and shows the reason on direct version pages. `templates view <package> versions` shows the same lifecycle status in the terminal.
+
+## Command reference
+
+Use `npx @domesystems/templates <command> --help` for the exact options for one command.
+
+| Command | Purpose |
+| --- | --- |
+| `auth login`, `auth status`, `auth logout` | Manage a Registry sign-in and inspect publisher access. |
+| `access list`, `invite`, `accept`, `role`, `remove` | Manage namespace publisher membership. |
+| `doctor publish` | Check publishing prerequisites. |
+| `publish [--dry-run]` | Validate or publish an immutable source release. |
+| `deprecate <package@version> <reason> --yes` | Mark an exact release as deprecated. |

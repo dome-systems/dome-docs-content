@@ -1,0 +1,44 @@
+---
+title: Operate
+sidebarTitle: Overview
+description: Investigate audit events, stream live events, connect external systems, and subscribe to outbound notifications
+---
+
+**Operate** makes governed traffic visible and actionable. Query the durable audit trail, stream live events, configure integrations, and subscribe external systems to signed deliveries.
+
+## What you operate
+
+<Cards>
+  <Card title="Audit events" href="/operate/audit">
+    Query and filter the durable Audit v1 trail by class, actor, resource, correlation, and payload, then follow activity chains.
+  </Card>
+  <Card title="Stream live events" href="/operate/observe">
+    Watch that trail in real time alongside calls and denials, health and latency, token usage and cost, and quotas.
+  </Card>
+  <Card title="Integrations" href="/operate/integrations">
+    Configure audit destinations and enterprise single sign-on for the systems that work alongside Dome.
+  </Card>
+  <Card title="Subscribe to events" href="/operate/webhooks">
+    Push a public projection of selected events to your HTTPS endpoint or a provider, signed, retried, and replayable.
+  </Card>
+</Cards>
+
+Audit events is the durable record. Stream watches activity inside Dome; subscribe delivers selected public events when another system must react. [Integrations](/operate/integrations) configures supported destinations for retained audit evidence. Neither replaces batch export under [Manage](/manage/export). The [Callers](/connect/callers#inspect-callers) registry under Connect is a separate projection derived from the same evidence.
+
+See [Audit events](/concepts/audit) for how the one trail works, the [Event catalog](/reference/events/catalog) for every event type, and [Event contracts](/reference/events/contracts) for the shared envelope.
+
+## Typical workflow
+
+1. [Audit events](/operate/audit) to query, get, and correlate retained events when you investigate a decision or prepare evidence.
+2. [Stream live events](/operate/observe) for governed traffic in real time, including token usage, cost, OpenTelemetry, and product telemetry.
+3. [Integrate systems](/operate/integrations) to configure audit destinations or enterprise single sign-on.
+4. [Subscribe to events](/operate/webhooks) to create destinations and subscriptions for the event types your automation must handle.
+
+Afterward you can add destinations, widen subscriptions, or change retention without touching Connect or Govern configuration.
+
+## Next steps
+
+- [Build](/build) to create agents, gateways, and managed-agent triggers.
+- [Connect](/connect) to attach callers, tools, models, and pools.
+- [Govern](/govern) to authorize actions, inspect content, and cap spend.
+- [Manage](/manage) to administer platform settings, access, environments, imports, exports, and billing.

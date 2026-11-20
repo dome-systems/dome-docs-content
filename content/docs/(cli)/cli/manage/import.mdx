@@ -1,0 +1,86 @@
+---
+title: dome import
+description: Plan and apply reviewed Dome configuration to the active target scope
+---
+
+Plan and apply reviewed Dome configuration to the active target scope. Imports create or update matching resources and never destroy or replace existing configuration.
+
+Start with [`dome export`](/cli/manage/export) to create the configuration file. Refer to [Import and export configuration](/manage/import-export) for supported resource families, scope coverage, and portability permissions.
+
+## Requirements
+
+Before you begin:
+
+- Select the target workspace, tenant, or organization.
+- Hold `import.manage` and the permissions needed to create or update each imported resource.
+- Review the export and collect every required variable value.
+
+## Plan an import
+
+```bash
+dome import <file.tf|dir> [more files...] --plan-only [flags]
+```
+
+Validate one or more `.tf` files and report the changes without changing the active scope. The command inspects the bundle and checks required permissions before it creates the plan job.
+
+```bash
+dome import dome.tf --plan-only --var api_token="$API_TOKEN"
+```
+
+## Import configuration
+
+```bash
+dome import <file.tf|dir> [more files...] [flags]
+```
+
+Import one or more export files into the active scope. Pass a directory to include its top-level `.tf` files. Dome prompts for missing variable values unless the command runs unattended.
+
+| Flag | Type | Description |
+| --- | --- | --- |
+| `--var` | string[] | Supply a variable as `name=value`. Repeat for multiple values. |
+| `--var-file` | string | Read variable values from a JSON or YAML file. |
+| `--plan-only` | bool | Plan and report without applying changes. |
+| `--yes`, `-y` | bool | Skip the confirmation prompt. |
+| `--detach` | bool | Return after Dome accepts the job instead of following it. |
+
+```bash title="Import reviewed configuration"
+dome import dome.tf --var api_token="$API_TOKEN" --yes
+```
+
+For unattended runs, use `--var-file` or `DOME_IMPORT_VAR_<name>` environment variables. Dome derives `workspace_id`, `tenant_id`, and `org_id` from the active context. Do not supply them yourself.
+
+## Check an import job
+
+```bash
+dome import status <job-id> [--no-follow]
+```
+
+Show an import job. By default, the command follows it until it finishes. Use `--no-follow` to return the current state immediately.
+
+## List import jobs
+
+```bash
+dome import list [--limit <count>]
+```
+
+List import jobs targeting the active scope. `dome import ls` is an alias.
+
+## Cancel an import
+
+```bash
+dome import cancel <job-id>
+```
+
+Request cancellation before the job starts applying. A job already applying completes and reports its result.
+
+## Reveal one-time outputs
+
+```bash
+dome import outputs <job-id>
+```
+
+Reveal credentials created by a completed import, such as a new API key token. Dome shows those values exactly once and only to the person who created the job. Store them securely before continuing.
+
+## Create an export
+
+Use [`dome export`](/cli/manage/export) to create a configuration file from another compatible scope.

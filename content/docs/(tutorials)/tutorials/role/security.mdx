@@ -1,0 +1,330 @@
+---
+title: Security
+sidebarTitle: Security
+description: "Author and simulate Cedar, redact sensitive fields, prove denials, and export audit evidence."
+---
+
+On Dome, security owns what each agent may call, what content may leave a backend, and whether the audit trail can prove it. You author and simulate Cedar rules, apply guards and filters, investigate denials, and export evidence. Operators make backends reachable. Developers integrate agents. In this workspace you stand up just enough substrate to exercise the Govern path end to end.
+
+<Prompt
+  description="Hand this to an AI agent. It deploys restrictive Cedar and a contact filter, then hands you curl or Python calls that prove allow, redact, and deny."
+  icon="sparkles"
+  actions={["copy", "cursor"]}
+>
+Run the Dome Security role tutorial in a tutorial workspace: attach demo-hr, apply a contact redaction filter, deploy restrictive Cedar, then hand me curl or Python calls that prove allow, redact, and deny, plus audit export.
+
+First, show me this plan and ask me to confirm before running anything:
+
+1. Confirm CLI auth, create studio-role-security, switch into it
+2. Register role-sec-agent, mint a key (do not print the token), attach demo-hr, grant Default
+3. Create and assign redact-contact filter on demo-hr responses
+4. Write, validate, simulate, and deploy Cedar (directory allow; salary/customer deny)
+5. Hand me Verify tabs (curl and Python) for list_employees, get_employee (redacted), get_salary (deny)
+6. Show audit query and export today's events, then offer clean up
+
+Follow the commands at https://developer.domesystems.ai/agent/tutorials/role/security.md exactly.
+
+Non-negotiable rules:
+
+- Narrate as you go. Before each step, tell me in one or two sentences what you are about to do and why it matters.
+- Confirm the active context. After switching context, run `dome context current` and confirm the workspace name starts with `studio-`. If it does not, stop and ask me.
+- Never print the `dome_...` agent token in chat. Write it into a gitignored `.env`.
+- Do not call the governed tools yourself to demo outcomes. After setup, hand me the curl/Python commands and expected results, then stop.
+- After each create/grant/deploy step, give me a markdown link into the Dome console. Derive the base URL from `dome auth status` → `Server`.
+- Never report a step as done without showing the command output.
+</Prompt>
+
+In this tutorial, you will deploy a restrictive Cedar allowlist, redact contact fields on the response path, prove allow / redact / deny from curl or Python, and export audit evidence.
+
+To do this, you will:
+
+<Steps>
+  <Step title="Create a workspace">
+    Create a dedicated workspace for this role walk.
+  </Step>
+  <Step title="Stand up minimal substrate">
+    Register an agent, attach `demo-hr`, and grant Default.
+  </Step>
+  <Step title="Redact contact fields">
+    Create a filter and assign it to tool responses.
+  </Step>
+  <Step title="Author, simulate, and deploy Rules">
+    Allow directory tools; deny compensation and customers.
+  </Step>
+  <Step title="Verify allow, redact, and deny">
+    Call the gateway with curl or Python.
+  </Step>
+  <Step title="Investigate and export evidence">
+    Query denials and export today's audit trail.
+  </Step>
+</Steps>
+
+## Prerequisites
+
+For this tutorial, you will need:
+
+- The [Dome CLI](/install) installed and authenticated (`dome auth login`, then `dome auth status`)
+- A tenant `admin` role (or an org `owner` / `admin` via cascade) to create the workspace, plus permission to deploy rules. Refer to [Permissions](/concepts/platform/permissions).
+
+> This tutorial runs entirely in a workspace. In a production workspace, attaching backends is typically an [operator](/tutorials/role/operator) action. Here you attach `demo-hr` yourself so you can finish the Govern loop.
+
+## Create a workspace
+
+```bash
+dome workspaces create --name studio-role-security
+dome context sync
+dome context current
+```
+
+Confirm the workspace reads `studio-role-security` before continuing.
+
+## Stand up minimal substrate
+
+You need an agent identity and a reachable tool so rules and filters have something to govern.
+
+```bash
+dome agents register --name role-sec-agent --if-not-exists
+dome agents create-key role-sec-agent --name service
+```
+
+Save the token to a gitignored `.env` — do not leave it in chat history.
+
+```bash
+dome tools add \
+  --name demo-hr \
+  --url https://demo-mcp.domesystems.ai/mcp \
+  --protocol streamable-http \
+  --auth-method none \
+  --gateway Default
+
+dome gateways access grant Default role-sec-agent
+```
+
+## Redact contact fields
+
+A [Guard](/govern/guards) filter strips sensitive fields from tool responses before the agent sees them. Create `redact-contact.json`:
+
+```json title="redact-contact.json"
+{
+  "json": {
+    "components": [
+      {
+        "fieldActions": [
+          {
+            "matcher": { "path": "**.email" },
+            "action": "FILTER_ACTION_REDACT"
+          },
+          {
+            "matcher": { "path": "**.phone" },
+            "action": "FILTER_ACTION_REDACT"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Create the filter and assign it to the response direction on `demo-hr`:
+
+```bash
+dome guards filters create redact-contact \
+  --description "Redact contact fields in tool responses" \
+  --config-from redact-contact.json
+
+dome tools guards filters set demo-hr \
+  --direction response \
+  --filters redact-contact
+```
+
+## Author, simulate, and deploy Rules
+
+This allowlist keeps directory tools open. Everything else — including salary and customer records — is denied by `forbid … unless`:
+
+```cedar title="role-sec-agent.cedar"
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:discover",
+  resource
+);
+
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:call",
+  resource
+) when {
+  resource in [
+    Dome::MCPTool::"demo-hr/hr/list_employees",
+    Dome::MCPTool::"demo-hr/hr/get_employee",
+    Dome::MCPTool::"demo-hr/hr/org_chart"
+  ]
+};
+
+forbid(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:call",
+  resource
+) unless {
+  resource in [
+    Dome::MCPTool::"demo-hr/hr/list_employees",
+    Dome::MCPTool::"demo-hr/hr/get_employee",
+    Dome::MCPTool::"demo-hr/hr/org_chart"
+  ]
+};
+```
+
+Validate and simulate **before** deploying so you know the allow and deny paths:
+
+```bash
+dome rules validate role-sec-agent.cedar
+
+dome rules simulate --agent role-sec-agent --action mcp:call \
+  --resource demo-hr/hr/list_employees --resource-type mcp_tool
+
+dome rules simulate --agent role-sec-agent --action mcp:call \
+  --resource demo-hr/finance/get_salary --resource-type mcp_tool
+```
+
+Expect `ALLOW`, then `DENY`. Deploy when those match:
+
+```bash
+dome rules apply role-sec-agent.cedar --agent role-sec-agent --name role-sec-agent
+```
+
+## Verify allow, redact, and deny
+
+```bash
+dome context current
+dome gateways list
+```
+
+```bash
+export DOME_GATEWAY_URL="https://GATEWAY_HOST/gateways/DEFAULT_GATEWAY_ID"
+export DOME_TOKEN="dome_..."
+```
+
+<Tabs items={["API via curl","Python"]}>
+  <Tab value="API via curl">
+    **List employees** — allowed:
+
+    ```bash
+    curl -sS -X POST "$DOME_GATEWAY_URL/mcp" \
+      -H "Authorization: Bearer $DOME_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+          "name": "demo-hr/hr/list_employees",
+          "arguments": {}
+        }
+      }'
+    ```
+
+    **Get E001** — allowed, email redacted:
+
+    ```bash
+    curl -sS -X POST "$DOME_GATEWAY_URL/mcp" \
+      -H "Authorization: Bearer $DOME_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/call",
+        "params": {
+          "name": "demo-hr/hr/get_employee",
+          "arguments": { "employee_id": "E001" }
+        }
+      }'
+    ```
+
+    Expect `"email": "[REDACTED]"`.
+
+    **Get salary** — denied:
+
+    ```bash
+    curl -sS -X POST "$DOME_GATEWAY_URL/mcp" \
+      -H "Authorization: Bearer $DOME_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "tools/call",
+        "params": {
+          "name": "demo-hr/finance/get_salary",
+          "arguments": { "employee_id": "E001" }
+        }
+      }'
+    ```
+  </Tab>
+  <Tab value="Python">
+    Requires `httpx` (`pip install httpx`):
+
+    ```python title="verify_security.py"
+    import json
+    import os
+
+    import httpx
+
+    url = os.environ["DOME_GATEWAY_URL"].rstrip("/") + "/mcp"
+    token = os.environ["DOME_TOKEN"]
+
+    def call(name: str, arguments: dict | None = None) -> None:
+        response = httpx.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": name, "arguments": arguments or {}},
+            },
+            timeout=30.0,
+        )
+        print(json.dumps(response.json(), indent=2))
+
+    call("demo-hr/hr/list_employees")
+    call("demo-hr/hr/get_employee", {"employee_id": "E001"})
+    call("demo-hr/finance/get_salary", {"employee_id": "E001"})
+    ```
+
+    ```bash
+    python verify_security.py
+    ```
+
+    Expect allow, redacted email, then deny.
+  </Tab>
+</Tabs>
+
+## Investigate and export evidence
+
+```bash
+dome audit query --limit 20
+dome audit query --results denied --limit 10
+```
+
+Export today's trail as JSON Lines for a compliance package or SIEM:
+
+```bash
+dome audit export \
+  --since "$(date -u +%Y-%m-%dT00:00:00Z)" \
+  --format jsonl > security-audit.jsonl
+```
+
+## Clean up
+
+```bash
+dome workspaces delete studio-role-security
+```
+
+## Next steps
+
+You learned how to author and simulate Cedar, redact sensitive fields, prove denials, and export audit evidence. Continue with:
+
+- [Developer](/tutorials/role/developer) to register agents and verify from the workload side
+- [operator](/tutorials/role/operator) to attach backends and expose gateways
+- [Simulate Rules](/govern/rules/simulate) for deeper pre-deploy checks

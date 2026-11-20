@@ -1,0 +1,251 @@
+---
+title: Platform
+description: Check platform status, manage scoped API keys, read configuration, and create tenants
+---
+
+import { platformApiKey } from '@/snippets/glossary';
+
+<p>{platformApiKey}</p>
+
+Refer to [Access](/manage/access) for platform API keys and permissions. Refer to [Environments](/manage/environments) for tenants. Refer to [Settings](/manage/settings) for workspace configuration.
+
+These tools require an active context. `dome_status_get`, `dome_config_get`, and `dome_platform_keys_available_permissions` are visible to any role; the API key tools require `apikeys.manage` at the active scope; and the tenant tools require the org-level `tenants.manage` permission.
+
+## Status
+
+### dome_status_get
+
+Get platform status and statistics for the current workspace.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| — | — | — | No parameters |
+
+<Callout icon="key">Authenticated only — visible to any caller with an active context, regardless of role.</Callout>
+
+Returns workspace statistics including agent counts by status, active rule bundle info, and gateway backend count.
+
+```json title="Example tool call"
+{
+  "name": "dome_status_get"
+}
+```
+
+## API keys
+
+Platform API keys authenticate service-to-service integrations with the Dome Platform API.
+
+### dome_platform_keys_list
+
+List platform API keys.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| — | — | — | No parameters |
+
+<Callout icon="key">Requires `apikeys.manage`.</Callout>
+
+Returns key metadata (name, created date, last used, status) but not the key secret.
+
+### dome_platform_keys_available_permissions
+
+List the permissions you can grant to a new platform API key at the current context's scope. Read-only. Call this before `dome_platform_keys_create` to discover the valid `permissions` values for your role.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| — | — | — | No parameters |
+
+<Callout icon="key">Authenticated only — the server filters the returned set against the caller's effective role.</Callout>
+
+Returns an array of `{ id, label }` entries. The `id` is the value to pass to `dome_platform_keys_create`; the `label` is a human-readable name for display. The set is scope-aware: a workspace context returns workspace permissions only, a tenant context adds tenant permissions, and an org context adds org permissions.
+
+```json title="Example tool call"
+{
+  "name": "dome_platform_keys_available_permissions"
+}
+```
+
+### dome_platform_keys_create
+
+Create a new platform API key for programmatic access. The key is scoped to the current context level (workspace, tenant, or org). The secret is returned once. Call `dome_platform_keys_available_permissions` first to discover valid permission strings for your role.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Key name |
+| `permissions` | array | No | Permissions to grant (e.g., `agents.register`, `audit.view`). Use `dome_platform_keys_available_permissions` to enumerate valid values. |
+| `expires_at` | string | No | Expiration time (RFC3339) |
+
+<Callout icon="key">Requires `apikeys.manage`.</Callout>
+
+<Callout type="idea">
+  Call `dome_platform_keys_available_permissions` first to discover valid permission strings for your role at the current scope.
+</Callout>
+
+```json title="Example tool call"
+{
+  "name": "dome_platform_keys_create",
+  "arguments": {
+    "name": "ci-pipeline",
+    "permissions": ["agent.view", "audit.view"]
+  }
+}
+```
+
+<Callout type="info">
+  Store the returned key secret securely. It cannot be retrieved after creation — only revoked.
+</Callout>
+
+### dome_platform_keys_revoke
+
+Revoke a platform API key permanently.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `key_id` | string | Yes | Key ID to revoke |
+
+<Callout icon="key">Requires `apikeys.manage`.</Callout>
+
+<Callout type="warning">
+  Revocation is immediate. Any integrations using this key lose access immediately.
+</Callout>
+
+## Config
+
+### dome_config_get
+
+Get a configuration value from the platform.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `key` | string | Yes | Configuration key |
+
+<Callout icon="key">Authenticated only — visible to any caller with an active context, regardless of role.</Callout>
+
+## Tenants
+
+Tools for listing, inspecting, and creating tenants in your active organization. The org is sourced from the active context — switch contexts first if you need to target a different org. All three tools return "No active org context" if the caller has not selected an org context; run `dome_context_use` to switch.
+
+### dome_tenants_list
+
+List tenants under your active organization.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| — | — | — | No parameters |
+
+<Callout icon="key">Requires org-level `tenants.manage` (held by org `owner` or `admin`).</Callout>
+
+Returns the array of tenants visible to the caller, including id, name, plan, org id, default gateway, and creation timestamp.
+
+```json title="Example tool call"
+{
+  "name": "dome_tenants_list"
+}
+```
+
+### dome_tenants_get
+
+Get a single tenant by id from your active organization. The caller is admitted if either the active context is scoped to the requested tenant, or the caller holds org `admin` or `owner` on the active org.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `tenant_id` | string | Yes | Tenant UUID |
+
+<Callout icon="key">Requires tenant-scoped session for the requested tenant **or** org-level `tenants.manage` on the active org. The MCP tool listing surfaces this tool when org `tenants.manage` is held; tenant-scoped callers can still invoke the underlying RPC directly via the API.</Callout>
+
+```json title="Example tool call"
+{
+  "name": "dome_tenants_get",
+  "arguments": {
+    "tenant_id": "5b1e…"
+  }
+}
+```
+
+### dome_tenants_create
+
+Create a new tenant under your active organization. The caller becomes the initial tenant admin.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Tenant display name |
+| `plan` | string | No | Tenant plan: `essential` (default), `managed`, `enterprise`, `complete` |
+| `join_policy` | string | No | How non-members join: `open`, `request`, or `invite_only`. Omit to take the server default (`invite_only`). |
+
+<Callout icon="key">Requires org-level `tenants.manage` (held by org `owner` or `admin`).</Callout>
+
+<Callout type="info">
+  Creating a new organization is operator-only. Contact Dome to provision a new org.
+</Callout>
+
+```json title="Example tool call"
+{
+  "name": "dome_tenants_create",
+  "arguments": {
+    "name": "acme-prod",
+    "plan": "managed",
+    "join_policy": "request"
+  }
+}
+```
+
+Unknown `join_policy` values return `InvalidArgument`. See [Join policies](/manage/environments#join-policies).
+
+If no active org context is set, the tool returns `No active org context. Use dome_context_use first.`
+
+### dome_tenants_rename
+
+Rename a tenant's display name.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `tenant_id` | string | Yes | Tenant UUID |
+| `name` | string | Yes | New display name |
+
+### dome_orgs_rename
+
+Rename the active organization's display name.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | New display name |
+
+## Usage allowances
+
+### dome_usage_caps
+
+Show the active workspace's free-plan monthly tool-call and model-token allowances. The result is empty for paid plans, which meter usage instead.
+
+## Integrations
+
+### dome_integrations_list
+
+List configured integration instances and their observed connection status. `connected` is the only status that confirms provider credentials; `invalid_credentials`, `unreachable`, `connection_failed`, `checking`, and `unverifiable` each need different handling.
+
+## Organization settings
+
+### dome_org_previews_get / dome_org_previews_set
+
+Read or change the organization-wide public-preview switch. `dome_org_previews_set` requires `enabled`; it applies every preview feature currently offered to the organization.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `enabled` | bool | Set only | Enable or disable public-preview features |
+| `org_id` | string | No | Organization ID; defaults to the active context's organization |
+
+### dome_org_mcp_sign_in_get / dome_org_mcp_sign_in_set
+
+Read or change whether members can sign in to the hosted Dome MCP server for an organization. Turning the setting off ends access in that organization on each member's next request.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `enabled` | bool | Set only | Enable or disable hosted-MCP sign-in |
+| `org_id` | string | No | Organization ID; defaults to the active context's organization |
+
+## Next steps
+
+Members, keys, and workspace defaults have how-tos under Manage:
+
+- [Manage Access](/manage/access)
+- [Configure Platform](/manage/settings)
+- [Permissions](/concepts/platform/permissions) concept

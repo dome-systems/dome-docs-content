@@ -1,0 +1,706 @@
+---
+title: Models
+sidebarTitle: Models
+description: Connect LLM providers, secure upstream credentials, and publish governed model endpoints
+---
+
+import { modelConnection } from '@/snippets/glossary';
+
+<p>{modelConnection}</p>
+
+## Overview
+
+A model connection represents one upstream model in Dome. The connection stores the configuration and credentials Dome needs to call that model. An agent selects the connection by putting its name in the request's `model` field.
+
+A [pool](/connect/pools) groups multiple models behind one name. Dome selects one member for each request. Prefer a pool when you need routing, traffic distribution, or failover. Refer to [Pools](/concepts/resources/model-pools) concept.
+
+The typical workflow is:
+
+1. [Choose a provider](#providers) and model identifier.
+2. [Add the model](#add-model) with its upstream credentials.
+3. Attach the model directly to a [gateway](#attach-to-a-gateway) or add it to a [model pool](/connect/pools).
+4. Allow the gateway on the [external agent](/build/agents/external#allowed-resources).
+5. [Verify the route](#verify-model) with that agent's API key.
+
+### Providers
+
+The provider determines how Dome translates requests and where Dome places the upstream credential. You cannot change the provider after adding the model.
+
+Provider IDs fall into three groups.
+
+- **Native providers.** Dome translates between the gateway request and the provider's native wire format: `openai`, `anthropic`, `google`, `azure_openai`, and `bedrock`.
+- **Hosted OpenAI-compatible providers.** Dome sends requests through the provider's OpenAI-compatible API (for example `mistral`, `groq`, `together`, `moonshot`, `openrouter`, `databricks`).
+- **Bring your own endpoint.** Use `openai_compatible` for an OpenAI-shaped endpoint such as vLLM or Ollama. Use `custom` when Dome should forward provider-specific requests without translating them.
+
+Dome supplies a base URL for hosted providers that have a default. For Google, Azure OpenAI, Bedrock, Databricks, `openai_compatible`, and `custom`, you must provide an endpoint or the provider-specific details needed to locate the model. The full provider ID list is on the [Models](/reference/resources/models#providers) reference.
+
+Discover valid provider and model ids from the same catalog the dashboard picker uses: [`dome models providers`](/cli/connect/models#list-providers) or [`dome_models_providers`](/reference/mcp/models#dome_models_providers). Curated lists exist for providers with stable public ids (OpenAI, Anthropic, Google) and always include a default. Other providers return an empty model list and accept any model string the upstream accepts. A model your upstream supports but the catalog does not list is still valid — pass it as `--model <id>`.
+
+### Credentials
+
+Agent API keys authenticate inbound requests to Dome. Model credentials authenticate Dome's outbound requests to the provider, and agents never receive them.
+
+| Authentication method | Credential type | What Dome sends |
+|-----------------------|-----------------|-----------------|
+| `none` | `none` | No provider credential |
+| `api-key` | `shared` | One workspace-managed API key for every call |
+| `api-key` | `per-user` | An API key linked to the verified end user |
+| `oauth` | `shared` | One administrator-authorized OAuth grant for every call |
+| `oauth` | `per-user` | An OAuth grant linked to the verified end user |
+
+When the provider requires no authentication, set both the authentication method and credential type to `none`. When the provider uses an API key or OAuth, the credential type must be `shared` or `per-user`. If you omit both settings, Dome uses `api-key` with `shared`.
+
+With per-user credentials, Dome uses the verified act-as identity on each request to select the provider credential. If that end user has not connected a credential, Dome returns HTTP `401` with a short-lived `provision_url`. The end user opens the URL to enter an API key or complete OAuth consent, then retries the request. Refer to [Errors and denials](/develop#errors-and-denials) for runtime handling.
+
+Google models with shared credentials use a service account. On a self-hosted gateway, Google and Bedrock models can instead use the gateway's cloud-native identity. A Dome-hosted gateway cannot assume a role or workload identity from your cloud account.
+
+Model API keys and OAuth client secrets are write-only. Dome uses them for outbound requests but does not return their raw values after you create or update a connection.
+
+### Attributes
+
+Attributes add trusted metadata to a model for [rules](/govern/rules) to evaluate. For example, a rule can allow models with `region=eu` for a European workload or deny models whose `data_class` does not match the request. Attributes do not change how Dome calls the provider.
+
+You can set attributes when you [add a model](#add-model) or [change them later](#change-attributes).
+
+### Filter window
+
+A model can change how much streamed output Dome buffers before applying outbound guards. Dome uses the largest window configured on the workspace, model, or request. A model can therefore increase inspection coverage but cannot reduce the workspace minimum. A value of `0` uses the workspace setting. A model can buffer at most 1 MiB or 4,096 tokens.
+
+You can set a filter window when you [add a model](#add-model) or [change it later](#change-filter-window).
+
+## Requirements
+
+Before you begin:
+
+- Authenticate to Dome and select a workspace
+- Have the provider, model identifier, and provider-specific configuration
+- Have a provider credential unless the model uses no authentication or workload identity
+- Have a [Gateway](/build/gateways) ready when you want the model reachable
+
+### Permissions
+
+Model connection operations require platform permissions. Each operation states its required permission inline.
+
+| Default roles | Permission | Grants |
+|---------------|------------|--------|
+| All workspace roles | `gateways.view` | List and inspect models |
+| `admin`, `operator` | `gateways.manage` | Add, update, and remove models |
+
+## Add model
+
+Add a model for one provider endpoint. You can attach the model directly to a gateway during this operation. If you do not attach it, agents cannot call the model until you attach it later.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome models add claude-prod \
+      --provider anthropic \
+      --model claude-sonnet-4-6 \
+      --api-key "$ANTHROPIC_API_KEY" \
+      --gateway prod-llms
+    ```
+
+    Add `--endpoint` or `--provider-config` when the provider requires more configuration.
+
+    <Callout icon="terminal">Reference: [`dome models add`](/cli/connect/models#add-connection)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_models_add`
+
+    ```json
+    {
+      "name": "claude-prod",
+      "provider": "anthropic",
+      "provider_config": {
+        "model": "claude-sonnet-4-6"
+      },
+      "api_key": "{{ANTHROPIC_API_KEY}}",
+      "gateways": ["prod-llms"]
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_models_add`](/reference/mcp/models#dome_models_add)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    POST /v1/models
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "name": "claude-prod",
+      "provider": "anthropic",
+      "provider_config": {
+        "model": "claude-sonnet-4-6"
+      },
+      "auth_method": "api-key",
+      "credential_type": "shared",
+      "secret_values": {
+        "x-api-key": "{{ANTHROPIC_API_KEY}}"
+      }
+    }
+    ```
+
+    The endpoint returns the model's UUID. The other management endpoints use this UUID to identify the model. Attach the model to a gateway in a separate operation.
+
+    <Callout icon="code">Reference: [`CreateLLMModelConnection`](/api/tag/models/create-llm-model-connection)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Connect an LLM model"
+    Add an Anthropic model named "claude-prod" for claude-sonnet-4-6 using my API key. Attach it to the "prod-llms" Gateway.
+    ```
+  </Tab>
+</Tabs>
+
+Agents cannot call a model until you attach it directly to a gateway or add it to a pool attached to one.
+
+## Update model
+
+Update a model to change its name, model identifier, endpoint, authentication, attributes, or filter window. You cannot change the provider after creating the model. To switch providers, add a new model and replace the old connection in any pools or gateways. When you rename a model, managed agents configured to run on it follow the new name.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome models update claude-prod \
+      --model claude-sonnet-4-6
+    ```
+
+    Only the flags you pass change. `--provider-config` replaces the full provider configuration instead of merging with it.
+
+    <Callout icon="terminal">Reference: [`dome models update`](/cli/connect/models#update-connection)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_models_update`
+
+    ```json
+    {
+      "name": "claude-prod",
+      "provider_config": {
+        "model": "claude-sonnet-4-6"
+      }
+    }
+    ```
+
+    Only the parameters you send change. `provider_config` and `attributes` each replace the existing object.
+
+    <Callout icon="cpu">Reference: [`dome_models_update`](/reference/mcp/models#dome_models_update)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    PATCH /v1/models/{{CONNECTION_ID}}
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "provider_config": {
+        "model": "claude-sonnet-4-6"
+      }
+    }
+    ```
+
+    Omitted fields keep their stored values. When present, `provider_config` replaces the full object. To replace or clear attributes, headers, credentials, or the filter window, send the new value and set its corresponding `*_provided` field to `true`.
+
+    <Callout icon="code">Reference: [`UpdateLLMModelConnection`](/api/tag/models/update-llm-model-connection)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Update a model"
+    Update the "claude-prod" model to use claude-sonnet-4-6. Keep its provider, credentials, attributes, and Gateway membership unchanged.
+    ```
+  </Tab>
+</Tabs>
+
+### Change credentials
+
+You can change the authentication method, credential type, or shared API key. Switching authentication methods deletes the previously stored provider credential.
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome models update claude-prod \
+      --auth-method api-key \
+      --credential-type per-user
+    ```
+
+    Rotate a shared API key with the same command:
+
+    ```bash
+    dome models update claude-prod \
+      --api-key "$NEW_ANTHROPIC_API_KEY"
+    ```
+
+    The new value replaces the shared key. Dome never returns the stored key, and other stored secrets keep their values.
+
+    <Callout icon="terminal">Reference: [`dome models update`](/cli/connect/models#update-connection)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_models_update`
+
+    ```json
+    {
+      "name": "claude-prod",
+      "auth_method": "api-key",
+      "credential_type": "shared",
+      "api_key": "{{ANTHROPIC_API_KEY}}"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_models_update`](/reference/mcp/models#dome_models_update)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    PATCH /v1/models/{{CONNECTION_ID}}
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "auth_method": "api-key",
+      "credential_type": "shared",
+      "secret_values": {
+        "x-api-key": "{{ANTHROPIC_API_KEY}}"
+      },
+      "secret_values_provided": true
+    }
+    ```
+
+    <Callout icon="code">Reference: [`UpdateLLMModelConnection`](/api/tag/models/update-llm-model-connection)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Rotate a model credential"
+    Replace the shared API key on "claude-prod" with my new Anthropic API key.
+    ```
+  </Tab>
+</Tabs>
+
+### Use cloud workload identity
+
+Use a self-hosted gateway's cloud identity for Google Vertex AI or Amazon Bedrock. Pin the identity that gateway must run as, so Dome refuses calls when the cloud credential resolves to another identity.
+
+For Bedrock, use a 12-digit AWS account ID or an IAM role ARN:
+
+```bash
+dome models add bedrock-prod \
+  --provider bedrock \
+  --model anthropic.claude-sonnet-4-5 \
+  --use-workload-identity \
+  --expected-workload-identity arn:aws:iam::123456789012:role/dome-gateway \
+  --gateway self-hosted-models
+```
+
+For Google, set `--expected-workload-identity` to the service account email. Dome requires both workload-identity flags for Google and Bedrock connections. Other providers do not support this authentication path.
+
+Workload identity is available only on self-hosted gateways. It uses the gateway's default cloud credential chain instead of a Vault credential bundle. Update the pin with `dome models update {{MODEL_NAME}} --expected-workload-identity {{IDENTITY}}`; pass `--use-workload-identity=false` to turn workload identity off.
+
+### Change attributes
+
+You can replace the trusted attributes that rules evaluate for this model. Send an empty object to clear them.
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome models update claude-prod \
+      --attributes '{"region":"eu","data_class":"restricted"}'
+    ```
+
+    <Callout icon="terminal">Reference: [`dome models update`](/cli/connect/models#update-connection)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_models_update`
+
+    ```json
+    {
+      "name": "claude-prod",
+      "attributes": {
+        "region": "eu",
+        "data_class": "restricted"
+      }
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_models_update`](/reference/mcp/models#dome_models_update)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    PATCH /v1/models/{{CONNECTION_ID}}
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "attributes": {
+        "region": "eu",
+        "data_class": "restricted"
+      },
+      "attributes_provided": true
+    }
+    ```
+
+    <Callout icon="code">Reference: [`UpdateLLMModelConnection`](/api/tag/models/update-llm-model-connection)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Change model attributes"
+    Replace the attributes on "claude-prod" with region "eu" and data class "restricted".
+    ```
+  </Tab>
+</Tabs>
+
+### Change filter window
+
+You can change how much streamed output Dome buffers for outbound guard inspection. A model can buffer at most 1 MiB or 4,096 tokens. Set both values to `0` to use the workspace minimum.
+
+<Tabs items={["CLI","API"]}>
+  <Tab value="CLI">
+    ```bash
+    dome models update claude-prod \
+      --filter-window-bytes 65536 \
+      --filter-window-tokens 1024
+    ```
+
+    <Callout icon="terminal">Reference: [`dome models update`](/cli/connect/models#update-connection)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    PATCH /v1/models/{{CONNECTION_ID}}
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "filter_window_bytes": 65536,
+      "filter_window_tokens": 1024,
+      "filter_window_provided": true
+    }
+    ```
+
+    <Callout icon="code">Reference: [`UpdateLLMModelConnection`](/api/tag/models/update-llm-model-connection)</Callout>
+  </Tab>
+</Tabs>
+
+## Get model
+
+Retrieve a model to inspect its provider configuration, authentication, attributes, filter window, and gateway membership. Use this information before an update or when troubleshooting routing.
+
+<Callout icon="key">Requires `gateways.view`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome models get claude-prod
+    ```
+
+    <Callout icon="terminal">Reference: [`dome models get`](/cli/connect/models#get-connection)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_models_get`
+
+    ```json
+    {
+      "name": "claude-prod"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_models_get`](/reference/mcp/models#dome_models_get)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    GET /v1/models/{{CONNECTION_ID}}?workspace_id={{WORKSPACE_ID}}
+    ```
+
+    The management API addresses a model by UUID. If you know only its name, call `ListLLMModelConnections` to find the corresponding ID.
+
+    <Callout icon="code">Reference: [`GetLLMModelConnection`](/api/tag/models/get-llm-model-connection)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Get a model"
+    Get the "claude-prod" model and confirm its provider, model identifier, authentication method, and Gateway membership.
+    ```
+  </Tab>
+</Tabs>
+
+## List models
+
+Retrieve the models in a workspace with their providers and configurations. Use the list to find a model to inspect, update, add to a pool, or remove.
+
+<Callout icon="key">Requires `gateways.view`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome models list
+    ```
+
+    <Callout icon="terminal">Reference: [`dome models list`](/cli/connect/models#list-connections)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_models_list`
+
+    ```json
+    {}
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_models_list`](/reference/mcp/models#dome_models_list)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    GET /v1/models?workspace_id={{WORKSPACE_ID}}
+    ```
+
+    <Callout icon="code">Reference: [`ListLLMModelConnections`](/api/tag/models/list-llm-model-connections)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="List models"
+    List the models in this workspace with their providers and model identifiers.
+    ```
+  </Tab>
+</Tabs>
+
+## Remove model
+
+Remove a model to delete its connection and provider credentials from the workspace.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Callout type="warning">
+  Removing a model also removes it from model pools and gateways. Check what depends on it before deleting it. Without reassignment, managed agents configured to run on it cannot run, and agents with no other model grant lose model access.
+</Callout>
+
+Inspect dependencies before deleting or renaming a model:
+
+```bash
+dome models usage claude-prod
+```
+
+The result identifies dependent managed agents, agents granted the model, gateways, and pool membership. Names can be omitted when you cannot view the corresponding agent type. Use `dome_models_usage` for the same check through MCP.
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome models rm claude-prod --reassign-to gpt-prod
+    ```
+
+    <Callout icon="terminal">Reference: [`dome models rm`](/cli/connect/models#remove-connection)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_models_remove`
+
+    ```json
+    {
+      "name": "claude-prod",
+      "reassign_to": "gpt-prod"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_models_remove`](/reference/mcp/models#dome_models_remove)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    DELETE /v1/models/{{CONNECTION_ID}}?workspace_id={{WORKSPACE_ID}}
+    ```
+
+    <Callout icon="code">Reference: [`DeleteLLMModelConnection`](/api/tag/models/delete-llm-model-connection)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Remove a model"
+    Remove the "claude-prod" model after confirming no pools or Gateways still depend on it.
+    ```
+  </Tab>
+</Tabs>
+
+`--reassign-to` (or `reassign_to`) moves dependent managed agents to a replacement model or pool and grants it to agents that held the deleted model. Omit it only when you intend to remove that access. The CLI asks for confirmation when dependents exist; use `--yes` only in an unattended workflow that has already checked usage.
+
+## Attach to a Gateway
+
+Attach a model directly to a gateway when its name should always route to that one connection. The attachment makes the model reachable at the gateway endpoint but does not authorize an agent to call it. The agent must allow the gateway, and rules must permit the request.
+
+When a route needs failover or weighted distribution across multiple models, add the model to a [model pool](/connect/pools) and attach the pool instead.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome gateways models add prod-llms claude-prod
+    ```
+
+    <Callout icon="terminal">Reference: [`dome gateways models add`](/cli/build/gateway#add-model)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_gateways_model_add`
+
+    ```json
+    {
+      "gateway": "prod-llms",
+      "model": "claude-prod"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_gateways_model_add`](/reference/mcp/gateway#dome_gateways_model_add)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Publish a direct model"
+    Add the "claude-prod" model directly to the "prod-llms" Gateway.
+    ```
+  </Tab>
+</Tabs>
+
+### Verify model
+
+Call the model through the gateway with an agent API key. A successful response confirms the model is reachable, rules permit the request, and the upstream accepted the configured credential.
+
+```python title="OpenAI-compatible client"
+from openai import OpenAI
+
+client = OpenAI(
+    api_key="{{DOME_AGENT_KEY}}",
+    base_url="https://{{GATEWAY_HOST}}/gateways/{{GATEWAY_ID}}/v1",
+)
+
+response = client.chat.completions.create(
+    model="claude-prod",
+    messages=[{"role": "user", "content": "Return OK."}],
+)
+```
+
+If the model is missing or denied, check gateway membership, the agent's allowed resources, and rules. If the upstream rejects the call, check the model's provider configuration and credentials.
+
+## Manage OAuth
+
+With shared OAuth, an administrator completes consent once and Dome uses the resulting provider tokens for every call. With per-user OAuth, each verified end user completes consent separately. When an end user has not connected OAuth, the first request returns a `provision_url` where the user can complete consent.
+
+Configure the OAuth client when you add or update the model. If the provider publishes OAuth metadata, Dome can discover the required endpoints. Otherwise, you must provide the authorization, token, revocation, and registration URLs. A manually registered client requires a client ID and secret. With dynamic client registration, Dome obtains them from the provider.
+
+### Register a manual OAuth client
+
+Register Dome's callback URI with your authorization server before configuring a manual OAuth client. Ask the connected server for the exact URI:
+
+```bash
+dome models oauth-redirect-uri
+```
+
+Then set the client configuration. The OAuth client secret is write-only; omit `--oauth-client-secret` on later updates to keep the current value.
+
+### Connect OAuth
+
+Connect OAuth after adding a model configured to use shared OAuth. Dome returns a one-time URL that remains valid for about ten minutes. Open the URL to complete consent at the provider.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome models oauth-connect claude-prod
+    ```
+
+    <Callout icon="terminal">Reference: [`dome models oauth-connect`](/cli/connect/models#connect-oauth)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_models_oauth_connect`
+
+    ```json
+    {
+      "name": "claude-prod"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_models_oauth_connect`](/reference/mcp/models#dome_models_oauth_connect)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    POST /v1/models/{{CONNECTION_ID}}/oauth/connect
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`BeginLLMOAuthConnect`](/api/tag/models/begin-llm-oauth-connect)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Connect model OAuth"
+    Start shared OAuth consent for the "claude-prod" model.
+    ```
+  </Tab>
+</Tabs>
+
+### Disconnect OAuth
+
+Disconnect shared OAuth to revoke the stored provider tokens. The OAuth client configuration remains, so you can reconnect without configuring the client again. Disconnecting an already disconnected model has no effect.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome models oauth-disconnect claude-prod
+    ```
+
+    <Callout icon="terminal">Reference: [`dome models oauth-disconnect`](/cli/connect/models#disconnect-oauth)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_models_oauth_disconnect`
+
+    ```json
+    {
+      "name": "claude-prod"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_models_oauth_disconnect`](/reference/mcp/models#dome_models_oauth_disconnect)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    POST /v1/models/{{CONNECTION_ID}}/oauth/disconnect
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`DisconnectLLMOAuth`](/api/tag/models/disconnect-llm-oauth)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Disconnect model OAuth"
+    Disconnect shared OAuth credentials from the "claude-prod" model.
+    ```
+  </Tab>
+</Tabs>
+
+## Next steps
+
+- [Models](/concepts/resources/models) concept for how connections and attributes work and [Models](/reference/resources/models) reference for providers and credentials
+- [Create a model pool](/connect/pools) for routing, traffic distribution, and failover
+- Manage membership and grants in [Gateways](/build/gateways)
+- Authenticate clients and route model traffic in [Develop](/develop#authenticate)

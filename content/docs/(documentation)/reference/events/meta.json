@@ -1,0 +1,8 @@
+{
+  "title": "Audit events",
+  "defaultOpen": true,
+  "pages": [
+    "catalog",
+    "contracts"
+  ]
+}

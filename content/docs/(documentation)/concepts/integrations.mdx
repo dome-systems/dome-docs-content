@@ -1,0 +1,48 @@
+---
+title: Integrations
+description: 'Browse model, tool, identity-provider, and audit-destination integrations for Dome'
+---
+
+Connect providers and services to route governed agent traffic, authenticate platform users, and deliver audit evidence.
+Choose the integration surface that matches the system you are connecting.
+
+## Models
+
+Connect LLM providers to a gateway, then control access through rules and quotas. Native providers include OpenAI, Anthropic, Google, Azure OpenAI, and Amazon Bedrock; OpenAI-compatible and custom endpoints are also supported.
+
+[Connect a model provider](/connect/models) to add a model connection, configure credentials, and attach it to a gateway.
+
+## Tools
+
+Connect remote MCP servers, local stdio processes, or Dome-managed REST adapters. Store a shared credential or authorize each verified end user independently.
+
+[Connect a tool](/connect/tools) to add a tool connection, manage its discovered catalog, and attach it to a gateway.
+
+### Pre-approved native MCP servers
+
+The following official vendor-hosted MCP servers are pre-approved and seeded into the catalog. They configure a Streamable HTTP MCP connection. You provide the authorization your provider requires.
+
+| Category | Services |
+| --- | --- |
+| CRM, sales, and support | HubSpot, Intercom, Klaviyo, Adobe Marketo Engage, Mailchimp Transactional |
+| Collaboration, productivity, and storage | Slack, Asana, ClickUp, Calendly, Box, Dropbox, Gmail, Google Drive, Google Calendar |
+| Project management | Shortcut, Wrike, Smartsheet |
+| Design and creative | Canva, Adobe Creative |
+| Payments and finance | Plaid, Brex, Ramp, Mercury |
+| Cloud and infrastructure | AWS Knowledge, Azure DevOps, Netlify, DigitalOcean |
+| Observability and developer quality | Datadog, Sentry, PagerDuty, SonarQube Cloud, Buildkite |
+| Databases and backend | Supabase, Neon |
+
+Use **Custom MCP server** for any compatible endpoint not in the catalog.
+
+## Identity providers
+
+Enterprise SSO connects your existing identity provider to the Dome Dashboard and CLI. Use guided setup for Okta, Microsoft Entra ID, Google, Auth0 and more. Otherwise, you can configure a custom SAML 2.0 or OpenID Connect connection.
+
+[Configure identity providers](/operate/integrations#identity-providers) to set up organization single sign-on, verified domains, and provider enforcement.
+
+## Audit destinations
+
+Connect Datadog, Grafana Loki, Amazon S3, or Google Cloud Storage to export or stream audit evidence. These destinations are separate from agent-facing gateway connections.
+
+[Configure audit destinations](/operate/integrations#supported-integrations) to review each supported destination and configure it from the dashboard.

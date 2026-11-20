@@ -1,0 +1,186 @@
+---
+hidden: true
+title: Govern callers with OIDC — agent instructions
+sidebarTitle: Govern callers with OIDC
+description: "Machine-readable commands for governing a shared assistant from verified OIDC end-user identity"
+---
+
+These are the instructions an AI agent follows for [Govern callers with OIDC](/tutorials/production/govern-callers-with-oidc).
+
+## Goal
+
+Build a standalone governed internal desk assistant in a tutorial workspace where authorization comes from each signed-in employee's OIDC token. Prove different outcomes for three real test users, then show the Callers registry and audit evidence.
+
+This tutorial depends on no other tutorial, and does not use HMAC, device-bound enrollment, or a persona map.
+
+## Safety rules
+
+- Confirm the active context. Run `dome context current` and confirm the workspace starts with `studio-`. Stop and ask if it does not.
+- Never print the `dome_...` agent token or any end-user token. Write secrets into a gitignored env file and confirm it is ignored.
+- Use tokens issued by the user's identity provider for test users in a development or staging tenant. Never mint, forge, or hand-assemble claims.
+- Never place the agent token or an end-user token in browser code, client env, or a URL query string.
+- Do not widen Cedar to make a denial succeed.
+- Simulate with act-as flags before live calls.
+- Read the demo directory before choosing employee IDs. Do not assume which IDs exist.
+- Never report a step as done without showing the command output.
+
+## Ask the user first
+
+1. The OIDC issuer base URL. Dome appends `/.well-known/openid-configuration`; do not store the discovery URL itself.
+2. Whether tokens carry `groups` as a string array and a stable `sub`.
+3. Development tokens for three test users, held in environment variables rather than pasted into chat: one in `engineering`, one in `sales`, one in `finance`.
+
+If tokens lack `groups`, stop and tell the user to add the claim mapping at the provider. A rule reading an absent claim denies everything and looks like a Dome fault.
+
+## Procedure
+
+1. Provision and enter the workspace:
+
+   ```bash
+   dome workspaces create --name studio-callers
+   dome context sync
+   dome context current
+   ```
+
+2. Attach the demo backend:
+
+   ```bash
+   dome tools add \
+     --name internal-desk \
+     --url https://demo-mcp.domesystems.ai/mcp \
+     --protocol streamable-http \
+     --auth-method none \
+     --gateway Default
+   ```
+
+3. Confirm discovery is reachable, then create the provider:
+
+   ```bash
+   curl --fail --silent "$OIDC_ISSUER/.well-known/openid-configuration"
+
+   dome verification-providers create \
+     --name workforce-oidc \
+     --method oidc \
+     --oidc-url "$OIDC_ISSUER"
+
+   dome verification-providers list --scope workspace --include-chain
+   ```
+
+   Export the provider UUID as `OIDC_PROVIDER_ID`.
+
+4. Register the delegated agent, mint its key, and grant gateway access:
+
+   ```bash
+   dome agents register --name desk-copilot \
+     --actas-method oidc \
+     --actas-provider "$OIDC_PROVIDER_ID" \
+     --actas-required \
+     --if-not-exists
+
+   dome agents create-key desk-copilot --name desk-service
+   dome gateways access grant Default desk-copilot
+   ```
+
+5. Deploy `desk-copilot.cedar` exactly as published on the tutorial page: discovery open; `hr/list_employees` for any verified caller; `finance/expense_report` for `finance` or the subject itself; `sales/get_customer` for `sales`; `finance/department_budget` for `finance`; matching `forbid … unless` rules plus a closing allowlist forbid.
+
+   ```bash
+   dome rules apply desk-copilot.cedar --agent desk-copilot --name desk-copilot
+   ```
+
+   Every claim read must sit behind `principal has act_as`, so an unverified call denies instead of erroring.
+
+6. Define the call helper and read the directory to learn real employee IDs:
+
+   ```bash
+   call_as() {
+     curl -sS -X POST "$DOME_GATEWAY_URL/mcp" \
+       -H "Authorization: Bearer $DOME_TOKEN" \
+       -H "X-Dome-Act-As: $1" \
+       -H "Content-Type: application/json" \
+       -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"$2\",\"arguments\":$3}}"
+   }
+
+   call_as "$IC_TOKEN" internal-desk/hr/list_employees '{}'
+   ```
+
+   Export `OWN_ID` as the employee ID matching the engineering user's `sub`, and `OTHER_ID` as a different employee ID. If no ID matches that `sub`, stop and tell the user to align the claim at the provider rather than editing the rule to fit.
+
+7. Simulate before the remaining live calls:
+
+   ```bash
+   dome rules simulate --agent desk-copilot --action mcp:call \
+     --resource internal-desk/finance/expense_report --resource-type mcp_tool \
+     --eval-arguments "{\"employee_id\":\"$OWN_ID\"}" \
+     --actas-sub "$OWN_ID" --actas-groups engineering
+
+   dome rules simulate --agent desk-copilot --action mcp:call \
+     --resource internal-desk/finance/expense_report --resource-type mcp_tool \
+     --eval-arguments "{\"employee_id\":\"$OTHER_ID\"}" \
+     --actas-sub "$OWN_ID" --actas-groups engineering
+
+   dome rules simulate --agent desk-copilot --action mcp:call \
+     --resource internal-desk/sales/get_customer --resource-type mcp_tool \
+     --actas-sub sales-user --actas-groups sales
+
+   dome rules simulate --agent desk-copilot --action mcp:call \
+     --resource internal-desk/finance/department_budget --resource-type mcp_tool \
+     --actas-sub finance-user --actas-groups finance
+   ```
+
+   Expect `ALLOW`, `DENY`, `ALLOW`, `ALLOW`. Stop and report if the second returns `ALLOW`.
+
+8. Call the gateway as each user, changing only `X-Dome-Act-As`:
+
+   | Caller | tool and arguments | Result |
+   |---|---|---|
+   | Engineering | `internal-desk/finance/expense_report` `{"employee_id":"$OWN_ID"}` | Allowed |
+   | Engineering | `internal-desk/finance/expense_report` `{"employee_id":"$OTHER_ID"}` | Denied |
+   | Engineering | `internal-desk/sales/get_customer` `{"customer_id":"C001"}` | Denied |
+   | Sales | `internal-desk/sales/get_customer` `{"customer_id":"C001"}` | Allowed |
+   | Sales | `internal-desk/finance/department_budget` `{"department":"Engineering"}` | Denied |
+   | Finance | `internal-desk/finance/department_budget` `{"department":"Engineering"}` | Allowed |
+   | no header | `internal-desk/hr/list_employees` `{}` | Rejected |
+
+   Explain that curl stands in for the application backend, which takes the token from authenticated server-side session state and builds headers per request.
+
+9. Show the registry and its evidence:
+
+   ```bash
+   dome callers list
+   dome callers list --group finance
+   dome callers get "$OWN_ID"
+
+   dome audit query --limit 20
+   dome audit query --act-as-sub "$OWN_ID" --limit 10
+   dome audit query --results denied --limit 10
+   dome audit query --deny-reasons act_as_rejected --limit 10
+   ```
+
+   Explain that Callers are projected from verified traffic, keyed by provider and subject, never pre-provisioned, and that erasure removes the projection but not the audit evidence.
+
+10. Raise the workspace floor in the workspace and re-verify:
+
+    ```bash
+    dome workspaces actas get
+
+    dome workspaces actas update \
+      --required \
+      --allowed-methods oidc \
+      --required-provider "$OIDC_PROVIDER_ID"
+
+    dome workspaces actas get
+    ```
+
+    Note that this update is a full replace, that an agent may be stricter but not weaker, and that in a real workspace `dome agents list` must be reviewed first because standing agents would start failing.
+
+11. Offer cleanup:
+
+    ```bash
+    dome workspaces delete studio-callers
+    ```
+
+## Completion evidence
+
+Show the provider and agent configuration without secrets, the simulation verdicts, at least one allowed and one denied live call per test user, the three Caller records, audit rows naming both the agent and the person, and the workspace floor before and after.
+
+Do not claim completion if only simulation was run, if any token or agent key reached chat, logs, or the browser, or if identity claims were constructed by code rather than issued by the provider.

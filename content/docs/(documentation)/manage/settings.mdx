@@ -1,0 +1,102 @@
+---
+title: Settings
+sidebarTitle: Configure platform
+description: 'Set workspace defaults and operational controls'
+---
+
+import { settings } from '@/snippets/glossary';
+
+<p>{settings}</p>
+
+## Overview
+
+Each workspace carries its own configuration. Unset keys resolve to their defaults. Set only values that differ from the platform baseline, and validate each change against the supported range before rollout.
+
+Configuration writes are audited. Every write emits a `workspace.config.update` event with previous and new values. Sensitive values use `<redacted>` in the audit payload.
+
+The typical workflow is:
+
+1. [List or set workspace defaults](#configure-workspace-defaults) for the keys you need to change.
+2. [Review changes](#review-changes) in audit before and after a rollout.
+
+### Workspace configuration keys
+
+These keys control retention, policy sync, and bundle history.
+
+| Key | Default | Range | Effect |
+|-----|---------|-------|--------|
+| `audit.retention_days` | `90` | `1`–`3650` | Retains audit events before pruning. |
+| `authorization.rule_sync_interval` | `30s` | `5s`–`10m` | Refreshes the gateway policy bundle. |
+| `authorization.max_bundle_versions` | `10` | `1`–`100` | Retains policy versions for rollback. |
+
+You list and set these keys when you [configure workspace defaults](#configure-workspace-defaults).
+
+## Requirements
+
+Before you begin, authenticate the Dome CLI and select a workspace context.
+
+### Permissions
+
+Workspace settings writes require an `admin` role (or equivalent cascade) with `config.manage`. Each operation states the permission it requires.
+
+For exhaustive flags, tool parameters, and endpoint contracts, refer to the [CLI](/cli/settings/workspace), [MCP](/reference/mcp/workspaces), and [API](/api/tag/platform/get-config) references.
+
+| Default roles | Permission | Grants |
+|---------------|------------|--------|
+| Workspace `admin` (or equivalent cascade) | `config.manage` | List and set workspace configuration keys |
+
+## Configure workspace defaults
+
+List or set [workspace configuration keys](#workspace-configuration-keys). Unset keys resolve to their defaults. Set only values that differ from the platform baseline.
+
+<Callout icon="key">Requires workspace `admin` (or an equivalent cascaded role) with `config.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+<Tab value="CLI">
+```bash
+dome workspaces config list
+dome workspaces config set --key audit.retention_days --value 90
+dome workspaces config set --key authorization.rule_sync_interval --value 15s
+```
+
+<Callout icon="terminal">Reference: [`dome workspaces`](/cli/settings/workspace)</Callout>
+</Tab>
+<Tab value="MCP">
+Tools: `dome_workspaces_config_list`, `dome_workspaces_config_set`
+
+<Callout icon="cpu">Reference: [`dome_workspaces_config_set`](/reference/mcp/workspaces)</Callout>
+</Tab>
+<Tab value="API">
+```http
+GET /v1/config/{key}?workspace_id={{WORKSPACE_ID}}
+PUT /v1/config/{key}
+```
+
+<Callout icon="code">Reference: [`GetConfig`](/api/tag/platform/get-config)</Callout>
+</Tab>
+<Tab value="Agent">
+```text title="Configure workspace defaults"
+List the workspace configuration. Set workspace config key "audit.retention_days" to "90".
+```
+</Tab>
+</Tabs>
+
+Every write emits a `workspace.config.update` event with previous and new values. Sensitive values use `<redacted>` in the audit payload.
+
+## Review changes
+
+Query configuration changes before and after a rollout.
+
+```bash
+dome audit query \
+  --types workspace.config.update \
+  --primary-resource-kind workspace
+```
+
+Use [Audit events](/operate/audit) to filter the full configuration history.
+
+## Next steps
+
+- [Manage Access](/manage/access)
+- [Prepare Environments](/manage/environments)
+- [Audit events](/operate/audit) — filter on `workspace.config.update`

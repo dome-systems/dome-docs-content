@@ -1,0 +1,590 @@
+---
+title: Build an interactive app with two identities
+sidebarTitle: Interactive app
+description: "Run a chess app with two agents, a coach that acts for the signed-in player and an opponent that acts as itself."
+---
+
+An interactive agent trades messages with a person, so somebody is always on the other end of what it does. The app in this tutorial has two of them. The coach agent answers questions about the position on the board, which a player asked for. The opponent agent plays black, which is its own move to make.
+
+<Prompt
+  description="Hand this to an AI agent. It will set up a chess app in Dome with a coach that acts for the signed-in player and an opponent that acts as itself."
+  icon="sparkles"
+  actions={["copy", "cursor"]}
+>
+Set up the chess demo from `dome-systems/examples` in a workspace. Start the app
+and an HTTPS tunnel, create gitignored `.env` and `.env.local` files, add the
+Stockfish tool, claude-sonnet, and four pools to Default, register
+`chess-coach` (act-as required) and `opponent-stockfish`, apply
+`policies/chess-coach.cedar` and `policies/opponent-stockfish.cedar`, then mint
+one key per agent. Never print provider, agent-key, session, or HMAC secrets.
+Simulate a coach call to `pool/chess-strong` and show me the DENY without
+weakening the rules.
+</Prompt>
+
+In this tutorial, you will register both agents in Dome, allow each one only the tool and pools it needs, and confirm that advice is recorded against the player who asked for it while moves are recorded against the opponent itself.
+
+To do this, you will:
+
+<Steps>
+  <Step title="Create a workspace">
+    Create a tutorial workspace for this tutorial alone.
+  </Step>
+  <Step title="Start the app and tunnel">
+    Run the app locally and expose the engine it publishes.
+  </Step>
+  <Step title="Set environment variables">
+    Put the model key, signing secret, and tunnel URL where Dome and the app can read them.
+  </Step>
+  <Step title="Register in Dome">
+    Attach the engine, model, and pools, then register both agents.
+  </Step>
+  <Step title="Deploy access rules">
+    Deploy each agent's Cedar file.
+  </Step>
+  <Step title="Create an agent key">
+    Mint one credential per identity.
+  </Step>
+  <Step title="Wire the application">
+    Point the app at the gateway and keep both keys on the server.
+  </Step>
+  <Step title="Verify agents">
+    Confirm the coach cannot play and the opponent cannot coach.
+  </Step>
+</Steps>
+
+## Tutorial scenario
+
+This tutorial uses [demo-chess](https://github.com/dome-systems/examples/tree/main/demo-chess), a chess app with two AI features:
+
+1. a coach that answers questions about the position on the board. Dome authorizes and records what it does as the player who asked for it, which is **delegated identity**.
+1. an opponent that plays black at one of three strengths. Dome authorizes and records what it does as the agent itself, which is **standing identity**.
+
+Refer to [Identity patterns](/concepts/identity-patterns) for the full comparison. You do not give either agent a model key, and neither one calls the engine directly. Both reach every tool and model through a [Gateway](/build/gateways), so what each can do is decided by what you register in Dome.
+
+The chess engine both agents call is served by the app itself, at `/mcp`, and Dome calls back into it. So this one project is both the host the agents run in and a tool they reach through the gateway.
+
+Both agents reach that engine, and all four model pools resolve to the same `claude-sonnet`, so nothing in the model itself separates coaching from play. The pool each agent may use is the separation. Select an agent to see the split.
+
+<Topology
+  columns={["agents", "Admitted to", "What it exposes"]}
+  nodes={[
+    {
+      id: "coach",
+      kind: "agent",
+      column: 0,
+      label: "chess-coach",
+      sublabel: "delegated · act-as required",
+    },
+    {
+      id: "opponent",
+      kind: "agent",
+      column: 0,
+      label: "opponent-stockfish",
+      sublabel: "standing",
+    },
+    {
+      id: "gateway",
+      kind: "gateway",
+      column: 1,
+      label: "Default",
+      sublabel: "1 tool · 4 model pools",
+    },
+    {
+      id: "pool-coach",
+      kind: "pool",
+      column: 2,
+      label: "pool/coach",
+      sublabel: "coach only",
+      reachableBy: ["coach"],
+    },
+    {
+      id: "engine",
+      kind: "tool",
+      column: 2,
+      label: "chess_engine",
+      sublabel: "stockfish · both agents",
+      reachableBy: ["coach", "opponent"],
+    },
+    {
+      id: "pool-fast",
+      kind: "pool",
+      column: 2,
+      label: "pool/chess-fast",
+      sublabel: "opponent · beginner",
+      reachableBy: ["opponent"],
+    },
+    {
+      id: "pool-balanced",
+      kind: "pool",
+      column: 2,
+      label: "pool/chess-balanced",
+      sublabel: "opponent · club",
+      reachableBy: ["opponent"],
+    },
+    {
+      id: "pool-strong",
+      kind: "pool",
+      column: 2,
+      label: "pool/chess-strong",
+      sublabel: "opponent · master",
+      reachableBy: ["opponent"],
+    },
+  ]}
+  edges={[
+    { from: "coach", to: "gateway" },
+    { from: "opponent", to: "gateway" },
+    { from: "gateway", to: "pool-coach" },
+    { from: "gateway", to: "engine" },
+    { from: "gateway", to: "pool-fast" },
+    { from: "gateway", to: "pool-balanced" },
+    { from: "gateway", to: "pool-strong" },
+  ]}
+  caption="One gateway carries everything. Exclusive entitlements hold the coach to pool/coach and the opponent to the three play pools, and the dashed cards are the proof."
+/>
+
+## Prerequisites
+
+For this tutorial, you will need:
+
+- The Dome CLI. Refer to [Install](/install) for Homebrew and direct-download instructions.
+- A role that can manage gateway resources, agents, and rules. Refer to [Permissions](/concepts/platform/permissions) concept.
+- Node.js 22 or later.
+- An Anthropic API key.
+- `cloudflared`, or any equivalent that gives your local dev server a public HTTPS URL, so the gateway can reach the app's engine.
+
+<Callout type="info">
+This tutorial signs player assertions with a shared HMAC secret, which keeps the whole flow inside your workspace. In production, the assertion is a JWT your identity provider issues and Dome verifies over OIDC, so no application holds a signing secret.
+</Callout>
+
+## Create a workspace
+
+Create a standard [workspace](/concepts/platform/scopes) for this tutorial rather than reusing one you already work in. This tutorial registers two agents and creates shared gateway resources. Delete the workspace only when you no longer need those resources.
+
+```bash
+dome workspaces create --name studio-chess
+```
+
+The command creates `studio-chess` and selects it as the active context. Confirm it:
+
+```bash
+dome context sync
+dome context current
+```
+
+Confirm the workspace before you continue, since everything after this point creates or changes resources:
+
+```bash
+dome context current
+```
+
+The workspace should read `studio-chess`.
+
+## Start the app and tunnel
+
+Clone the examples repository, change into the chess demo, create its local environment file, then install the dependencies.
+
+```bash
+git clone https://github.com/dome-systems/examples.git
+cd examples/demo-chess
+cp .env.example .env.local
+npm install
+```
+
+Start the app. It serves the board, and it also serves the Stockfish engine as an MCP tool at `/mcp`.
+
+```bash
+npm run dev
+```
+
+The coach answers with a placeholder until you give the app its gateway in [Wire the application](#wire-the-application).
+
+The engine needs a public address, because the gateway is the one calling it. When an agent uses the engine, the gateway makes a request out from Dome's servers to whatever URL you registered, so `http://127.0.0.1:3000` would point it at its own machine rather than your laptop. A tunnel gives your dev server a public HTTPS address and forwards what arrives there to your machine. In a second terminal, start one:
+
+```bash
+cloudflared tunnel --url http://127.0.0.1:3000
+```
+
+Copy the `https://….trycloudflare.com` address it prints, since you need it in [Set environment variables](#set-environment-variables). Leave both the app and the tunnel running for the rest of the tutorial. Any tunnel works, and a deployed app needs none of this because it already has a public URL.
+
+## Set environment variables
+
+Create `.env` in the project root.
+
+- `ANTHROPIC_API_KEY` — the workspace has no model. You pass this once to `dome models add`. After that, Dome holds the secret and neither agent ever sees it.
+- `STOCKFISH_MCP_URL` — the tunnel address from the previous step, with `/mcp` on the end. This is how the gateway reaches the engine.
+- `ACTAS_SECRET` — the signing secret for player assertions. You generate this one rather than obtain it.
+
+```bash title=".env"
+ANTHROPIC_API_KEY=sk-ant-your-key
+STOCKFISH_MCP_URL=https://your-tunnel.trycloudflare.com/mcp
+```
+
+The app signs player assertions with the same secret the gateway verifies them against, so a mismatch fails every coach call. Generate it once and write it to both files that read it:
+
+```bash
+ACTAS=$(openssl rand -hex 32)
+echo "ACTAS_SECRET=$ACTAS" >> .env
+echo "DOME_ACTAS_SECRET=$ACTAS" >> .env.local
+```
+
+Every `.env` file is gitignored. Source `.env` in the shell that runs the Dome commands below, so `$ANTHROPIC_API_KEY`, `$STOCKFISH_MCP_URL`, and `$ACTAS_SECRET` are set.
+
+```bash
+set -a && source .env && set +a
+```
+
+## Register in Dome
+
+Everything the two agents reach has to exist in the workspace first: the engine they call, the model behind their answers, the pools that separate coaching from play, and the provider that verifies who a coaching call is for. Once you register these resources, Dome holds the secrets and neither agent ever sees them.
+
+### Register tool connection
+
+The app publishes Stockfish at `/mcp`, and the gateway calls it there. Register that address as a tool connection on the [Default gateway](/build/gateways).
+
+```bash
+dome tools add \
+  --name stockfish \
+  --url "$STOCKFISH_MCP_URL" \
+  --protocol streamable-http \
+  --auth-method none \
+  --gateway Default
+```
+
+Verify that the gateway published the connection's catalog. You should see `chess_engine` in the list.
+
+```bash
+dome tools catalog list stockfish
+```
+
+### Register model
+
+Both features answer with the same model, so register one connection and attach it to the same gateway. The API key stays in Dome from here on.
+
+```bash
+dome models add claude-sonnet \
+  --provider anthropic \
+  --model claude-sonnet-4-6 \
+  --api-key "$ANTHROPIC_API_KEY" \
+  --gateway Default
+```
+
+Verify that the model is registered. You should see `claude-sonnet` in the list.
+
+```bash
+dome models list
+```
+
+### Create model pools
+
+Create four pools, all resolving to that one `claude-sonnet`: one for coaching and three for the opponent's skill levels. Nothing in the model itself separates coaching from play — the pool each agent may use is the separation, which is why each agent is entitled to pools rather than to the model directly.
+
+```bash
+for pool in pool/coach pool/chess-fast pool/chess-balanced pool/chess-strong; do
+  dome models pool create "$pool" --gateway Default
+  dome models pool member add "$pool" claude-sonnet
+done
+```
+
+Verify that all four pools are registered.
+
+```bash
+dome models pool list
+```
+
+### Create verification provider
+
+The coach acts for a signed-in player, and the gateway will only believe that claim if it can check the signature. Create the HMAC provider that holds the secret the app signs with.
+
+```bash
+dome verification-providers create \
+  --name demo-chess-hmac \
+  --method hmac \
+  --hmac-secret "$ACTAS_SECRET"
+```
+
+Copy the provider ID from that output, then select it as the workspace default so act-as traffic is verified against it.
+
+```bash
+dome workspaces actas update \
+  --allowed-methods hmac \
+  --default-provider PROVIDER_ID
+```
+
+### Register coach agent
+
+Register the coach with the engine, the coaching pool, and act-as required. `--tool` and `--pool` name what it may reach, `--gateway` admits it at Default, and `--actas-required` makes the gateway refuse the call outright when the player assertion is missing or unsigned — so a signing bug cannot quietly downgrade the coach into coaching on its own authority.
+
+```bash
+dome agents register \
+  --name chess-coach \
+  --if-not-exists \
+  --gateway Default \
+  --tool stockfish/chess_engine \
+  --pool pool/coach \
+  --actas-required \
+  --actas-method hmac \
+  --actas-provider PROVIDER_ID \
+  --actas-allowed-group players
+```
+
+### Register opponent agent
+
+Register the opponent with the same engine and the three play pools. It takes no act-as flags, because playing its own move is not something it does for a player.
+
+```bash
+dome agents register \
+  --name opponent-stockfish \
+  --if-not-exists \
+  --gateway Default \
+  --tool stockfish/chess_engine \
+  --pool pool/chess-fast \
+  --pool pool/chess-balanced \
+  --pool pool/chess-strong
+```
+
+Verify that both agents are registered. You should see `chess-coach` and `opponent-stockfish` in the list.
+
+```bash
+dome agents list
+```
+
+## Deploy access rules
+
+The example ships a Cedar file per agent, each one holding its agent to the engine and to its own pools. Deploy them scoped to the agent they belong to, so a coaching call to an opponent pool is refused by policy rather than trusted to the app's routing.
+
+```bash
+dome rules apply policies/chess-coach.cedar \
+  --agent chess-coach \
+  --name chess-coach
+dome rules apply policies/opponent-stockfish.cedar \
+  --agent opponent-stockfish \
+  --name opponent-stockfish
+```
+
+Verify that each bundle landed on its agent.
+
+```bash
+dome agents get-policies chess-coach
+dome agents get-policies opponent-stockfish
+```
+
+<Callout type="info">
+A new tunnel URL will not take effect on its own. Update the `stockfish` connection with `dome tools update stockfish --url "$STOCKFISH_MCP_URL"`, or use a stable URL.
+</Callout>
+
+## Create an agent key
+
+Two identities need two credentials: the app presents the coach's on coaching calls and the opponent's on moves, which is what keeps them distinct in policy and in audit. Mint one key per agent. Each token is shown once.
+
+```bash
+dome agents create-key chess-coach --name local-app
+dome agents create-key opponent-stockfish --name local-app
+```
+
+`create-key` also prints the gateway URL the app will call. You can look it up again with:
+
+```bash
+dome gateways get Default
+```
+
+## Wire the application
+
+Write the gateway URL, both tokens, and the pool names into the gitignored `.env.local`. The pool names are the ones you created above, so append them as they are:
+
+```bash
+cat >> .env.local <<'EOF'
+DOME_COACH_POOL=pool/coach
+DOME_OPPONENT_POOL_BEGINNER=pool/chess-fast
+DOME_OPPONENT_POOL_CLUB=pool/chess-balanced
+DOME_OPPONENT_POOL_MASTER=pool/chess-strong
+EOF
+```
+
+Add the gateway URL and both tokens to the same file, taking the host and ID from `create-key` or `gateway get`. Do not paste the tokens into chat or commit them.
+
+```bash title=".env.local"
+DOME_GATEWAY_URL=https://GATEWAY_HOST/gateways/DEFAULT_GATEWAY_ID
+DOME_COACH_TOKEN=dome_...
+DOME_OPPONENT_TOKEN=dome_...
+```
+
+The act-as secret is already in this file from the previous step, and `.env.example` supplies the rest of what the app needs.
+
+Restart the dev server so the app picks up the new values:
+
+```bash
+npm run dev
+```
+
+The browser receives none of them. Only the app's server routes call Dome.
+
+## Verify agents
+
+The coach should coach and the opponent should play, and neither should be able to do the other's job. Simulation runs the same evaluator as the gateway with no side effects, so you can confirm that without making either call.
+
+Start with the coach's own pool, which should be allowed.
+
+```bash
+dome rules simulate --agent chess-coach --action llm:invoke \
+  --resource pool/coach --resource-type llm_pool
+```
+
+Expect `ALLOW`. Now ask for a pool that belongs to the opponent.
+
+```bash
+dome rules simulate --agent chess-coach --action llm:invoke \
+  --resource pool/chess-strong --resource-type llm_pool
+```
+
+Expect `DENY`. Run the inverse pair against the opponent, which should reach a play pool and be refused the coach's.
+
+```bash
+dome rules simulate --agent opponent-stockfish --action llm:invoke \
+  --resource pool/chess-fast --resource-type llm_pool
+dome rules simulate --agent opponent-stockfish --action llm:invoke \
+  --resource pool/coach --resource-type llm_pool
+```
+
+Each agent asserts the boundary from its own side, so loosening one set of rules does not loosen the other.
+
+Now exercise the app at [http://localhost:3000](http://localhost:3000):
+
+| In the app | Who acts | What to notice |
+|---|---|---|
+| Sign in as `alex` / `alex` and ask the coach | `chess-coach` acting as Alex | Terse, tactical advice. The voice comes from the agent's `prompt.club` metadata because Alex is in the `club` group. |
+| Sign in as `sam` / `sam` and ask the coach | `chess-coach` acting as Sam | Plain language, same agent and same pool. Only the person changed. |
+| Play a move at any skill | `opponent-stockfish`, no act-as | The move is the agent's own action, so no player is named on it. |
+
+Finally, confirm the record separates them:
+
+```bash
+dome audit query --limit 30
+```
+
+Coach events carry `chess-coach` with an act-as subject. Opponent events carry `opponent-stockfish` with none. That difference is what lets you attribute a coaching call to a person and hold the opponent to its own limits, without the application deciding either.
+
+## How delegation works
+
+Acting for a person takes one extra header, and acting as itself takes none. The browser never calls Dome and never sees the signing secret, because both agent tokens and the signing secret are bearer credentials: anything holding them can act as that agent, or claim to be any person.
+
+1. **The player asks the coach a question.** The request goes to your server, never to the gateway.
+2. **Your backend decides who the person is.** Dome has no copy of your user directory, so your session is the authority. You reduce the signed-in user to a subject, an email, and a set of groups, then sign that.
+3. **Your backend calls the gateway with two credentials.** The agent token in `Authorization` says which workload is calling. `X-Dome-Act-As` says who it is calling for.
+4. **Dome authorizes both together.** Cedar evaluates agent and person as one principal, so the tool list, the decision, the quota, and the audit event all follow the person rather than the service account.
+
+A standing call omits that header. Same client, same gateway, one principal instead of two.
+
+### In the application
+
+`src/lib/dome-client.ts` builds every request's headers in one place, and signs the assertion when an identity is present. Model calls and tool calls carry it identically, which is why one `actAs` argument governs both.
+
+```ts title="src/lib/dome-client.ts"
+function authHeaders(
+  token: string,
+  actAs?: ActAsIdentity | null,
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+  };
+  if (actAs) {
+    const secret = process.env.DOME_ACTAS_SECRET?.trim();
+    if (!secret) {
+      throw new Error("DOME_ACTAS_SECRET required for act-as calls");
+    }
+    headers["X-Dome-Act-As"] = signHMACActAs(secret, actAs);
+  }
+  return headers;
+}
+```
+
+The coach route refuses to run without a session, then passes the player's identity into the model call with the coach's token.
+
+```ts title="src/app/api/coach/route.ts"
+const user = await getCurrentUser();
+if (!user) {
+  return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+}
+
+const actAs = identityFromUser(toPublicUser(user));
+// ...
+const chat = await domeChat({
+  token: coachToken(),
+  model: coachPool(),
+  actAs,
+  // ...
+});
+```
+
+The opponent route is the same call with two things changed: the other token, and no identity.
+
+```ts title="src/app/api/opponent/move/route.ts"
+const chat = await domeChat({
+  token: opponentToken(),
+  model: pool,
+  // standing — no actAs
+  // ...
+});
+```
+
+The app also finds the engine through `tools/list` rather than hard-coding its name, so what it can see follows whoever is on the call.
+
+<Callout type="info">
+Because the person is on the request, a spend cap can be set per player. When one trips, the gateway answers 429 and names the subject that tripped it, which is why the coach route reports the gateway's answer instead of keeping its own counter.
+</Callout>
+
+<Accordions>
+<Accordion title="Troubleshooting">
+  These are remediation steps if you get stuck:
+
+  - The engine tool never appears, or `tools/list` comes back empty.
+
+    The gateway can only publish a tool it can reach. Confirm both the dev server and the tunnel are still running, then inspect what the gateway observed:
+
+    ```bash
+    dome tools catalog list stockfish
+    ```
+
+    An empty catalog usually means the tunnel URL changed. Update the connection:
+
+    ```bash
+    dome tools update stockfish --url "$STOCKFISH_MCP_URL"
+    ```
+
+  - Every coach call fails act-as verification.
+
+    The app is signing with a different secret than the gateway verifies with. Confirm `ACTAS_SECRET` in `.env` and `DOME_ACTAS_SECRET` in `.env.local` are the same value, then restart the dev server so Next.js reloads it.
+
+  - A pool call is denied that you expected to be allowed.
+
+    Check the decision before changing any rules. Simulation runs the same evaluator as the gateway with no side effects:
+
+    ```bash
+    dome rules simulate --agent chess-coach --action llm:invoke \
+      --resource pool/coach --resource-type llm_pool
+    ```
+</Accordion>
+</Accordions>
+
+## Clean up
+
+Stop the dev server and the tunnel. Deleting the workspace removes both agents, their rules, the model pools, and the tool connection together:
+
+```bash
+dome workspaces delete studio-chess
+```
+
+Rotate the act-as secret anywhere you copied it. It signs identity assertions, so treat it like the credential it is.
+
+## Next steps
+
+You learned how to declare two agents for one application, give one of them delegated authority over a signed-in person's identity, and separate their model access with pools rather than application logic. Continue with:
+
+- [Govern per end user](/tutorials/get-started/govern-per-end-user) to authorize from the person in more depth
+
+Refer to the following docs for topics covered in this lab:
+
+- [Agents](/cli/build/agents) to register identities, require act-as, and mint keys
+- [Identity patterns](/concepts/identity-patterns) to choose between standing and delegated identity
+- [Set Usage Limits](/govern/quotas) to cap spend per agent or per person
+- [Scheduled agent](/tutorials/examples/noninteractive-agent) for the same workflow without a person in the loop

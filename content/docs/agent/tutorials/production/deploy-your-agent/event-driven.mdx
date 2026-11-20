@@ -1,0 +1,61 @@
+---
+hidden: true
+title: Deploy an event-driven agent — agent instructions
+sidebarTitle: Event-driven agent
+description: "Machine-readable instructions for deploying the event-driven agent lab"
+---
+
+These are the instructions an AI agent follows for [Deploy an event-driven agent](/tutorials/production/deploy-your-agent/event-driven).
+
+## Goal
+
+Build the documented Python incident-digest handler, give it a one-tool Dome identity, package it with the Lambda runtime interface, then deploy it from ECR. Keep the agent key in Secrets Manager, invoke one test event, correlate CloudWatch with Dome Audit, and attach a disabled EventBridge schedule before asking to enable it.
+
+## Rules
+
+- Show the active Dome context, AWS identity, account, and region before changing anything. Require a Dome workspace and non-production AWS account.
+- Create `handler.py`, `requirements.txt`, `Dockerfile`, and `.dockerignore` exactly as published on the human tutorial page.
+- Never print or commit `DOME_AGENT_API_KEY`. Read it silently and write it through a mode-`600` temporary file to Secrets Manager; delete the file immediately.
+- Never put the key in source, an image layer, Lambda environment variables, event input, logs, or chat.
+- Keep one event bounded to one governed read and one structured result.
+- Treat trigger delivery as at least once. Do not add a write action or weaken Cedar.
+- Build one `linux/amd64` image with provenance disabled and an immutable tag. Never deploy `latest`.
+- Scope the Lambda role to `GetSecretValue` on the exact secret ARN.
+- Create the EventBridge rule disabled. Show the rule, target, and fixed payload, then wait for confirmation before enabling it.
+- Disable the rule before cleanup.
+- Show non-secret output for every completed step.
+
+## Plan to present
+
+1. Build the bounded handler and Lambda image
+2. Create `studio-deploy-event`, `demo-ops`, and `incident-digest-job`
+3. Deploy and simulate the one-tool Cedar boundary
+4. Create the API key and store it in Secrets Manager
+5. Build and push the immutable image to ECR
+6. Create the least-privilege Lambda role and function
+7. Invoke `manual-001`, then correlate CloudWatch and Dome Audit
+8. Create and inspect the disabled hourly EventBridge rule
+9. Ask before enabling it
+10. Disable the rule and offer cleanup
+
+Wait for confirmation before step 1.
+
+## Required evidence
+
+Before reporting completion, show:
+
+- `dome context current` naming `studio-deploy-event`
+- one `ALLOW` for `demo-ops/it/get_incidents` and one `DENY` for another tool
+- the immutable ECR image URI
+- the exact secret ARN in the Lambda inline policy, without secret content
+- the Lambda function configuration and successful `manual-001` result
+- the CloudWatch request ID and corresponding Dome `tool.call`
+- the disabled EventBridge rule, function target, and payload
+- user confirmation before enabling the rule
+- the exact previous image URI used for rollback
+
+## Interpretation
+
+Explain that the trigger owns timing, retry, and concurrency. The handler receives one event, performs one bounded operation, and returns; it does not listen on `$PORT` or contain a scheduler. Lambda, ECR, Secrets Manager, and EventBridge are implementation choices. The bounded handler, replay-safe behavior, externalized credential, stable Dome identity, and one-tool rule transfer to equivalent platforms.
+
+Do not reuse the always-on FastAPI image. This image implements the Lambda Runtime API through the AWS base image and names `handler.lambda_handler` as its entrypoint.

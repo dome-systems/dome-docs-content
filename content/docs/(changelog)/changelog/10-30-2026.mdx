@@ -1,0 +1,46 @@
+---
+title: October 30, 2026
+description: 'Identity provider claims and connections updates released October 30, 2026.'
+date: '2026-10-30'
+---
+
+## Identity provider claims and act-as
+
+- Use the groups and roles in end-user tokens in rules; Cognito, Keycloak, and Zitadel work without setup. Map other claims with `--oidc-claim-map` or Custom claim mappings.
+- Expect rules that check groups to refuse a user whose groups the identity provider leaves out of the token, instead of treating them as having none.
+- Act-as verification now accepts valid end-user tokens after your identity provider rotates its signing key under the same key id, recovering on a following request.
+
+## Tool and model connections
+
+- Set the cloud identity an Amazon Bedrock or Google Vertex workload identity connection expects in its Expected identity field. The gateway refuses model calls running as any other identity.
+- Look up the redirect URI for your own OAuth client with `dome tools oauth-redirect-uri` or `dome models oauth-redirect-uri` in CLI v1.5.0, or the `dome_oauth_redirect_uri` MCP tool.
+- The Redirect URI shown when you bring your own OAuth client is now Dome's actual callback address, so your authorization server accepts the sign-in.
+- Request the `mcp` scope that gateways advertise on the `client_credentials` grant and receive a token instead of a refusal.
+
+## Dashboard and triggers
+
+- Show managed agent names instead of ids: trigger targets now include the agent's current name when you read a trigger. In preview on all plans.
+- Work in settings detail panels at full width; the section navigation hides while a panel is open and returns when you close it.
+- Scroll dashboard pages without the header shaking; it now scrolls away with the content until only its compact bar remains.
+
+## Escalations
+
+- Define Escalations in a workspace, a trigger plus the workflow steps that run when it fires, available as a preview on all plans.
+- Create, edit, and delete Escalations in Dashboard with a graphical workflow editor and JSON view, or with `dome escalations`, the Dome MCP server, and the API.
+- Review each Escalation's version history and roll back with `dome escalations rollback --to-version`. Every config change deploys a new version.
+- Include Escalations when you import and export a workspace.
+- Let Escalations decide gateway calls: when an escalate rule matches, any deny or pending escalation denies the call, and only all-allow permits it.
+- Identify calls an Escalation decided by the `escalation_denied` or `escalation_pending` denial reason.
+- Approve or deny the judgments an Escalation's Judgment step waits on with `dome escalations judgments resolve --verdict approve|deny`, the MCP tools, or the API. Verdicts are final.
+- Control access with the `escalations.view`, `escalations.manage`, and `escalations.resolve` permissions. Admins and operators hold `escalations.resolve` by default.
+
+## Managed-agent webhook triggers
+
+- Rely on managed-agent webhook triggers to act on each delivery once. Repeats of a `webhook-id` accepted in the last 24 hours start no new run. Preview on all plans.
+- Follow the updated signing instructions in the dashboard, CLI, and MCP server and use a fresh `webhook-id` for every distinct message. Preview on all plans.
+
+## Gateways and identity providers
+
+- Check whether your latest rules have reached a gateway: `GET /admin/status` now reports your workspace's rules version, empty until applied, and connection health.
+- See the identity-provider claims Dome reads groups and roles from automatically in the OIDC verification provider form's System-managed mappings section.
+- See which system-managed mappings your own groups or roles mapping replaces, including the standard `groups` or `roles` claim.

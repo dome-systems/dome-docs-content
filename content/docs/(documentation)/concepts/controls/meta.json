@@ -1,0 +1,9 @@
+{
+  "title": "Controls",
+  "pages": [
+    "rules",
+    "escalations",
+    "guards",
+    "quotas"
+  ]
+}

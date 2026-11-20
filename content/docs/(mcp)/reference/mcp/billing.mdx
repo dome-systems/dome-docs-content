@@ -1,0 +1,95 @@
+---
+title: Billing
+description: Inspect organization billing, change seats and plans, and manage payment methods
+---
+
+Billing tools use the organization on the active context and require
+organization `billing.manage`.
+
+| tool | Purpose |
+|------|---------|
+| `dome_billing_status` | Current plan, renewal, payment method, scheduled changes, and over-limit resources |
+| `dome_billing_plans` | Plans, prices, features, and limits available to the organization |
+| `dome_billing_usage` | Accruing usage charges for the current billing period |
+| `dome_billing_invoices` | Invoice history; accepts optional `limit` |
+| `dome_billing_contact_get` / `dome_billing_contact_set` | Read or update payer details |
+| `dome_billing_preview_plan_change` / `dome_billing_change_plan` | Quote or commit a plan change |
+| `dome_billing_cancel` / `dome_billing_resume` | Schedule cancellation or resume the subscription |
+| `dome_billing_payment_methods_list` | List stored payment methods |
+| `dome_billing_payment_methods_set_default` | Select a payment method by `payment_method_id` |
+| `dome_billing_payment_methods_add` | Start browser-based card setup |
+| `dome_billing_payment_methods_remove` | Remove a saved payment method by `payment_method_id` |
+
+Card capture remains a browser flow. The add tool returns the setup information
+the dashboard or Stripe.js needs; it does not accept card details in an MCP
+tool call.
+
+## Seats
+
+### dome_billing_seats
+
+Return purchased and used seats. Used seats count distinct non-impersonator
+role holders across the organization's workspaces.
+
+### dome_billing_seats_preview
+
+Quote a seat target without changing it.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `seats` | number | Yes | Absolute purchased-seat target |
+
+The response includes the assigned-seat floor, recurring total, and whether the
+change would be deferred. The payment provider calculates any mid-period
+proration, so the preview does not claim an exact amount due today.
+
+### dome_billing_seats_set
+
+Set the absolute purchased-seat target on an existing per-seat plan.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `seats` | number | Yes | Absolute target; cannot be below currently assigned seats |
+
+An increase applies immediately and is prorated. A reduction is scheduled for
+the end of the current term, without an immediate refund or early loss of
+access. Setting the effective count clears a scheduled reduction, and a later
+request replaces an earlier scheduled reduction.
+
+Use this tool to buy seats when the organization is already on the same
+per-seat plan. A same-plan call to `dome_billing_change_plan` is a no-op.
+
+## Workspace quantity
+
+### dome_billing_quantity
+
+Show purchased and used workspace quantity for a quantity-priced plan. When purchased quantity exceeds the number of live workspaces, the response includes the unused amount and guidance to preview a reduction.
+
+### dome_billing_quantity_preview
+
+Quote an absolute workspace-quantity target without changing it.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `quantity` | number | Yes | Absolute purchased-workspace target |
+
+### dome_billing_quantity_set
+
+Set the absolute purchased-workspace target. Increases take effect immediately and are prorated. Reductions are scheduled for the end of the current term; they cannot go below the current workspace count.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `quantity` | number | Yes | Absolute purchased-workspace target |
+
+### dome_billing_payment_methods_remove
+
+Remove a saved payment method. Dome refuses to remove the default payment method or the last saved card.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `payment_method_id` | string | Yes | Stripe payment method ID (`pm_...`) |
+
+## Next steps
+
+- [Billing](/manage/billing) for plan and seat behavior
+- [`dome billing`](/cli/manage/billing) for the CLI equivalents

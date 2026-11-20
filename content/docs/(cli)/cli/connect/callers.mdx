@@ -1,0 +1,65 @@
+---
+title: dome callers
+description: Inspect verified end users observed behind agent traffic
+---
+
+`dome callers` reads the workspace Callers registry projected from audit evidence. Use it to inspect Act-As identities, verification methods, and attributed activity.
+
+Interactive MCP users are excluded. Their session identity is represented by an
+interactive grant, while this registry tracks customer end users carried
+through delegated Act-As.
+
+Entries appear here only for identities a provider verified. Refer to [`dome verification-providers`](/cli/connect/verification-providers) for the OIDC and HMAC providers that do that verifying.
+
+| Command | |
+|---------|---|
+| [List callers](#list-callers) | `dome callers list` |
+| [Get caller](#get-caller) | `dome callers get <sub-or-id>` |
+| [Delete caller](#delete-caller) | `dome callers delete <sub-or-id>` |
+
+## List callers
+
+```bash
+dome callers list
+```
+
+List callers in the active workspace. Requires `audit.view`.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--search` | string | Substring match on subject or email |
+| `--group` | string | Exact group membership |
+| `--attribute` | string | Exact claim filter as `key=value` |
+| `--provider` | string | Verification provider ID |
+| `--page` | int | Zero-based page number |
+| `--page-size` | int | Page size; default 50, maximum 200 |
+
+The result reports lifetime LLM calls, tool calls, and LLM tokens. `METHODS` is the set of verification methods observed for that identity.
+
+## Get caller
+
+```bash
+dome callers get <sub-or-id>
+```
+
+Get identity claims, verification history, attributed agents, and resource activity. Requires `audit.view`.
+
+Use the record UUID when the same subject appears under multiple verification providers. `--json` on the list command returns that UUID.
+
+Current-month blocks appear only when the caller was active during the current UTC calendar month. Lifetime totals remain available independently.
+
+## Delete caller
+
+```bash
+dome callers delete <sub-or-id>
+```
+
+Erase the projected caller record and its per-agent activity rows. Requires `config.manage`.
+
+The command prompts before erasure. Pass `--yes` for non-interactive use.
+
+```bash
+dome callers delete {{CALLER_ID}} --yes
+```
+
+Erasure does not delete underlying audit evidence. Later traffic for the same identity recreates the caller record.

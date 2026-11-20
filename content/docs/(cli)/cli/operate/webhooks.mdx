@@ -1,0 +1,244 @@
+---
+title: dome webhooks
+description: Manage webhook subscriptions, delivery history, and the provider catalog
+---
+
+`dome webhooks` subscribes your HTTPS endpoints to Dome events, delivered as signed webhooks from the active workspace. Each subscription carries its endpoint and event selection, and deliveries are inspected, replayed, or cancelled separately. Refer to [Webhooks](/operate/webhooks) for the delivery contract.
+
+| Command | |
+|---------|---|
+| [List subscriptions](#list-subscriptions) | `dome webhooks subscriptions list` |
+| [Get subscription](#get-subscription) | `dome webhooks subscriptions get <name-or-id>` |
+| [Create subscription](#create-subscription) | `dome webhooks subscriptions create <name> …` |
+| [Update subscription](#update-subscription) | `dome webhooks subscriptions update <name-or-id>` |
+| [Disable subscription](#disable-subscription) | `dome webhooks subscriptions disable <name-or-id>` |
+| [Rotate signing secret](#rotate-signing-secret) | `dome webhooks subscriptions rotate-secret <name-or-id>` |
+| [Send test event](#send-test-event) | `dome webhooks subscriptions test <name-or-id>` |
+| [Delete subscription](#delete-subscription) | `dome webhooks subscriptions delete <name-or-id>` |
+| [List deliveries](#list-deliveries) | `dome webhooks deliveries list` |
+| [Get delivery](#get-delivery) | `dome webhooks deliveries get <delivery-id>` |
+| [Replay delivery](#replay-delivery) | `dome webhooks deliveries replay <delivery-id>` |
+| [Replay failed deliveries](#replay-failed-deliveries) | `dome webhooks deliveries replay-failed --since <when>` |
+| [Cancel delivery](#cancel-delivery) | `dome webhooks deliveries cancel <delivery-id>` |
+| [List providers](#list-providers) | `dome webhooks providers list` |
+| [Get provider](#get-provider) | `dome webhooks providers get <key>` |
+
+`dome webhooks` also answers to `dome events`. Group aliases: `subscriptions` = `sub`, `deliveries` = `del`, every `list` = `ls`, `delete` = `rm`.
+
+<Callout type="info">
+All commands scope to the active workspace (from `dome context`).
+</Callout>
+
+## Permissions
+
+| Permission | Commands |
+|------------|----------|
+| `eventing.view` | All `list` and `get` commands |
+| `eventing.manage` | Subscription create, update, disable, rotate-secret, test, delete; delivery cancel |
+| `eventing.replay` | `deliveries replay`, `deliveries replay-failed` |
+
+Workspace `admin` and `operator` roles hold all three. `security`, `developer`, and `viewer` hold `eventing.view`.
+
+## Subscriptions
+
+### List subscriptions
+
+```bash
+dome webhooks subscriptions list
+```
+
+List every subscription in the active workspace with its delivery endpoint, event types, and active state.
+
+### Get subscription
+
+```bash
+dome webhooks subscriptions get <name-or-id>
+```
+
+Show a subscription's delivery endpoint, provider, event types, filters, and active state. Name matching is case-insensitive.
+
+### Create subscription
+
+```bash
+dome webhooks subscriptions create <name> (--url <url> | --provider <key>) --event-type <type>
+```
+
+Create a subscription and its delivery destination atomically. A failed request leaves neither record behind.
+
+```
+Subscription "alerts" created (id: …)
+Signing secret (shown once, key key_…): whsec_…
+```
+
+The signing secret prints **once** — capture it before the terminal closes. It is only recoverable via `rotate-secret`. Providers that authenticate with a credential in the body (PagerDuty) send unsigned deliveries and return no secret.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--url` | string | Custom HTTPS endpoint URL. Exactly one of `--url` or `--provider`. |
+| `--provider` | string | Provider key from `providers list`. |
+| `--setting` | string[] | Provider setting `key=value` (repeatable). Non-secret. |
+| `--credential` | string[] | Provider credential `key=value` (repeatable). Stored write-only. |
+| `--event-type` | string[] | Event type to subscribe to (repeatable, required). |
+| `--filter` | string[] | filter predicate (repeatable). Refer to [filter grammar](#filter-grammar). |
+| `--content-format` | string | Custom URL only: `object` (default) or `array` (one-element JSON array). |
+| `--header-literal` | string[] | Custom header `Name=Value` (repeatable). Custom URL only. |
+| `--header-secret` | string[] | Custom header `Name=Value` stored write-only, masked on read (repeatable). Custom URL only. |
+
+#### Filter grammar
+
+| Form | Meaning |
+|------|---------|
+| `key=value` | Exact match. Repeat the same key for an OR set. |
+| `key~=glob` | Glob pattern. `*` any run, `?` one char, `\` escapes. Matches the full value, case-sensitive. |
+| `tool=conn/tool` | Sugar. Splits at the first `/` into `connection_name` + `tool_name` filters; each side globs when it contains `*` or `?`. |
+
+Filter keys: `agent_name`, `connection_name` (resolved from IDs at delivery time), `agent_id`, `tool_name`, plus each event type's own filterable payload fields — browse them with [`dome audit catalog`](/operate/audit#browse-the-event-catalog) or the dashboard **Event catalog** tab. An event delivers only if it satisfies every filter that applies to its type.
+
+### Update subscription
+
+```bash
+dome webhooks subscriptions update <name-or-id>
+```
+
+Update a subscription or its delivery destination. Unpassed flags leave the field untouched.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--name` | string | New display name. |
+| `--event-type` | string[] | Replace the full event-type set (repeatable). |
+| `--filter` | string[] | Replace the full filter set (repeatable). Excludes `--clear-filters`. |
+| `--clear-filters` | bool | Remove every filter. |
+| `--active` | bool | `--active=false` pauses fanout; `--active` resumes it. No backfill on resume. |
+| `--url` | string | Replace the destination URL. |
+| `--endpoint-active` | bool | Enable or disable the destination itself. |
+| `--content-format` | string | `object` or `array`. Custom URL only. |
+| `--header-literal` | string[] | Upsert a literal header `Name=Value`. |
+| `--header-secret` | string[] | `Name=Value` rotates the secret; bare `Name` keeps the stored value. |
+| `--remove-header` | string[] | Remove a header by name. |
+| `--clear-headers` | bool | Remove all custom headers. |
+| `--setting` | string[] | Replace the full provider settings set `key=value`. |
+| `--credential` | string[] | Merge a write-only provider credential `key=value`. |
+
+### Disable subscription
+
+```bash
+dome webhooks subscriptions disable <name-or-id>
+```
+
+Stop new fanout. Delivery history and pending retries remain queryable.
+
+### Rotate signing secret
+
+```bash
+dome webhooks subscriptions rotate-secret <name-or-id>
+```
+
+Rotate the destination's HMAC signing secret. Prints the new secret **once**:
+
+```
+New signing secret (shown once, key key_…): whsec_…
+```
+
+During the grace window the `webhook-signature` header carries a signature per active key, so a consumer verifying with either secret keeps working.
+
+### Send test event
+
+```bash
+dome webhooks subscriptions test <name-or-id>
+```
+
+Send a fixed `eventing.test` event through the subscription's destination. Verifies signing, headers, and the destination's own routing end-to-end. Prints the queued delivery ID — inspect it with `deliveries get`.
+
+### Delete subscription
+
+```bash
+dome webhooks subscriptions delete <name-or-id>
+```
+
+Delete the subscription and cancel every pending delivery. Delivery history stays queryable.
+
+## Deliveries
+
+### List deliveries
+
+```bash
+dome webhooks deliveries list
+```
+
+Inspect deliveries by status, event type, subscription, or time window. Prints last attempt, status, event type, delivery ID, attempt count, and last error per row.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--subscription-id` | string | Narrow to one subscription ID. |
+| `--destination-id` | string | Narrow to one destination ID. |
+| `--event-type` | string | Narrow to one event type. |
+| `--status` | string | One of `created`, `enqueued`, `delivering`, `retry_scheduled`, `succeeded`, `failed`, `canceled`, `expired`, `dlq`. |
+| `--event-id` | string | Every delivery for one source event. |
+| `--start` | string | RFC3339 start time. |
+| `--end` | string | RFC3339 end time. |
+| `--limit` | int | Page size. |
+| `--page-token` | string | Cursor from a previous listing. |
+
+### Get delivery
+
+```bash
+dome webhooks deliveries get <delivery-id>
+```
+
+Show a delivery with its status, timing, last HTTP status, and per-attempt history.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--body` | bool | Include the delivered webhook body while retained — up to 30 days, or 24 hours after a successful delivery. |
+
+### Replay delivery
+
+```bash
+dome webhooks deliveries replay <delivery-id>
+```
+
+Replay one delivery. Creates a **new** delivery from the retained body — fresh `webhook-id`, same `Dome-Event-Id` — and sends another request to the destination. Consumers that dedupe on `Dome-Event-Id` ignore the overlap.
+
+### Replay failed deliveries
+
+```bash
+dome webhooks deliveries replay-failed --since <dur|RFC3339>
+```
+
+Bulk-replay terminally-failed deliveries in a time window — the outage-recovery counterpart to `replay`. Safe to re-run: a delivery with a live or succeeded replay is not matched again, and canceled deliveries are never recovered.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--since` | string | Duration back from now (`24h`, `7d`) or RFC3339 timestamp. Required, within the last 30 days. |
+| `--until` | string | RFC3339 upper bound. Defaults to now. |
+| `--subscription` | string | Narrow to one subscription name or ID. |
+| `--status` | string[] | Statuses to recover — subset of `failed`, `expired`, `dlq`. Default all three. |
+| `--max` | int | Deliveries per run, up to 500. Repeat the command to continue. |
+
+Prints `matched · replayed · skipped (body expired) · failed`.
+
+### Cancel delivery
+
+```bash
+dome webhooks deliveries cancel <delivery-id>
+```
+
+Cancel a delivery's pending retries. No further request is sent to the destination.
+
+## Providers
+
+### List providers
+
+```bash
+dome webhooks providers list
+```
+
+List every off-the-shelf provider with its setting and credential fields, recommended event bundle, and authentication style — Standard Webhooks signature or credential-in-body.
+
+### Get provider
+
+```bash
+dome webhooks providers get <key>
+```
+
+Show a provider's setup instructions, documentation link, and `--setting` / `--credential` fields. Run before `subscriptions create --provider`.

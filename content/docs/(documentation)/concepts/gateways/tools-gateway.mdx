@@ -1,0 +1,66 @@
+---
+title: Tools gateway
+description: Route agent MCP and tool calls through Dome to enforce authorization, inject credentials, and audit every invocation
+---
+
+import { toolsGateway } from '@/snippets/glossary';
+
+<p>{toolsGateway}</p>
+
+## High-level overview
+
+Every tool call targets a [Gateway](/concepts/gateways). Bare `/mcp` fails closed with a `"select a gateway"` 400.
+
+A tool call through the tools gateway looks like this:
+
+1. An operator adds an MCP server connection, puts it (or its tools) on a gateway, and grants an agent access.
+2. The agent points an MCP client at `https://<host>/gateways/<id>/mcp` with a Dome agent token.
+3. Discovery (`tools/list`) returns membership- and Cedar-filtered tools.
+4. Each `tools/call` runs admission, rules, request guards, egress with injected credentials, response guards, and audit.
+
+The tools gateway never exposes backend credentials to the agent.
+
+### Endpoints
+
+| Path (relative to `/gateways/<id>`) | Role |
+|-------------------------------|------|
+| `/mcp` | MCP Streamable HTTP session and JSON-RPC frames |
+
+Point MCP clients at the gateway's returned `mcp_url`. Do not omit the `/gateways/<id>` segment.
+
+The tools gateway speaks MCP Streamable HTTP only. It does not support the legacy standalone SSE transport, so configure clients for `http` (or `streamable-http`), not `sse`.
+
+### Pipeline
+
+Tool calls share these stages:
+
+1. **Ingress:** Resolve the gateway from the path, validate the bearer credential, extract agent identity, check gateway admission (discovery exempt), verify act-as when present, apply kill switches and rate limits.
+2. **Evaluate:** Load the workspace Cedar policy and authorize the tool action. Stale policy fails closed.
+3. **Egress:** Resolve the backend from the tool catalog, inject stored credentials, forward over MCP Streamable HTTP, stdio, or REST catalog.
+4. **Filter:** Apply response guards and field-level redaction before the agent sees the result.
+5. **Audit:** Emit `tool.call`, filtering, discovery, and denial events stamped with the gateway id.
+
+Details of credential models, denial wire shapes, and deployment topology live on the [Data plane](/concepts/architecture/dataplane) concept.
+
+### Discovery vs invoke
+
+`tools/list` stays membership- and Cedar-filtered and does not require a gateway access grant at the edge. `tools/call` requires addressability, admission, and Cedar. A tool that is not a member of the addressed gateway does not appear for that caller.
+
+### Egress protocols
+
+| Protocol | Use case |
+|----------|----------|
+| **MCP Streamable HTTP** | Primary protocol for MCP-native backends. |
+| **Stdio** | Local backends spawned by the gateway runtime. |
+| **REST Catalog** | HTTP tool discovery and invocation for non-MCP backends. |
+
+## Next steps
+
+With the tools gateway model in mind, continue with:
+
+- [Gateways](/concepts/gateways) concept for membership, grants, and URL shape
+- [Data plane](/concepts/architecture/dataplane) concept for the shared pipeline, credentials, and readiness
+- [LLM gateway](/concepts/gateways/llm-gateway) concept for the sibling model ingress
+- [Tools](/concepts/resources/tools) concept for credentials, catalogs, and reachability
+- [Tools](/connect/tools) to register MCP and tool connections
+- [Gateways](/build/gateways) to attach tools to a gateway

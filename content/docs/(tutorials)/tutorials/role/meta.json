@@ -1,0 +1,9 @@
+{
+  "pages": [
+    "index",
+    "developer",
+    "security",
+    "operator",
+    "platform-admin"
+  ]
+}

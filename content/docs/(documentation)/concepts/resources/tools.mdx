@@ -1,0 +1,61 @@
+---
+title: Tools
+description: Why Dome attaches MCP servers as tools agents call without holding upstream credentials
+---
+
+import { tool } from '@/snippets/glossary';
+
+<p>{tool}</p>
+
+## High-level overview
+
+When you add a tool, Dome stores its endpoint, protocol, credentials, and egress headers. After it connects, every operation the server exposes appears in that tool's **discovered catalog**. You can block or deprecate one operation without removing the whole tool.
+
+For an agent to use a tool:
+
+1. Add the tool for the upstream MCP server.
+2. Configure upstream authentication when the server requires it.
+3. Attach the tool to a [Gateway](/concepts/gateways).
+4. Allow that gateway on the agent.
+5. Confirm discovery with the agent's key.
+
+Adding a tool and calling it looks like this:
+
+1. An operator adds a Streamable HTTP tool for Notion, sets shared API-key auth, attaches it to `prod-tools`, and grants an agent access.
+2. The agent lists tools at `/gateways/<id>/mcp`.
+3. Each `tools/call` runs admission, rules, request guards, egress with injected credentials, response guards, and audit.
+
+The agent never sees the Notion credential.
+
+A tool is a callable MCP connection. Gateway membership makes it reachable. Rules still decide each call.
+
+### Upstream authentication
+
+Agent API keys authenticate inbound requests to Dome. They never pass through as upstream credentials. Dome stores upstream secrets and injects them only on the outbound call.
+
+Two settings control which credential the gateway sends: the **authentication method** (how the upstream verifies the request) and the **credential type** (whose credential is sent: shared or per-user). The pairings are fixed. Catalog of methods, types, and defaults is on the [Tools](/reference/resources/tools#upstream-authentication) reference.
+
+With per-user credentials, each request must carry a verified act-as identity. When the end user has no credential yet, Dome returns `401` with a short-lived `provision_url`. Refer to [Errors and denials](/develop#errors-and-denials).
+
+### Egress headers
+
+Egress headers are values the gateway adds on the outbound request. A header can be a literal, a stored secret, or the act-as identity the workspace admitted. Only Streamable HTTP tools can carry them. An act-as header is the forwarding opt-in (`--header-actas` on the connection). Strength is the workspace Act-As floor — `none` is valid when that floor allows it — and egress does not re-rank the method. The call fails closed when there is no raw assertion to forward, including device-bound and interactive session identity. An act-as header is incompatible with OAuth auth on the same tool. Details are on the [Tools](/reference/resources/tools#egress-headers) reference.
+
+### Discovered tools
+
+After the gateway connects, every operation the server exposes appears in the tool's catalog. Status (`active`, `deprecated`, `blocked`) lets you change one operation without removing the tool. Blocking denies the operation even when a rule would permit it. Status behavior is on the [Tools](/reference/resources/tools#discovered-tools) reference.
+
+### Protocols
+
+Dome supports Streamable HTTP for remote MCP servers and stdio for local processes. OAuth and egress headers require Streamable HTTP. Protocol notes are on the [Tools](/reference/resources/tools#protocols) reference and the [Tools gateway](/concepts/gateways/tools-gateway#egress-protocols) concept.
+
+## Next steps
+
+With the tool connection model in mind, continue with:
+
+- [Resources](/concepts/resources) concept for how tools sit among resource types
+- [Tools gateway](/concepts/gateways/tools-gateway) concept for the MCP ingress under a gateway
+- [Gateways](/concepts/gateways) concept for membership and reachability
+- [Guards](/concepts/controls/guards) concept for JSON filters on tool arguments and results
+- [Tools](/reference/resources/tools) reference for auth, headers, catalog status, and protocols
+- [Tools](/connect/tools) to add tools, manage catalogs, and attach gateways

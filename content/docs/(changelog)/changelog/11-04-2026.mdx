@@ -1,0 +1,27 @@
+---
+title: November 4, 2026
+description: 'Guards, gateways, and rules updates released November 4, 2026.'
+date: '2026-11-04'
+---
+
+## Guards and rules
+
+- Bind Guards to an agent or a gateway with `dome agents guards` or `dome gateways guards`. Connection Guards run first, then gateway, then agent, each at most once per request.
+- Grant Rules: Deploy as well as Config: Manage to change verification providers or a scope's default or required providers. Built-in roles are unaffected.
+- Replace a verification provider's HMAC secret with `dome verification-providers update --hmac-secret`. Assertions signed with the old secret stop verifying right away.
+- See a warning when validating or deploying rules that match a tool by connection name in `resource.name`, with the `resource.connection_name` form to use instead.
+
+## Gateways and connections
+
+- Google-backed tool connections, such as Google Calendar, now keep working after the first hour. People see Google's consent screen each time they connect an account.
+- List and retrieve models through a Dome gateway with the Anthropic SDK's `models.list()` and `models.retrieve()`. OpenAI clients can now retrieve a single model too.
+- Revoking, suspending, or deleting an agent now takes effect on every gateway instance faster.
+- Checking or syncing an MCP server whose URL points to a private or internal address now fails with a clear message, and connection errors read more simply.
+
+## Usage, import and export, and managed agents
+
+- View caller usage grouped by model provider and tool connection, with group totals and Dome charges per model and per agent. Tools and models show logos throughout Dashboard.
+- Export and import disabled triggers, paused audit streams, inactive webhooks, disabled quotas, model-pool members, and scheduled jobs, and they stay disabled.
+- Import workspace, tenant, and organization settings exactly as exported, and import scheduled jobs with a `time_of_day` anchor, with offsets such as `09:00+02` honored.
+- Browse managed-agent lists in pages ordered by name, in preview on all plans. `dome managed-agents list` still prints every agent.
+- The trigger page, in preview on all plans, now shows a target as off after you switch it off from the agent's page.

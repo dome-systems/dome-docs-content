@@ -1,0 +1,136 @@
+---
+title: Quotas
+description: Cap governed spend, tokens, calls, or managed-agent runs across workspaces, agents, gateways, pools, models, tools, and triggers
+---
+
+import { quota } from '@/snippets/glossary';
+
+<p>{quota}</p>
+
+Refer to [Quotas](/govern/quotas) for the enforcement model and subjects. All quota operations use this tool family. All tools require workspace context.
+
+## Quotas
+
+### dome_quotas_list
+
+List quotas in the active workspace.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `dimension` | string | No | Only list one dimension: `all`, `llm`, `tool`, or `run` |
+| `gateway` | string | No | Only list the caps on one gateway (name) |
+
+<Callout icon="key">Requires `gateways.view`.</Callout>
+
+### dome_quotas_set
+
+Create a spend, token, or call cap. The `subject` decides what the cap covers; `dimension` is usually implied by the subject.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `subject` | string | Yes | `workspace`, `agent`, `act-as`, `pool`, `model`, `gateway`, `tool`, `tool-connection`, or `trigger` |
+| `dimension` | string | No | Traffic or queue activity metered: `all`, `llm`, `tool`, or `run` — usually implied by `subject` |
+| `unit` | string | No | `dome_usd` (what you spend with Dome — exact, default), `provider_usd` (an estimate of the upstream model bill), `tokens`, `calls`, or `runs` for a run quota. The two dollar units are different money. |
+| `limit_usd` | number | Conditional | Dollar cap (e.g. `500` or `12.50`) — required for `dome_usd` or `provider_usd` |
+| `limit_tokens` | number | Conditional | Token cap (whole number) — required for `unit=tokens` |
+| `limit_calls` | number | Conditional | Call-count cap (whole number) — required for `unit=calls` |
+| `limit_runs` | number | Conditional | Queued-run cap — required for `dimension=run` |
+| `window` | string | No | Reset window: `daily`, `monthly`, or `per_run` (managed-agent agent quota only; default `monthly`) |
+| `name` | string | No | Optional human-readable label |
+| `model` | string | Conditional | model connection name (`subject=model`) |
+| `pool` | string | Conditional | Pool name (`subject=pool`, or to scope a model quota to one pool) |
+| `agent` | string | Conditional | agent name or id (`subject=agent`) |
+| `act_as` | string | Conditional | Verified end-user OIDC subject (`subject=act-as`) |
+| `gateway` | string | Conditional | gateway name (`subject=gateway`) |
+| `tool` | string | Conditional | One MCP tool as `<connection>/<tool>`, e.g. `github/create_issue` (`subject=tool`) |
+| `connection` | string | Conditional | MCP server connection name (`subject=tool-connection`) |
+| `trigger` | string | Conditional | Trigger name or ID (`subject=trigger`) |
+| `per_caller` | bool | No | `subject=model` only: apply the limit independently per agent and per verified end user |
+| `disabled` | bool | No | Create disabled; no enforcement until enabled |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+```json title="Per-model in-pool budget (drives spill-over)"
+{
+  "name": "dome_quotas_set",
+  "arguments": {
+    "subject": "model",
+    "model": "claude-sonnet",
+    "pool": "production",
+    "limit_usd": 1000,
+    "window": "monthly"
+  }
+}
+```
+
+```json title="Gateway monthly cap"
+{
+  "name": "dome_quotas_set",
+  "arguments": {
+    "subject": "gateway",
+    "gateway": "prod-tools",
+    "limit_usd": 500,
+    "window": "monthly",
+    "name": "prod-monthly"
+  }
+}
+```
+
+```json title="Monthly run limit for one trigger"
+{
+  "name": "dome_quotas_set",
+  "arguments": {
+    "subject": "trigger",
+    "trigger": "nightly-triage",
+    "limit_runs": 30,
+    "window": "monthly"
+  }
+}
+```
+
+```json title="Per-run token budget for a managed agent"
+{
+  "name": "dome_quotas_set",
+  "arguments": {
+    "subject": "agent",
+    "agent": "nightly-triage",
+    "unit": "tokens",
+    "limit_tokens": 2000000,
+    "window": "per_run"
+  }
+}
+```
+
+Run quotas count managed-agent runs when Dome queues them. They apply to a workspace, agent, or trigger, and a full quota refuses a new run before it enters the queue. A per-run quota is an LLM budget for one managed agent run; it accepts only `tokens` or `provider_usd`.
+
+### dome_quotas_update
+
+Update a quota's name, limit, window, or enforcement state. Omitted fields stay unchanged. Subject and unit cannot change.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `quota_id` | string | Yes | quota id (from `dome_quotas_list`) |
+| `name` | string | No | New human-readable label |
+| `limit_usd` | number | No | New spend cap in US dollars (dollar quotas only) |
+| `limit_tokens` | number | No | New token cap (tokens quotas only) |
+| `limit_calls` | number | No | New call-count cap (calls quotas only) |
+| `window` | string | No | New reset window: `daily` or `monthly` |
+| `enabled` | bool | No | Enable or disable enforcement |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+### dome_quotas_remove
+
+Remove a quota by id. Marked destructive.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `quota_id` | string | Yes | quota id (from `dome_quotas_list`) |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+## Next steps
+
+- [Set Usage Limits](/govern/quotas) how-to for the full workflow
+- [Pools](/reference/mcp/pools) when per-model budgets should spill to the next member
+- [Models](/reference/mcp/models) for the connections quotas cover

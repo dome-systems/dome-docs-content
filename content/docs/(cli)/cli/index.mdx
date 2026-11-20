@@ -1,0 +1,121 @@
+---
+title: CLI Overview
+sidebarTitle: Overview
+description: Install, authenticate, and navigate the Dome CLI
+---
+
+The `dome` CLI is the primary command-line interface for the Dome Platform.
+
+## Installation
+
+```bash title="macOS (Homebrew)"
+brew trust dome-systems/tap
+brew install dome-systems/tap/dome
+```
+
+Homebrew 6 requires the `brew trust` line before it loads a third-party tap's formulae. Refer to [Install](/install) for the full walkthrough, including a direct-download alternative.
+
+## Global flags
+
+All commands support these flags:
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--context` | string | Use a specific context (overrides active context) |
+| `--server` | string | Target a different Dome Platform host. Resolves a [context](/cli/session/context) for that host (credential and scope), not just the URL. |
+| `--activity` | string | Stable activity ID this run asserts. Every Connect RPC carries `X-Dome-Activity-Id` so audit events from the run share one [activity chain](/operate/audit#list-activity-chains). Overrides `DOME_ACTIVITY_ID`. |
+| `--format` | string | Output format: `text`, `json`, or `quiet` |
+| `--json` | bool | Output as JSON |
+| `--quiet` | bool | Minimal output (IDs only) |
+| `--no-color` | bool | Disable colored output |
+
+`--server` does not send the active context's token to a new host. Exactly one stored context for that host is adopted. Several matching contexts is an error that names the candidates — pick one with `--context`. None falls back to the stored session for that host with the previous workspace cleared. Auth and context commands are exempt, so `dome auth login --server` still works before any context exists. Naming the same host the active context already uses is a no-op.
+
+## Environment variables
+
+| Variable | Description |
+|----------|-------------|
+| `DOME_API_KEY` | Sets the active context's token. Useful for CI and scripts. |
+| `DOME_ACTIVITY_ID` | Default activity ID for the process. `--activity` overrides it. |
+
+## Command groups
+
+### Build
+
+| Command | Description |
+|---------|-------------|
+| [`agents`](/cli/build/agents) | Manage agent registrations, lifecycle, and API keys |
+| [`managed-agents`](/cli/build/managed-agents) | Create, configure, and run agents that Dome hosts |
+| [`gateways`](/cli/build/gateway) | Manage gateways, membership, and agent access |
+| [`triggers`](/cli/build/triggers) | Schedule managed-agent runs and start them from signed webhooks |
+
+### Connect
+
+| Command | Description |
+|---------|-------------|
+| [`callers`](/cli/connect/callers) | Inspect and erase verified end users projected from audit activity |
+| [`verification-providers`](/cli/connect/verification-providers) | Manage the OIDC and HMAC providers that verify end-user identity |
+| [`tools`](/cli/connect/tools) | Manage MCP server connections the gateway proxies |
+| [`models`](/cli/connect/models) | Manage LLM model connections and routing pools |
+
+### Govern
+
+| Command | Description |
+|---------|-------------|
+| [`rules`](/cli/govern/rules) | Deploy, validate, simulate, and rollback authorization rules |
+| [`guards`](/cli/govern/guards) | Create and assign content filters and tool validators |
+| [`escalations`](/cli/govern/escalations) | Create review workflows for selected authorization decisions |
+| [`quotas`](/cli/govern/quota) | Cap spend, tokens, or calls for workspace, agent, pool, model, gateway, and tool subjects |
+
+### Operate
+
+| Command | Description |
+|---------|-------------|
+| [`audit`](/cli/operate/audit) | Query, stream, and export audit events |
+| [`integrations`](/cli/operate/integrations) | List integrations connected to the active workspace |
+| [`webhooks`](/cli/operate/webhooks) | Manage webhook subscriptions, delivery history, and the provider catalog |
+| [`usage`](/cli/operate/usage) | Show LLM token usage and estimated cost for the active workspace |
+| [`usage-caps`](/cli/operate/usage-caps) | Show free-tier monthly allowances for the active workspace |
+
+### Manage
+
+| Command | Description |
+|---------|-------------|
+| [`config`](/cli/settings/config) | Platform configuration |
+| [`import`](/cli/manage/import) | Plan and apply reviewed configuration to the active target scope |
+| [`export`](/cli/manage/export) | Write reviewed configuration from the active source scope |
+| [`platform-keys`](/cli/settings/platform-keys) | Manage platform API keys |
+| [`tenants`](/cli/settings/tenants) | List, inspect, and create tenants |
+| [`tenant`](/cli/settings/tenant) | Manage tenant-level Act-As provider selection |
+| [`orgs`](/cli/settings/org) | Manage organization-level Act-As provider selection |
+| [`workspaces`](/cli/settings/workspace) | Manage workspaces, members, Act-As, and verification providers |
+| [`billing`](/cli/manage/billing) | Manage organization plans, seats, invoices, and payment methods |
+
+### Developer
+
+| Command | Description |
+|---------|-------------|
+| [`quickstart`](/cli/developer/quickstart-cmd) | Scaffold a new Dome-enabled project |
+
+### Session
+
+| Command | Description |
+|---------|-------------|
+| [`auth`](/cli/session/auth) | Authentication management |
+| [`context`](/cli/session/context) | Manage CLI contexts (org/tenant/workspace sessions) |
+
+### Standalone
+
+| Command | Description |
+|---------|-------------|
+| [`mcp`](/cli/standalone/mcp) | MCP server for AI agents |
+| [`version`](/cli/standalone/version) | Show CLI version |
+
+## Next steps
+
+Authenticate first, then scaffold — or drive the same jobs from MCP:
+
+- [Install](/install) to authenticate and select a workspace
+- [Quickstart](/quickstart) to scaffold and verify governed traffic
+- [MCP](/reference/mcp) when you prefer tool-based access from an assistant
+- [API](/api) for the management and data-plane HTTP surfaces

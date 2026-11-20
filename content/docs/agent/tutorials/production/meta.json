@@ -1,0 +1,10 @@
+{
+  "title": "production",
+  "defaultOpen": false,
+  "pages": [
+    "adopt-an-existing-app",
+    "debug-a-denial",
+    "deploy-your-agent",
+    "govern-callers-with-oidc"
+  ]
+}

@@ -1,0 +1,542 @@
+---
+title: Develop with Dome
+description: Authenticate as an agent, call tools and models through a gateway, and handle denials
+---
+
+**Develop** wires an agent into product code against agents, gateways, and Resources already configured in Dome. Authenticate as an agent, call tools and models through a gateway, pass identity for delegated agents when needed, and handle denials.
+
+Refer to [Architecture](/concepts/architecture) concept for the request path. Refer to [Gateways](/concepts/gateways) concept for reachability.
+
+## Overview
+
+Dome separates configuration from the client path. Build, Connect, and Govern define what an agent may reach and do. Develop covers the runtime client path: which credential to send, which gateway URL to call, whether to attach act-as identity, and how to handle denials.
+
+Point every client at a gateway path that includes `/gateways/{{GATEWAY_ID}}`. A bare host fails closed.
+
+The typical workflow is:
+
+1. [Authenticate](#authenticate) with an agent key or short-lived JWT.
+2. [Route traffic](#route-traffic) to MCP and model endpoints on the gateway.
+3. Optionally [pass identity for delegated agents](#pass-identity-for-delegated-agents) when access depends on the person behind the agent.
+4. [Handle errors and denials](#errors-and-denials) from the gateway.
+
+### Runtime credentials
+
+The gateway accepts either credential form as a bearer (or Anthropic `x-api-key`):
+
+- **Agent API key** is a long-lived secret for services and hosted clients. Send it on every request, or exchange it for a JWT.
+- **Short-lived JWT** is exchanged from the key through the Dome API when your runtime rotates credentials. Cache until expiry. Do not exchange on every call.
+
+The management API accepts JWTs only. Store agent keys as secrets. Never send an upstream model or MCP credential from application code. The gateway injects configured credentials after authorization. Details are under [Authenticate](#authenticate).
+
+### Gateway URL
+
+Use one gateway URL for each runtime client:
+
+```bash
+export DOME_AGENT_KEY="{{DOME_AGENT_KEY}}"
+export DOME_GATEWAY_URL="https://{{GATEWAY_HOST}}/gateways/{{GATEWAY_ID}}"
+```
+
+Client bases append protocol paths to that URL:
+
+| Client | Runtime URL |
+|--------|-------------|
+| MCP | `$DOME_GATEWAY_URL/mcp` |
+| OpenAI | `$DOME_GATEWAY_URL/v1` |
+| Anthropic | `$DOME_GATEWAY_URL` |
+
+Membership on the gateway determines which tools and models the endpoint exposes. Grants and rules still decide admission and actions. Build and verify URLs on [Gateways](/build/gateways#build-the-runtime-endpoint). Call examples are under [Route traffic](#route-traffic).
+
+### Delegated identity on the wire
+
+When the agent is delegated, every governed request carries verified end-user evidence in `X-Dome-Act-As`. Configure providers and the agent method in [Delegated agents](/build/agents/delegated). Application code only attaches the header. It does not verify the claim. Refer to [Pass identity for delegated agents](#pass-identity-for-delegated-agents).
+
+## Requirements
+
+Before you begin:
+
+- Register an [external agent](/build/agents/external), create its key, and [grant it access](/build/gateways#manage-agent-access) to a gateway that already has the tools or models you need as members
+- Confirm rules (and guards or quotas, if used) allow the calls you will make
+- Set `DOME_AGENT_KEY` and `DOME_GATEWAY_URL` as shown in [gateway URL](#gateway-url)
+
+Configure MCP servers, model connections, pools, credentials, and gateway membership in [Connect](/connect). Configure authorization and filtering in [Govern](/govern).
+
+### Permissions
+
+Runtime calls use the agent key and Cedar rules, not workspace RBAC. Platform permissions apply when you manage agents, gateways, or rules in Connect and Govern.
+
+## Authenticate
+
+Present the agent key on every runtime request. The gateway authenticates the agent before it evaluates gateway admission or Cedar policy.
+
+Use either credential form:
+
+- **Agent API key:** Send the key directly for long-running services and hosted clients.
+- **Short-lived JWT:** Exchange the key for a token when your runtime rotates credentials.
+
+The gateway accepts both forms as bearer credentials. The management API accepts JWTs only.
+
+### Send the agent key
+
+Send the key in the `Authorization` header for MCP and OpenAI-shaped requests:
+
+```http
+Authorization: Bearer {{DOME_AGENT_KEY}}
+```
+
+Anthropic clients send their configured `api_key` as `x-api-key` on `/v1/messages` and `/v1/messages/count_tokens`. The gateway promotes it into the same agent identity pipeline.
+
+```http
+x-api-key: {{DOME_AGENT_KEY}}
+anthropic-version: 2023-06-01
+```
+
+`Authorization` takes precedence when both headers are present. Other runtime routes require bearer authentication.
+
+### Exchange the key for a JWT
+
+Exchange the key at the Dome API's OAuth 2.0 token endpoint, then cache the token until its expiry. Set `DOME_AGENT_ID` to the agent's ID, and send the ID and key as HTTP Basic credentials:
+
+```python
+import os
+import httpx
+
+response = httpx.post(
+    "https://api.domesystems.ai/api/v1/auth/token",
+    auth=(os.environ["DOME_AGENT_ID"], os.environ["DOME_AGENT_KEY"]),
+    data={"grant_type": "client_credentials"},
+)
+response.raise_for_status()
+
+token = response.json()["access_token"]
+expires_in = response.json()["expires_in"]
+```
+
+The default lifetime is 10 minutes. Refresh before `expires_in`. Do not exchange a token for every gateway call.
+
+Parameters, gateway selection, errors, and MCP client setup are on [OAuth client credentials](/develop/oauth-client-credentials).
+
+<Callout type="warning">
+Store agent keys as secrets. Never send an upstream model or MCP credential from application code. The gateway injects configured credentials after authorization.
+</Callout>
+
+## Route traffic
+
+Send runtime traffic to the gateway that contains the required tools or pools. Dome resolves the resource, authorizes the call, injects upstream credentials, and records the result.
+
+### Call MCP tools
+
+Use an MCP Streamable HTTP client against the gateway's `/mcp` endpoint:
+
+```python
+import asyncio
+import os
+
+from mcp import ClientSession
+from mcp.client.streamable_http import streamable_http_client
+
+async def main():
+    headers = {
+        "Authorization": f"Bearer {os.environ['DOME_AGENT_KEY']}",
+    }
+
+    async with streamable_http_client(
+        f"{os.environ['DOME_GATEWAY_URL']}/mcp",
+        headers=headers,
+    ) as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+
+            catalog = await session.list_tools()
+            print([tool.name for tool in catalog.tools])
+
+            result = await session.call_tool(
+                "github/list_issues",
+                {"repo": "dome"},
+            )
+            print(result.content)
+
+asyncio.run(main())
+```
+
+`tools/list` returns only tools in the selected gateway that the agent may discover. `tools/call` evaluates authorization again for the requested tool.
+
+MCP Streamable HTTP can return normal JSON or an SSE response. Keep the session open until the client consumes the complete result.
+
+### Call models
+
+Point an OpenAI or Anthropic client at the gateway. Set `model` to a Dome pool or connection name. The gateway preserves each client's native response shape and translates requests upstream only after resource resolution and authorization.
+
+<Tabs items={["OpenAI","Anthropic"]}>
+  <Tab value="OpenAI">
+    Point the OpenAI client at the gateway's `/v1` base. Pass the agent key as `api_key`.
+
+    ```python
+    import os
+    from openai import OpenAI
+
+    client = OpenAI(
+        api_key=os.environ["DOME_AGENT_KEY"],
+        base_url=f"{os.environ['DOME_GATEWAY_URL']}/v1",
+    )
+
+    response = client.chat.completions.create(
+        model="production",
+        messages=[
+            {"role": "user", "content": "Summarize the open incidents."},
+        ],
+    )
+
+    print(response.choices[0].message.content)
+    ```
+
+    The same base supports `/chat/completions`, `/responses`, `/embeddings`, `/moderations`, and `/models`. Provider support can vary for embeddings, moderation, and Responses API calls.
+
+    `POST /v1/embeddings` honors OpenAI's `encoding_format` on the request body. With `float` (or omitted), the response is a JSON array of floats. With `base64`, the response is little-endian IEEE-754 float32 bytes as a string. The gateway always fetches float vectors upstream and re-encodes for the caller. Token accounting is unchanged. Any other value returns HTTP `400`. Ingress routes are on the [LLM gateway](/concepts/gateways/llm-gateway#endpoints) concept.
+
+    Stream Chat Completions by setting `stream=True`:
+
+    ```python
+    stream = client.chat.completions.create(
+        model="production",
+        messages=[
+            {"role": "user", "content": "Draft a short incident update."},
+        ],
+        stream=True,
+    )
+
+    for chunk in stream:
+        delta = chunk.choices[0].delta.content
+        if delta:
+            print(delta, end="", flush=True)
+    ```
+
+    Consume the iterator until completion. Once the first SSE event reaches the client, the gateway cannot fail over to another model connection.
+  </Tab>
+  <Tab value="Anthropic">
+    Point the Anthropic client at the gateway root. The SDK appends `/v1/messages` and sends the agent key through `x-api-key`.
+
+    ```python
+    import os
+    from anthropic import Anthropic
+
+    client = Anthropic(
+        api_key=os.environ["DOME_AGENT_KEY"],
+        base_url=os.environ["DOME_GATEWAY_URL"],
+    )
+
+    message = client.messages.create(
+        model="production",
+        max_tokens=512,
+        messages=[
+            {"role": "user", "content": "Summarize the open incidents."},
+        ],
+    )
+
+    print(message.content[0].text)
+    ```
+
+    Use the Anthropic streaming helper for SSE:
+
+    ```python
+    with client.messages.stream(
+        model="production",
+        max_tokens=512,
+        messages=[
+            {"role": "user", "content": "Draft a short incident update."},
+        ],
+    ) as stream:
+        for text in stream.text_stream:
+            print(text, end="", flush=True)
+    ```
+  </Tab>
+</Tabs>
+
+Choose the target by setting the request's `model`:
+
+1. An exact pool name selects that pool.
+2. An exact connection name selects that connection.
+3. A provider model ID selects a matching connection.
+4. A configured routing predicate can select a pool.
+5. The workspace default pool handles the remaining request.
+
+Application code chooses a logical target. Resolution order and `match_when` are on the [Pools](/reference/resources/model-pools#pool-resolution) reference. Define membership, strategies, and failover on [Pools](/connect/pools) and connections on [Models](/connect/models).
+
+## Pass identity for delegated agents
+
+When the agent is [delegated](/build/agents/delegated), attach the human identity on each request. The gateway verifies it before Cedar, routing, per-user credentials, or backend forwarding uses it.
+
+Send the evidence in `X-Dome-Act-As` on MCP, OpenAI, and Anthropic requests. Match the wire value to the agent's configured verification method. The method-to-header table is on [Delegated agents](/build/agents/delegated#verification-methods). Prefer OIDC or bound identity for production traffic. Configure providers on [Delegated agents](/build/agents/delegated#create-a-verification-provider).
+
+### Pass OIDC identity to MCP
+
+Add the end-user token to the session headers:
+
+```python
+headers = {
+    "Authorization": f"Bearer {os.environ['DOME_AGENT_KEY']}",
+    "X-Dome-Act-As": end_user_oidc_token,
+}
+```
+
+Reuse the same headers for `tools/list` and `tools/call`. Discovery can include per-user credential advisories specific to that identity.
+
+### Pass OIDC identity to OpenAI
+
+Create a client for the current user or pass the header per request:
+
+```python
+client = OpenAI(
+    api_key=os.environ["DOME_AGENT_KEY"],
+    base_url=f"{os.environ['DOME_GATEWAY_URL']}/v1",
+    default_headers={"X-Dome-Act-As": end_user_oidc_token},
+)
+```
+
+Do not reuse a user-bound client across users. Pool clients by verified user only when token lifetime and isolation rules permit it.
+
+### Pass OIDC identity to Anthropic
+
+Set the same header through the Anthropic client:
+
+```python
+client = Anthropic(
+    api_key=os.environ["DOME_AGENT_KEY"],
+    base_url=os.environ["DOME_GATEWAY_URL"],
+    default_headers={"X-Dome-Act-As": end_user_oidc_token},
+)
+```
+
+The gateway keeps the agent and end user distinct. Agent authentication identifies the workload. Act-as evidence identifies the human represented by that workload.
+
+### Use identity at runtime
+
+Verified claims populate `principal.act_as` for authorization and routing:
+
+- `principal.act_as.sub`
+- `principal.act_as.email`
+- `principal.act_as.roles`
+- `principal.act_as.groups`
+- `principal.act_as.claims.<key>`
+
+Per-user connections key credentials by the verified `sub`. If the user has not connected a credential, follow the provisioning response in [Errors and denials](#errors-and-denials).
+
+The gateway forwards act-as identity upstream only when the connection explicitly configures an act-as-sourced header. Keep that egress choice in [Connect](/connect/tools#change-egress-headers).
+
+## Errors and denials
+
+Separate authentication failures, missing user credentials, authorization denials, and upstream failures. Each requires a different application response.
+
+| Status | Meaning | Application action |
+|--------|---------|--------------------|
+| `400` | Missing or malformed gateway path, or invalid request | Fix the client URL or request |
+| `401` | Invalid agent credential, required act-as identity, or missing per-user credential | Reauthenticate or start user provisioning |
+| `403` | Dome policy denied the call | Surface the reason. Do not retry unchanged |
+| `404` | Requested tool, model, pool, or connection is unavailable | Refresh discovery or fix the target |
+| `429` | Rate or usage limit reached | Back off or wait for the configured window |
+| `5xx` | gateway or upstream service failure | Retry with bounded exponential backoff |
+
+### Agent-facing prompt protocol
+
+A missing per-user credential returns `401 Unauthorized` before an LLM stream starts. Give the returned `provision_url` to the end user, then retry after completion.
+
+Shared surfaces on every ingress:
+
+- **HTTP status:** `401 Unauthorized`
+- **Header:** `WWW-Authenticate: Bearer realm="dome", error="invalid_token", resource_metadata="<magic-link-url>"`
+- **Body:** a native permission error plus a `dome.credential_required` / `dome_credential_required` extension with `provision_url` and `expires_at`
+
+The URL appears in the message text, the extension, and `WWW-Authenticate` so HTTP-aware tooling, Dome-aware clients, and SDKs that only render `error.message` can all recover. Per-user LLM requests also need a verified `X-Dome-Act-As` identity. Without act-as, the gateway returns `401` with a plain permission error and does not mint a magic link.
+
+For MCP:
+
+- `tools/list` includes `_meta.dome.auth_required` advisories (one entry per unprovisioned backend).
+- `tools/call` sets `error.data.type` to `dome.credential_required`.
+
+For OpenAI- and Anthropic-shaped routes, the body includes a top-level `dome_credential_required` sibling with `connection`, `provision_url`, and `expires_at`.
+
+Do not mint or open the URL in a background service. Present it to the represented end user. Magic links are single-use and short-lived (10 minutes by default). If a link expires, the next call against the same connection mints a fresh one.
+
+<Tabs items={["MCP","LLM (OpenAI)","LLM (Anthropic)"]}>
+  <Tab value="MCP">
+    ```json title="JSON-RPC error response"
+    {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "error": {
+        "code": -32001,
+        "message": "Per-user credential required for connection \"atlassian\". Provision your token at https://app.domesystems.ai/u/oauth/start?token=…",
+        "data": {
+          "type": "dome.credential_required",
+          "provision_url": "https://app.domesystems.ai/u/oauth/start?token=…",
+          "expires_at": "2026-04-29T18:30:00Z"
+        }
+      }
+    }
+    ```
+
+    ```json title="tools/list excerpt for a partially provisioned user"
+    {
+      "tools": [],
+      "_meta": {
+        "dome": {
+          "auth_required": [
+            {
+              "backend_name": "atlassian",
+              "provision_url": "https://app.domesystems.ai/u/oauth/start?token=…",
+              "expires_at": "2026-04-29T18:30:00Z"
+            }
+          ]
+        }
+      }
+    }
+    ```
+  </Tab>
+  <Tab value="LLM (OpenAI)">
+    ```json title="OpenAI-flavored 401 body"
+    {
+      "error": {
+        "message": "Per-user credential required for connection \"openai-prod\". Provision your token at https://app.domesystems.ai/u/creds/start?token=…",
+        "type": "permission_error",
+        "code": "dome.credential_required"
+      },
+      "dome_credential_required": {
+        "connection": "openai-prod",
+        "provision_url": "https://app.domesystems.ai/u/creds/start?token=…",
+        "expires_at": "2026-04-29T18:30:00Z"
+      }
+    }
+    ```
+  </Tab>
+  <Tab value="LLM (Anthropic)">
+    ```json title="Anthropic-flavored 401 body"
+    {
+      "type": "error",
+      "error": {
+        "type": "permission_error",
+        "message": "Per-user credential required for connection \"anthropic-prod\". Provision your token at https://app.domesystems.ai/u/creds/start?token=…"
+      },
+      "dome_credential_required": {
+        "connection": "anthropic-prod",
+        "provision_url": "https://app.domesystems.ai/u/creds/start?token=…",
+        "expires_at": "2026-04-29T18:30:00Z"
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Authorization denial protocol
+
+When the gateway denies a request, it returns a structured `dome_authorization_denied` extension alongside the native error body. The extension explains which rule fired so you can surface feedback in agent UIs and alert on the deciding policy.
+
+- **MCP** — JSON-RPC `error.data`, with `error.data.type = "dome.authorization_denied"`
+- **LLM (OpenAI)** — top-level `dome_authorization_denied`, plus `error.code = "dome.authorization_denied"`
+- **LLM (Anthropic)** — top-level `dome_authorization_denied`. The Anthropic envelope has no `code` field
+
+<Callout type="warning">
+Detect the deny on the **presence of the `dome_authorization_denied` sibling** (OpenAI/Anthropic) or `error.data.type == "dome.authorization_denied"` (MCP). Do not key off `error.code`. The Anthropic envelope omits it, and a client that branches on `code` silently misses every Anthropic denial.
+</Callout>
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `reason_code` | string | Closed vocabulary. Today every Cedar / fail-closed deny resolves to `permission_denied`. Treat unknown values as a generic deny. |
+| `reason` | string | Verbatim human reason from the decision (for example `denied by rule: workspace/billing.policy0`). Secret-free by construction. |
+| `depth` | string | `deterministic` when Cedar decided the call. |
+| `determining_policy` | string (optional) | The Cedar rule/policy id that fired an explicit `forbid`. Empty on a no-match default-deny. |
+
+<Tabs items={["MCP","LLM (OpenAI)","LLM (Anthropic)"]}>
+  <Tab value="MCP">
+    ```json title="JSON-RPC error response"
+    {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "error": {
+        "code": -32001,
+        "message": "denied by rule: workspace/billing.policy0",
+        "data": {
+          "type": "dome.authorization_denied",
+          "reason_code": "permission_denied",
+          "reason": "denied by rule: workspace/billing.policy0",
+          "depth": "deterministic",
+          "determining_policy": "workspace/billing.policy0"
+        }
+      }
+    }
+    ```
+  </Tab>
+  <Tab value="LLM (OpenAI)">
+    ```json title="OpenAI-flavored 403 body"
+    {
+      "error": {
+        "message": "denied by rule: workspace/billing.policy0",
+        "type": "permission_error",
+        "code": "dome.authorization_denied"
+      },
+      "dome_authorization_denied": {
+        "reason_code": "permission_denied",
+        "reason": "denied by rule: workspace/billing.policy0",
+        "depth": "deterministic",
+        "determining_policy": "workspace/billing.policy0"
+      }
+    }
+    ```
+  </Tab>
+  <Tab value="LLM (Anthropic)">
+    ```json title="Anthropic-flavored 403 body"
+    {
+      "type": "error",
+      "error": {
+        "type": "permission_error",
+        "message": "denied by rule: workspace/billing.policy0"
+      },
+      "dome_authorization_denied": {
+        "reason_code": "permission_denied",
+        "reason": "denied by rule: workspace/billing.policy0",
+        "depth": "deterministic",
+        "determining_policy": "workspace/billing.policy0"
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+```python
+def explain_deny(body: dict) -> str | None:
+    deny = body.get("dome_authorization_denied")
+    if not deny:
+        return None
+
+    reason = deny.get("reason", "Request denied")
+    policy = deny.get("determining_policy")
+    return f"{reason} (policy: {policy})" if policy else reason
+```
+
+Allow responses carry no `dome_authorization_denied` field. Treat policy denials as final for the unchanged request. Show a safe reason to the user and record the request's activity or trace identifier.
+
+### Handle streaming failures
+
+Authentication, act-as validation, per-user credential checks, and initial authorization run before the first model SSE event. These failures arrive as normal HTTP errors.
+
+After streaming begins:
+
+- Treat a broken connection as an incomplete response.
+- Do not assume the gateway retried another model.
+- Discard partial structured output unless your application validates it.
+- Retry only when the operation is safe and your client can prevent duplicates.
+
+Output filtering can buffer streamed text before release. Do not set client read timeouts so low that normal filter buffering appears as an outage.
+
+### Retry safely
+
+Retry timeouts, connection failures, `429`, and transient `5xx` responses with bounded exponential backoff. Honor `Retry-After` when present.
+
+Do not automatically retry `400`, `401`, or `403`. Refresh an expired agent token, complete user provisioning, or change the denied request first.
+
+## Next steps
+
+- [Connect](/connect) to attach resources, group them in gateways, and configure routing
+- [Govern](/govern) to authorize actions, assign guards, and set quotas
+- [Stream Live Events](/operate/observe) to trace calls, denials, latency, and model usage
+- [Agent Identity](/concepts/agents/identity) concept for keys, tokens, and act-as claims in more depth

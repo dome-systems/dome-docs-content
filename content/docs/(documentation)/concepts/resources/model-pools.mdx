@@ -1,0 +1,70 @@
+---
+title: Pools
+description: Why Dome groups model connections behind a pool name for routing and failover
+---
+
+import { modelPool } from '@/snippets/glossary';
+
+<p>{modelPool}</p>
+
+## High-level overview
+
+A pool contains one or more model connections as **members**. When an agent puts the pool name in the request's `model` field, Dome orders eligible members by the routing strategy, sends the request to the primary, and may try further members on failure up to the failover limit.
+
+For an agent to use a pool:
+
+1. Connect the models that can serve the traffic.
+2. Create the pool and add members.
+3. Configure routing and failover.
+4. Attach the pool to a [Gateway](/concepts/gateways).
+5. Allow that gateway on the agent.
+6. Verify with the agent's key.
+
+Routing through a pool looks like this:
+
+1. An operator creates `production` with priority-weighted routing, adds `claude-prod` at priority 0 and `gpt-backup` at priority 1, attaches the pool to `prod-llms`, and grants an agent access.
+2. The agent calls with `model: "production"`.
+3. Dome resolves the pool, authorizes the primary, and dispatches.
+4. On a transient provider failure, Dome may authorize and try the backup.
+5. Audit records which member served the call.
+
+A pool is the stable name clients and rules use. Members and strategy stay editable underneath.
+
+### Members
+
+Each member is one model connection. With priority-weighted routing, priority places the member in a failover tier and weight shares traffic inside the tier. Round-robin, least-loaded, and most-quota-remaining ignore priority and weight. A model can belong to more than one pool. Removing a member leaves the connection available elsewhere.
+
+<Callout type="warning">
+The management interfaces store an `enabled` value, but the current gateway routes to members regardless of that value. To stop sending traffic to a member, remove it from the pool.
+</Callout>
+
+### Routing strategies
+
+The strategy chooses the primary and orders failover candidates: `priority_weighted`, `round_robin`, `least_loaded`, or `most_quota_remaining`. Strategy scope (`workspace` or `caller`) controls whether stateful strategies share rotation or inflight state. For `most_quota_remaining`, scope only affects the tiebreak — primary order follows remaining cost-quota headroom. Catalog is on the [Pools](/reference/resources/model-pools#routing-strategies) reference.
+
+### Failover
+
+Failover limits how many additional members Dome may try after the primary fails. Dome authorizes the primary first, then re-authorizes each candidate before trying it. Streaming can fail over only before the first response byte reaches the caller. Limits and behavior are on the [Pools](/reference/resources/model-pools#failover) reference.
+
+### Pool resolution
+
+When a request reaches a gateway, Dome resolves the `model` value in a fixed order: exact pool name, exact connection name, upstream model id match, first matching `match_when` pool, then the workspace default pool. Exact names beat conditional routes. The `match_when` dialect is on the [Pools](/reference/resources/model-pools#pool-resolution) reference. Routing does not replace authorization. Rules still evaluate the pool and selected model.
+
+### Response caching
+
+Pool records store cache TTL and scope fields intended for identical-request reuse.
+
+<Callout type="warning">
+The gateway does not read these settings during model dispatch. Setting `cache_ttl_secs` or `cache_scope` does not cache responses.
+</Callout>
+
+## Next steps
+
+With that model-pool routing model in mind, continue with:
+
+- [Resources](/concepts/resources) concept for how pools sit among resource types
+- [Models](/concepts/resources/models) concept for the connections pools select
+- [LLM gateway](/concepts/gateways/llm-gateway) concept for dispatch and failover on the wire
+- [Quotas](/concepts/controls/quotas) concept for spend caps and pool spillover
+- [Pools](/reference/resources/model-pools) reference for strategies, failover, and `match_when`
+- [Pools](/connect/pools) to create pools, manage members, and attach gateways

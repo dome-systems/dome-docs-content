@@ -1,0 +1,703 @@
+---
+title: Deploy an event-driven agent
+sidebarTitle: Event-driven agent
+description: "Build and deploy a governed handler that wakes for one event, completes bounded work, and exits"
+---
+
+An event-driven agent has no address of its own. A scheduler, queue, or event bus supplies one unit of work; the runtime starts a handler, the handler finishes that work, and the invocation ends. Retries and concurrency belong to the trigger rather than to an HTTP client waiting for a response.
+
+This lab builds an incident-digest handler. Each event makes one governed tool call, writes a structured result, and returns. You will package it as a Lambda container, keep its agent key in Secrets Manager, invoke it manually, attach an EventBridge schedule, and find the call in Dome Audit.
+
+<Prompt
+  description="Hand this to an AI agent. It builds the event handler, provisions its Dome identity, deploys it, triggers it once, schedules it, and verifies the governed call."
+  icon="sparkles"
+  actions={["copy", "cursor"]}
+>
+Deploy the event-driven incident-digest agent from this lab.
+
+First, show me this plan and ask me to confirm before running anything:
+
+1. Confirm my Dome and AWS accounts and choose a workspace and region
+2. Create the incident-digest handler exactly as documented and invoke its container locally
+3. Attach the public demo operations server to Dome
+4. Register `incident-digest-job`, deploy its one-tool Cedar boundary, and create its API key
+5. Build the Lambda container and push it to ECR
+6. Put the agent key in Secrets Manager and create a least-privilege Lambda role
+7. Deploy the function and invoke it once with a test event
+8. Show the CloudWatch result and matching Dome audit event
+9. Add a disabled EventBridge schedule, inspect it, then enable it after I confirm
+10. Disable the schedule before cleanup
+
+Follow the commands at https://developer.domesystems.ai/agent/tutorials/production/deploy-your-agent/event-driven.md exactly.
+
+Non-negotiable rules:
+
+- Work in a Dome workspace and a non-production AWS account. Show both before changing anything.
+- Never print or commit `DOME_AGENT_API_KEY`. Read it silently and write it directly to Secrets Manager.
+- Do not put the agent key in the image, Docker build arguments, Lambda environment variables, source, event payload, or logs.
+- Keep the handler bounded: one event, one governed read, one structured result, then return.
+- Treat delivery as at least once. Do not add a write action unless it has an idempotency key.
+- Create the schedule disabled, show me its target and payload, and wait before enabling it.
+- Do not widen Cedar when a call fails.
+- Tag the image immutably and deploy by image digest or immutable tag, never `latest`.
+- Never report a step as done without showing non-secret command output.
+
+At the end, explain which parts belong to the event-driven operating model and which commands are specific to Lambda and EventBridge.
+</Prompt>
+
+To do this, you will:
+
+<Steps>
+  <Step title="Build the handler">
+    Accept one event, make one governed call, emit one result, and return.
+  </Step>
+  <Step title="Provision the agent">
+    Give the job one identity and one allowed tool.
+  </Step>
+  <Step title="Build the function image">
+    Package the handler with the Lambda runtime interface.
+  </Step>
+  <Step title="Inject the credential">
+    Let the function identity read one secret.
+  </Step>
+  <Step title="Invoke and verify">
+    Send a test event and correlate CloudWatch with Dome Audit.
+  </Step>
+  <Step title="Attach the schedule">
+    Add the production trigger only after the handler works in isolation.
+  </Step>
+</Steps>
+
+## Why this application exits
+
+The incident digest has no user waiting on an HTTP response. It runs because an event says “produce the digest now.” The handler should:
+
+- take all input from the event and configuration
+- finish one bounded unit of work
+- emit structured output
+- return success or raise an error
+- tolerate the same event arriving again
+- assume another invocation can overlap
+
+It should not start a web server, wait between runs, or contain its own scheduler. Those responsibilities belong to the runtime and trigger.
+
+## What the deployment receives
+
+The deployment target never receives a GitHub token, model key, or tool credential. It receives:
+
+- a long-lived `DOME_AGENT_API_KEY` stored in the platform's secret manager
+- `DOME_CONTROL_PLANE`, used to exchange that key for a short-lived token
+- `DOME_GATEWAY_MCP_URL`, where the application calls its governed tools
+
+The application image contains no secrets. Dome keeps the tool credential at the gateway, enforces the same Cedar rule regardless of runtime, and records the resulting calls in Audit.
+
+## When always-on fits better
+
+Deployment starts with the process shape, not the platform. This lab is for an agent that wakes for one event, finishes bounded work, and exits:
+
+| | Event-driven (this lab) | Always-on |
+|---|---|---|
+| Starts when | A schedule or event fires | An HTTP request arrives |
+| Process shape | Handler called with one event | Web server listening on `$PORT` |
+| Finishes when | The event is complete | The service is replaced or scaled down |
+| State | Treat each invocation as independent | Externalize it; instances are replaceable |
+| Retries | Trigger retry and dead-letter behavior | Client/load balancer behavior |
+| Concurrency | Multiple invocations may overlap | Multiple requests may share an instance |
+
+If a person, webhook, or application needs an address and a response on a request timeline, use [Deploy an always-on agent](/tutorials/production/deploy-your-agent/always-on) instead.
+
+<Callout type="info">
+This lab uses an [AWS Lambda container image](https://docs.aws.amazon.com/lambda/latest/dg/images-create.html) and an EventBridge scheduled rule to make the steps executable. The same process shape fits [Cloud Run jobs](https://docs.cloud.google.com/run/docs/create-jobs), [Azure Functions triggers](https://learn.microsoft.com/azure/azure-functions/functions-triggers-bindings), [Amazon ECS scheduled tasks](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/scheduling_tasks.html), and [Kubernetes CronJobs](https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/). Keep the bounded handler and Dome configuration; translate the image, secret, function, and trigger resources.
+</Callout>
+
+## Prerequisites
+
+You will need:
+
+- Docker with Buildx
+- AWS CLI v2, authenticated to a non-production account
+- permission to use ECR, Lambda, IAM, Secrets Manager, CloudWatch Logs, and EventBridge
+- the Dome CLI, signed in as a tenant `admin` (or org `owner` / `admin`) with permission to attach a tool, register an agent, and deploy rules
+
+Set and verify the AWS values:
+
+```bash
+export AWS_REGION="us-east-1"
+export FUNCTION_NAME="incident-digest"
+export ECR_REPOSITORY="agent-labs/incident-digest"
+
+export AWS_ACCOUNT_ID="$(
+  aws sts get-caller-identity --query Account --output text
+)"
+
+aws sts get-caller-identity
+```
+
+Confirm this is not a production account before continuing.
+
+## Build the handler
+
+Create an empty project:
+
+```bash
+mkdir incident-digest
+cd incident-digest
+```
+
+The Lambda base image already includes the Python runtime interface client. Add only the application dependencies:
+
+```text title="requirements.txt"
+boto3
+httpx
+```
+
+Create `handler.py`:
+
+```python title="handler.py"
+import json
+import os
+from functools import lru_cache
+
+import boto3
+import httpx
+
+CONTROL_PLANE = os.environ["DOME_CONTROL_PLANE"].rstrip("/")
+GATEWAY_MCP_URL = os.environ["DOME_GATEWAY_MCP_URL"]
+SECRET_ID = os.environ["DOME_AGENT_SECRET_ID"]
+
+
+@lru_cache(maxsize=1)
+def agent_api_key() -> str:
+    response = boto3.client("secretsmanager").get_secret_value(
+        SecretId=SECRET_ID
+    )
+    return response["SecretString"]
+
+
+def exchange_token() -> str:
+    response = httpx.post(
+        f"{CONTROL_PLANE}/dome.identity.v1.Identity/ExchangeToken",
+        json={"grantType": "api_key", "apiKey": agent_api_key()},
+        headers={"Content-Type": "application/json"},
+        timeout=10,
+    )
+    response.raise_for_status()
+    return response.json()["accessToken"]
+
+
+def parse_mcp(response: httpx.Response) -> dict:
+    if "text/event-stream" not in response.headers.get("content-type", ""):
+        return response.json()
+    for line in response.text.splitlines():
+        if line.startswith("data:"):
+            message = json.loads(line[5:].strip())
+            if "result" in message or "error" in message:
+                return message
+    raise ValueError("MCP stream ended without a response")
+
+
+def get_incidents() -> dict:
+    response = httpx.post(
+        GATEWAY_MCP_URL,
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "demo-ops/it/get_incidents",
+                "arguments": {},
+            },
+        },
+        headers={
+            "Authorization": f"Bearer {exchange_token()}",
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        },
+        timeout=20,
+    )
+    response.raise_for_status()
+    result = parse_mcp(response)
+    if "error" in result:
+        raise RuntimeError(result["error"])
+    return result["result"]
+
+
+def lambda_handler(event: dict, context) -> dict:
+    run_id = event.get("id") or context.aws_request_id
+    trigger = event.get("source", "manual")
+
+    result = {
+        "run_id": run_id,
+        "trigger": trigger,
+        "incidents": get_incidents(),
+    }
+    print(json.dumps(result, separators=(",", ":")))
+    return result
+```
+
+This code is intentionally not an HTTP service. Lambda calls `lambda_handler` with one event. The handler reads one governed resource, prints one JSON result, and returns.
+
+The secret is cached only within one warm execution environment. Another concurrent environment retrieves its own copy. Token exchange still happens for each event, so the gateway receives a short-lived bearer token rather than the long-lived API key.
+
+Create the Lambda image:
+
+```dockerfile title="Dockerfile"
+FROM public.ecr.aws/lambda/python:3.13
+
+COPY requirements.txt ${LAMBDA_TASK_ROOT}
+RUN pip install --no-cache-dir -r requirements.txt \
+  --target ${LAMBDA_TASK_ROOT}
+
+COPY handler.py ${LAMBDA_TASK_ROOT}
+
+CMD ["handler.lambda_handler"]
+```
+
+Exclude local credentials:
+
+```text title=".dockerignore"
+.git
+.env
+.venv
+__pycache__
+*.pyc
+response.json
+```
+
+## Provision the agent
+
+Create and enter a Dome workspace:
+
+```bash
+dome workspaces create --name studio-deploy-event
+dome context sync
+dome context current
+```
+
+Attach the public demo backend:
+
+```bash
+dome tools add \
+  --name demo-ops \
+  --url https://demo-mcp.domesystems.ai/mcp \
+  --protocol streamable-http \
+  --auth-method none \
+  --gateway Default
+```
+
+Register the job identity and grant gateway access:
+
+```bash
+dome agents register --name incident-digest-job --if-not-exists
+dome gateways access grant Default incident-digest-job
+```
+
+Create `incident-digest.cedar`:
+
+```cedar title="incident-digest.cedar"
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:discover",
+  resource
+);
+
+permit(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"demo-ops/it/get_incidents"
+);
+
+forbid(
+  principal is Dome::Agent,
+  action == Dome::Action::"mcp:call",
+  resource
+) unless {
+  resource == Dome::MCPTool::"demo-ops/it/get_incidents"
+};
+```
+
+Deploy and simulate:
+
+```bash
+dome rules apply incident-digest.cedar \
+  --agent incident-digest-job \
+  --name incident-digest-job
+
+dome rules simulate --agent incident-digest-job --action mcp:call \
+  --resource demo-ops/it/get_incidents --resource-type mcp_tool
+
+dome rules simulate --agent incident-digest-job --action mcp:call \
+  --resource demo-ops/sales/get_customer --resource-type mcp_tool
+```
+
+Expect `ALLOW`, then `DENY`.
+
+Create the API key:
+
+```bash
+dome agents create-key incident-digest-job --name lambda
+```
+
+Keep the one-time value for Secrets Manager. Get the environment endpoints:
+
+```bash
+dome auth status
+dome agents get incident-digest-job --gateway Default
+```
+
+Set them from the output:
+
+```bash
+export DOME_CONTROL_PLANE="https://api.domesystems.ai"
+export DOME_GATEWAY_MCP_URL="https://<gateway-host>/gateways/<gateway-id>/mcp"
+```
+
+## Build and push the function image
+
+Create the ECR repository:
+
+```bash
+aws ecr create-repository \
+  --repository-name "$ECR_REPOSITORY" \
+  --image-scanning-configuration scanOnPush=true \
+  --region "$AWS_REGION"
+```
+
+Authenticate Docker:
+
+```bash
+aws ecr get-login-password --region "$AWS_REGION" | \
+  docker login \
+    --username AWS \
+    --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+```
+
+Build one architecture and disable provenance metadata, both required by Lambda container images:
+
+```bash
+export IMAGE_TAG="$(git rev-parse --short HEAD 2>/dev/null || date +%Y%m%d%H%M%S)"
+export IMAGE_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG"
+
+docker buildx build \
+  --platform linux/amd64 \
+  --provenance=false \
+  --tag "$IMAGE_URI" \
+  --push \
+  .
+```
+
+## Store the agent key
+
+Read the one-time value without echoing it and write it through a mode-`600` temporary file:
+
+```bash
+read -rsp "Dome agent API key: " DOME_AGENT_API_KEY
+echo
+
+SECRET_FILE="$(mktemp)"
+chmod 600 "$SECRET_FILE"
+printf '%s' "$DOME_AGENT_API_KEY" > "$SECRET_FILE"
+unset DOME_AGENT_API_KEY
+
+export SECRET_ARN="$(
+  aws secretsmanager create-secret \
+    --name dome/incident-digest/agent-api-key \
+    --secret-string "file://$SECRET_FILE" \
+    --region "$AWS_REGION" \
+    --query ARN \
+    --output text
+)"
+
+rm -f "$SECRET_FILE"
+```
+
+The key is now outside the image and outside Lambda environment variables.
+
+## Create the function role
+
+Create the Lambda trust policy:
+
+```json title="lambda-trust.json"
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": {"Service": "lambda.amazonaws.com"},
+    "Action": "sts:AssumeRole"
+  }]
+}
+```
+
+Create the role and attach basic logging:
+
+```bash
+aws iam create-role \
+  --role-name incident-digest-lambda \
+  --assume-role-policy-document file://lambda-trust.json
+
+aws iam attach-role-policy \
+  --role-name incident-digest-lambda \
+  --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+```
+
+Give it read access to exactly one secret:
+
+```bash
+cat > secret-policy.json <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": "secretsmanager:GetSecretValue",
+    "Resource": "$SECRET_ARN"
+  }]
+}
+EOF
+
+aws iam put-role-policy \
+  --role-name incident-digest-lambda \
+  --policy-name ReadDomeAgentKey \
+  --policy-document file://secret-policy.json
+
+export LAMBDA_ROLE_ARN="$(
+  aws iam get-role \
+    --role-name incident-digest-lambda \
+    --query Role.Arn \
+    --output text
+)"
+```
+
+## Deploy and invoke
+
+Create the function:
+
+```bash
+aws lambda create-function \
+  --function-name "$FUNCTION_NAME" \
+  --package-type Image \
+  --code "ImageUri=$IMAGE_URI" \
+  --role "$LAMBDA_ROLE_ARN" \
+  --architectures x86_64 \
+  --timeout 30 \
+  --memory-size 256 \
+  --environment "Variables={DOME_AGENT_SECRET_ID=$SECRET_ARN,DOME_CONTROL_PLANE=$DOME_CONTROL_PLANE,DOME_GATEWAY_MCP_URL=$DOME_GATEWAY_MCP_URL}" \
+  --region "$AWS_REGION"
+
+aws lambda wait function-active-v2 \
+  --function-name "$FUNCTION_NAME" \
+  --region "$AWS_REGION"
+```
+
+IAM role creation can take a few seconds to propagate. If `create-function` says Lambda cannot assume the role, wait and retry the same command; do not broaden the trust policy.
+
+Invoke one event manually:
+
+```bash
+aws lambda invoke \
+  --function-name "$FUNCTION_NAME" \
+  --cli-binary-format raw-in-base64-out \
+  --payload '{"id":"manual-001","source":"manual"}' \
+  --region "$AWS_REGION" \
+  response.json
+
+python3 -m json.tool response.json
+```
+
+The response contains `run_id=manual-001`, `trigger=manual`, and the governed incident result.
+
+Read the structured log:
+
+```bash
+aws logs tail "/aws/lambda/$FUNCTION_NAME" \
+  --since 10m \
+  --region "$AWS_REGION"
+```
+
+Then inspect Dome:
+
+```bash
+dome audit query --types tool.call --limit 10
+```
+
+The Lambda request ID tells you which invocation ran. The Dome event tells you which governed resource `incident-digest-job` reached. Keep both identifiers when you carry correlation into production logging.
+
+## Attach the schedule
+
+The handler works before a trigger exists. Now add a schedule in a disabled state so it cannot start running while you inspect it:
+
+```bash
+export FUNCTION_ARN="$(
+  aws lambda get-function \
+    --function-name "$FUNCTION_NAME" \
+    --query Configuration.FunctionArn \
+    --output text
+)"
+
+export RULE_ARN="$(
+  aws events put-rule \
+    --name incident-digest-hourly \
+    --schedule-expression "rate(1 hour)" \
+    --state DISABLED \
+    --region "$AWS_REGION" \
+    --query RuleArn \
+    --output text
+)"
+```
+
+Allow only this EventBridge rule to invoke the function:
+
+```bash
+aws lambda add-permission \
+  --function-name "$FUNCTION_NAME" \
+  --statement-id AllowIncidentDigestSchedule \
+  --action lambda:InvokeFunction \
+  --principal events.amazonaws.com \
+  --source-arn "$RULE_ARN" \
+  --region "$AWS_REGION"
+```
+
+Attach a fixed event:
+
+```bash
+aws events put-targets \
+  --rule incident-digest-hourly \
+  --region "$AWS_REGION" \
+  --targets '[
+    {
+      "Id": "incident-digest",
+      "Arn": "'"$FUNCTION_ARN"'",
+      "Input": "{\"source\":\"hourly-schedule\"}"
+    }
+  ]'
+```
+
+Inspect before enabling:
+
+```bash
+aws events describe-rule \
+  --name incident-digest-hourly \
+  --region "$AWS_REGION"
+
+aws events list-targets-by-rule \
+  --rule incident-digest-hourly \
+  --region "$AWS_REGION"
+```
+
+When the target and payload are correct:
+
+```bash
+aws events enable-rule \
+  --name incident-digest-hourly \
+  --region "$AWS_REGION"
+```
+
+Disable it immediately after observing the scheduled invocation:
+
+```bash
+aws events disable-rule \
+  --name incident-digest-hourly \
+  --region "$AWS_REGION"
+```
+
+The schedule may deliver an event more than once, and two invocations can overlap. This lab only reads, so replay is harmless. For a write-capable agent, put an idempotency key—such as the event ID—on the downstream operation and record completion outside the Lambda process.
+
+## Update without changing identity
+
+Build a new immutable image, then point the function at it:
+
+```bash
+aws lambda update-function-code \
+  --function-name "$FUNCTION_NAME" \
+  --image-uri "<new-image-uri>" \
+  --region "$AWS_REGION"
+```
+
+The function image and version change. The Secrets Manager reference, Dome agent identity, gateway grant, and rule remain stable. Roll back by updating the function to the previous immutable image URI.
+
+<Accordions>
+<Accordion title="Troubleshooting">
+  - The image fails with a runtime or handler error.
+
+    Confirm the base image is an AWS Lambda runtime image and `CMD` names `handler.lambda_handler`. A normal web image does not implement the Lambda Runtime API.
+
+  - The function cannot read the secret.
+
+    Compare `DOME_AGENT_SECRET_ID` with the inline IAM policy resource. Do not grant `secretsmanager:*` on `*`.
+
+  - Token exchange returns `401`.
+
+    Rotate the Dome API key, create a new secret version, verify one manual invocation, then disable the previous version.
+
+  - The manual invocation works but the schedule does not.
+
+    Check the rule is enabled, its target is the function ARN, and the Lambda resource policy contains `AllowIncidentDigestSchedule` scoped to the rule ARN.
+
+  - Two reports appear for one time window.
+
+    Event-driven delivery is at least once. Keep reads replay-safe; require idempotency before adding writes.
+
+  - Lambda times out while the tool is still running.
+
+    Keep the HTTP timeouts below the Lambda timeout, then decide whether the work is still bounded enough for a function. A long workflow belongs in a job or orchestration service.
+</Accordion>
+</Accordions>
+
+## Clean up
+
+Disable and remove the trigger first:
+
+```bash
+aws events disable-rule \
+  --name incident-digest-hourly \
+  --region "$AWS_REGION"
+
+aws events remove-targets \
+  --rule incident-digest-hourly \
+  --ids incident-digest \
+  --region "$AWS_REGION"
+
+aws events delete-rule \
+  --name incident-digest-hourly \
+  --region "$AWS_REGION"
+```
+
+Delete the function, secret, image repository, and role:
+
+```bash
+aws lambda delete-function \
+  --function-name "$FUNCTION_NAME" \
+  --region "$AWS_REGION"
+
+aws secretsmanager delete-secret \
+  --secret-id "$SECRET_ARN" \
+  --force-delete-without-recovery \
+  --region "$AWS_REGION"
+
+aws ecr delete-repository \
+  --repository-name "$ECR_REPOSITORY" \
+  --force \
+  --region "$AWS_REGION"
+
+aws iam delete-role-policy \
+  --role-name incident-digest-lambda \
+  --policy-name ReadDomeAgentKey
+
+aws iam detach-role-policy \
+  --role-name incident-digest-lambda \
+  --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+aws iam delete-role --role-name incident-digest-lambda
+```
+
+Delete the Dome workspace:
+
+```bash
+dome workspaces delete studio-deploy-event
+```
+
+## Next steps
+
+You deployed a bounded handler whose trigger controls when it runs, whose image contains no credential, and whose one-tool boundary stays the same across invocations and image updates.
+
+- [Deploy an always-on agent](/tutorials/production/deploy-your-agent/always-on) to build a request-serving process
+- [Scheduled agent](/tutorials/examples/noninteractive-agent) to build a richer GitHub report before choosing its production trigger

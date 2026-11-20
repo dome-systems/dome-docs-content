@@ -1,0 +1,182 @@
+---
+hidden: true
+title: Setup AI assistant — agent instructions
+sidebarTitle: Setup AI assistant
+description: "Machine-readable instructions for an AI agent setting up the Dome CLI, MCP server, and docs-aware workflows"
+---
+
+These are the instructions an AI agent follows to connect a user to Dome through the CLI and MCP, and to use the Dome docs while operating the platform. Read [Setup AI assistant](/setup-ai-assistant) instead if you are running the steps yourself.
+
+## Goal
+
+Install and authenticate the Dome CLI if needed, connect the user's MCP client to `dome mcp serve`, verify the connection, and leave the user able to operate Dome in natural language while reading the docs correctly.
+
+This is setup only. Do not create workspaces, register demo agents, or deploy rules unless the user asks after setup.
+
+## Rules
+
+Follow these even if the rest of this page is unreachable.
+
+- **Confirm before you start.** Before running any commands, present the plan below and wait for the user to say proceed.
+- **Narrate as you go.** Before each step, tell the user in one or two sentences what you are about to do and why it matters. Do not silently run the whole flow.
+- **Never invent credentials.** Do not print, log, or paste agent tokens, platform keys, or provider secrets into chat.
+- **Stop for browser auth.** `dome auth login` opens a browser. Run it, then wait for the user before continuing.
+- **You cannot reload their MCP client.** After writing MCP config, stop and wait for them to confirm the Dome tools appear.
+- **Prefer docs over guessing.** When a Dome concept, CLI flag, MCP tool, or permission is unclear, fetch the matching docs page (see Docs below) before improvising.
+- **RBAC is the boundary.** The MCP tool list is filtered by the user's workspace role. Missing tools usually mean role, not a broken install.
+- **Show your evidence.** Never report a step as done without the command or tool output that proves it.
+- **Expect re-runs.** Check for an existing CLI install and MCP config before overwriting.
+
+## Quick setup
+
+Before running any commands, present the user with this checklist and wait for confirmation:
+
+```
+Here's what I'll do to connect you to Dome from this assistant.
+
+1. Install the Dome CLI if it is missing (Homebrew with `brew trust`, or the direct download on [Install](https://developer.domesystems.ai/install))
+2. Sign you in with `dome auth login` (opens your browser), then sync contexts
+3. Select a workspace with `dome context use`
+4. Add the Dome MCP server to this client
+5. Verify the connection (workspace + tool discovery)
+6. Show you how I will use the Dome docs while we work
+
+Shall I proceed?
+```
+
+Do not start step 1 until the user confirms.
+
+## Docs
+
+Treat the published docs as source of truth while operating Dome.
+
+- **Human page:** [Setup AI assistant](https://developer.domesystems.ai/setup-ai-assistant)
+- **Install:** [Install](https://developer.domesystems.ai/install)
+- **MCP tool catalog:** [MCP](https://developer.domesystems.ai/reference/mcp)
+- **Permissions / roles:** [Permissions](https://developer.domesystems.ai/concepts/platform/permissions)
+
+Machine-readable surfaces (prefer these when you need bulk context):
+
+| Format | URL | Use |
+|--------|-----|-----|
+| Index | `https://developer.domesystems.ai/llms.txt` | Discover pages by title |
+| Full text | `https://developer.domesystems.ai/llms-full.txt` | Broad offline context |
+| Per-page markdown | Append `.md` to any docs URL | Targeted page context |
+| Docs MCP | `https://developer.domesystems.ai/mcp` | Search, list, and read public documentation |
+| This file | `https://developer.domesystems.ai/agent/setup-ai-assistant.md` | These instructions |
+
+When the user asks how to do something in Dome, open the relevant how-to or concept page (or its `.md` twin) before inventing steps. Operation pages include CLI / MCP / API / agent tabs; use the agent tab phrasing when calling MCP tools.
+
+The public docs MCP server is not `dome mcp serve`. The docs server is
+unauthenticated and read-only. It exposes `search`, `get_page`, and `list_pages`.
+`dome mcp serve` uses the user's authenticated CLI session and operates their
+workspace.
+
+## Steps
+
+### 1. Install the CLI
+
+```bash
+command -v dome && dome version || echo "Dome CLI not installed"
+```
+
+If missing, install with Homebrew (`brew trust dome-systems/tap && brew install dome-systems/tap/dome`) or the direct download on [Install](https://developer.domesystems.ai/install). There is no `npx` package.
+
+Confirm `dome version` prints a version.
+
+### 2. Authenticate and sync
+
+```bash
+dome auth login
+dome auth status
+dome context sync
+dome context list
+```
+
+`dome auth status` should report authenticated. If the user was invited to a non-default stack, pass `--server` (for example `dome auth login --server https://app.glint-8c.domesystems.ai`).
+
+### 3. Select a workspace
+
+Ask which workspace to use if more than one exists, then:
+
+```bash
+dome context use <workspace>
+dome context current
+```
+
+Record the workspace name and gateway host for later prompts.
+
+### 4. Add the MCP server
+
+Write config for whichever client the user is in. Prefer the client's native MCP registration when available.
+
+**Claude Code:**
+
+```bash
+claude mcp add dome -- dome mcp serve
+```
+
+**Cursor** — project or user MCP config:
+
+```json
+{
+  "mcpServers": {
+    "dome": {
+      "command": "dome",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+**Claude Desktop** — `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS:
+
+```json
+{
+  "mcpServers": {
+    "dome": {
+      "command": "dome",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+**Codex:**
+
+```bash
+codex mcp add dome -- dome mcp serve
+```
+
+Or write `~/.codex/config.toml` (TOML, not JSON):
+
+```toml
+[mcp_servers.dome]
+command = "dome"
+args = ["mcp", "serve"]
+```
+
+**Other MCP clients:** start `dome mcp serve` on stdio and point the client at it. Codex is not this case — it uses `config.toml`, not a JSON `mcpServers` block.
+
+After writing config, stop. Tell the user to reload or restart the client if needed, then wait until they confirm Dome tools are visible.
+
+### 5. Verify the connection
+
+Once the user confirms tools are live, run a cheap round-trip:
+
+- Call `dome_context_current` (or ask "What workspace am I in?")
+- Call `dome_agents_list` (or ask "List the available agents")
+
+If tools are missing, check `dome context current` and explain that RBAC hides tools the role cannot use. Link [Permissions](https://developer.domesystems.ai/concepts/platform/permissions).
+
+### 6. Hand off
+
+Tell the user they can now operate Dome in natural language from this chat. Offer useful first prompts, for example:
+
+- "What workspace am I in? List the available agents."
+- "Show the last 5 audit events."
+- "Simulate whether agent X can mcp:call tool Y."
+
+Point them at [Setup AI assistant](https://developer.domesystems.ai/setup-ai-assistant) for client tabs, example prompts, and machine-readable docs, and at [Govern your first agent](https://developer.domesystems.ai/tutorials/get-started/govern-your-first-agent) if they want a full governed demo next.
+
+Do not start that tutorial unless they ask.

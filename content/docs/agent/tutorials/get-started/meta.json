@@ -1,0 +1,10 @@
+{
+  "title": "get-started",
+  "defaultOpen": false,
+  "pages": [
+    "build-a-governed-app",
+    "call-a-model-through-a-pool",
+    "govern-per-end-user",
+    "govern-your-first-agent"
+  ]
+}

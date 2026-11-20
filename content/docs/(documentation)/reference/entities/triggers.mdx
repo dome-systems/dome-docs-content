@@ -1,0 +1,21 @@
+---
+title: Triggers
+description: Schedules and signed webhooks that start managed-agent runs
+---
+
+A trigger decides when managed agents run. A trigger is a workspace resource with one or more managed-agent targets.
+
+| Field | Description |
+| --- | --- |
+| `kind` | `schedule` or `webhook` |
+| `config` | Schedule cron expression and optional IANA timezone; webhook configuration is empty |
+| `input` | First user message for each run; a manual fire or webhook body can override it |
+| `max_concurrent_runs` | Maximum runs across all targets; `0` is unlimited |
+| `targets` | Managed-agent target edges, each with an independent enabled switch |
+| `catch_up` | `once`, `all`, or `skip` for missed schedule occurrences |
+| `catch_up_deadline_seconds` | How late a missed occurrence can run; `0` means one schedule interval |
+| `max_retries` | Infrastructure retry budget; `0` disables retries |
+
+A webhook trigger returns its signing secret once. Its endpoint URL stays readable, but every request must carry a Standard Webhooks v1 signature. A changed schedule, paused trigger, removed target, or suspended agent can cancel pending schedule runs.
+
+Refer to [Managed agents](/build/agents/managed) for configuration and [Managed agents](/reference/entities/managed-agents) for run fields.

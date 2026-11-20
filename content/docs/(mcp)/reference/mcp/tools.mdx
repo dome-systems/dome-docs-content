@@ -1,0 +1,240 @@
+---
+title: Tools
+description: Attach MCP servers, configure upstream authentication, and publish governed tools
+---
+
+import { tool } from '@/snippets/glossary';
+
+<p>{tool}</p>
+
+Refer to [Tools](/connect/tools) for how to attach MCP servers and configure upstream authentication. For gateway membership and access grants, refer to [Gateways](/reference/mcp/gateway). All tools require workspace context.
+
+## Tools
+
+### dome_tools_list
+
+List MCP server connections in the active workspace. Returns name, URL, protocol, auth method, outbound headers, and field classifications for each.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| — | — | — | No parameters |
+
+<Callout icon="key">Requires `gateways.view`.</Callout>
+
+```json title="Example tool call"
+{
+  "name": "dome_tools_list"
+}
+```
+
+### dome_tools_get
+
+Get an MCP server connection by name.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | tool name |
+
+<Callout icon="key">Requires `gateways.view`.</Callout>
+
+### dome_tools_add
+
+Add a new MCP server connection. Connections route the gateway to external MCP servers agents reach through Dome.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | tool name (unique within workspace) |
+| `url` | string | Yes (streamable-http) | tool URL |
+| `command` | string | Yes (stdio) | Command to exec |
+| `args` | array | No | Command args for `stdio` |
+| `protocol` | string | No | `streamable-http`, `stdio` (default: `streamable-http`) |
+| `headers` | array | No | Outbound headers. Each entry: `{name, source, value, secret}`. `source` is `literal` (with `value`), `secret` (with `secret` key name), or `actas` (no value/secret — reinjects the verified `X-Dome-Act-As`). `stdio` rejects headers. `Authorization` is reserved for the managed auth flow. |
+| `authorization` | string | No | `Authorization` HTTP header value. REQUIRED when `auth_method=api-key` and `credential_type=shared`. Forbidden otherwise. The server auto-injects the matching managed `Authorization` header — do not declare it manually. |
+| `secret_values` | object | No | Advanced: per-tool credential bundle for custom secret-source headers. `Authorization` is reserved. |
+| `auth_method` | string | No | `none`, `api-key`, `oauth` |
+| `credential_type` | string | No | `shared`, `per-user` |
+| `oauth` | object | No | OAuth client config (required when `auth_method=oauth`) |
+| `field_classifications` | object | No | Field sensitivity classifications (e.g. `{"email": "PII"}`) |
+| `write_tools` | array | No | tool names classified as write operations |
+| `gateways` | array | No | [Gateway](/build/gateways) names to attach the connection to as a tool source at create time. Without it the connection is unreachable until attached (`dome_gateways_tool_source_add`). |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+The `oauth` object accepts:
+
+| Field | Description |
+|-------|-------------|
+| `authorize_url` | Authorization endpoint URL |
+| `token_url` | Token endpoint URL |
+| `revoke_url` | Revocation endpoint URL |
+| `registration_url` | RFC 7591 registration endpoint (for `client_origin=dcr`) |
+| `client_id` | OAuth client ID |
+| `client_secret` | OAuth client secret |
+| `default_scopes` | Array of default scopes |
+| `client_origin` | `dcr` or `manual` |
+| `token_endpoint_auth_method` | `auto`, `client_secret_basic`, or `client_secret_post` |
+
+When `auth_method=oauth` and `credential_type=shared`, the response includes `oauth_connect_url` — open it in a browser to complete consent.
+
+```json title="Shared OAuth tool"
+{
+  "name": "dome_tools_add",
+  "arguments": {
+    "name": "notion",
+    "url": "https://mcp.notion.com/mcp",
+    "auth_method": "oauth",
+    "credential_type": "shared",
+    "oauth": {
+      "authorize_url": "https://api.notion.com/v1/oauth/authorize",
+      "token_url": "https://api.notion.com/v1/oauth/token",
+      "client_id": "...",
+      "client_secret": "...",
+      "client_origin": "manual",
+      "default_scopes": ["read_content", "update_content"]
+    }
+  }
+}
+```
+
+### dome_tools_update
+
+Update an existing MCP server connection. Only provided fields are changed.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | tool name to update |
+| `url` | string | No | New URL |
+| `protocol` | string | No | New protocol |
+| `headers` | array | No | Replace the full outbound header list. Omit to keep current. |
+| `authorization` | string | No | Rotate an `api-key`+`shared` tool's token |
+| `secret_values` | object | No | Advanced: replace per-tool credential bundle. Empty `{}` wipes it. |
+| `auth_method` | string | No | New auth method |
+| `credential_type` | string | No | New credential scope |
+| `oauth` | object | No | OAuth client config patch. Empty `client_secret` keeps existing. |
+| `field_classifications` | object | No | Add or update field classifications |
+| `remove_field_classifications` | array | No | Remove field classifications by name |
+| `write_tools` | array | No | Replace write-tools list |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+Switching `auth_method` between `api-key` and `oauth` clears the previously stored credential bundle.
+
+### dome_tools_remove
+
+Remove an MCP server connection from the active workspace. Marked destructive.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | tool name to remove |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Callout type="warning">
+  Removing a tool disconnects all agents currently routing through it. Update or re-route agents first.
+</Callout>
+
+## OAuth
+
+### dome_tools_oauth_connect
+
+Begin the shared-OAuth admin consent flow for a tool. Returns a one-shot URL the operator opens in a browser to consent at the upstream's authorization server. Only valid for `auth_method=oauth`, `credential_type=shared`. Per-user OAuth tools trigger consent automatically on each end user's first call.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | tool name |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+The response includes `oauth_connect_url` and `oauth_connect_expires_at`. Open the URL within ~10 minutes.
+
+### dome_tools_oauth_disconnect
+
+Disconnect (revoke) shared OAuth credentials. The OAuth client configuration is preserved, so re-running connect reuses the same client. Idempotent. Marked destructive.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | tool name |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+## Catalog
+
+### dome_tools_for_connection
+
+List the operations Dome has discovered on one MCP server connection. This reads the stored catalog and does not apply gateway membership or agent rules.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | tool name |
+| `seen_since` | string | No | Include operations seen within this duration, such as `30d` or `24h`. Pass `0` for all recorded operations |
+| `with_schema` | boolean | No | Include each operation's input schema. Defaults to `true` |
+
+<Callout icon="key">Requires `gateways.view`.</Callout>
+
+```json title="List discovered operations"
+{
+  "name": "dome_tools_for_connection",
+  "arguments": {
+    "name": "notion",
+    "with_schema": false
+  }
+}
+```
+
+## Lifecycle
+
+Transition individual MCP tools (the items inside a connection's catalog) through `active` → `deprecated` → `blocked`. Status persists across re-observation — once set, only an explicit restore returns the tool to `active`.
+
+### dome_tools_block
+
+Hide an MCP tool from agents. The gateway filters it out of `tools/list` and denies any `tools/call` against it; blocked-call attempts emit a `tool.blocked_call_denied` audit event. A block takes precedence over ordinary connection-level access.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `connection` | string | Yes | MCP connection name |
+| `tool` | string | Yes | tool name as observed in the catalog (e.g. `delete_page`) |
+| `message` | string | No | Operator note shown in dashboards |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+```json title="Block a dangerous tool"
+{
+  "name": "dome_tools_block",
+  "arguments": {
+    "connection": "notion",
+    "tool": "delete_page",
+    "message": "dangerous mass-delete; use archive_page"
+  }
+}
+```
+
+### dome_tools_deprecate
+
+Mark a tool as deprecated. The tool stays callable and visible to agents — the dashboard surfaces a warning chip and the status flows through the catalog. Use when an upstream supersedes a tool and you want to soft-signal callers.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `connection` | string | Yes | MCP connection name |
+| `tool` | string | Yes | tool name as observed in the catalog |
+| `message` | string | No | Operator note (e.g. `"use create_page_v2"`) |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+### dome_tools_restore
+
+Restore a tool to `active`, clearing any prior block or deprecation.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `connection` | string | Yes | MCP connection name |
+| `tool` | string | Yes | tool name as observed in the catalog |
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+## Next steps
+
+Attach backends under Connect. Named gateways and grants are a separate tool group:
+
+- [Tools](/connect/tools)
+- [Models](/connect/models)
+- [Gateways](/reference/mcp/gateway)

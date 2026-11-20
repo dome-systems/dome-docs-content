@@ -1,0 +1,121 @@
+---
+title: dome rules
+description: Deploy, validate, simulate, and rollback authorization rules
+---
+
+`dome rules` manages the Cedar authorization rules the gateway evaluates on every tool and model call. Validate and simulate a bundle before deploying it, then roll back to an earlier bundle if it decides something you did not intend. Refer to [Rules](/govern/rules) for the policy model.
+
+| Command | |
+|---------|---|
+| [Apply rules](#apply-rules) | `dome rules apply [files...]` |
+| [List rules](#list-rules) | `dome rules list` |
+| [Show rules](#show-rules) | `dome rules show` |
+| [Validate rules](#validate-rules) | `dome rules validate [files...]` |
+| [Rollback rules](#rollback-rules) | `dome rules rollback <bundle-id>` |
+| [Generate rules](#generate-rules) | `dome rules generate` |
+| [Simulate rules](#simulate-rules) | `dome rules simulate` |
+
+## Apply rules
+
+```bash
+dome rules apply [files...]
+```
+
+Deploy a rule bundle from one or more Cedar files.
+
+```bash
+dome rules apply rules.cedar [flags]
+```
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--agent` | string | agent name or ID — deploy rules scoped to this agent |
+| `--name` | string | Friendly name for the rule bundle |
+
+After a successful deploy, `apply` prints advisory `warning:` lines to
+stderr for any `Dome::MCPTool` reference that does not match a tool in
+the target workspace's persisted MCP tool catalog (typo, rename, or a
+tool not yet observed). Warnings never block the deploy.
+
+## List rules
+
+```bash
+dome rules list
+```
+
+List rule bundle history.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--agent` | string | agent name or ID — list rules scoped to this agent |
+| `--limit` | int | Maximum results (default: 20) |
+
+## Show rules
+
+```bash
+dome rules show
+```
+
+Show effective rules across the full scope hierarchy.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--agent` | string | agent name or ID — show rules scoped to this agent |
+
+## Validate rules
+
+```bash
+dome rules validate [files...]
+```
+
+Validate Cedar rule files without deploying. Returns errors and prints catalog warnings (unknown tools or connections) to stderr. Pass `--agent` to run catalog checks against an agent's scope — without it, only syntax and semantic validation runs.
+
+```bash
+dome rules validate rules.cedar [flags]
+```
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--agent` | string | agent name or ID — validate rules against this agent scope |
+
+## Rollback rules
+
+```bash
+dome rules rollback <bundle-id>
+```
+
+Rollback to a previous rule bundle. The bundle UUID (from `dome rules list`) encodes the scope — no extra flags needed.
+
+## Generate rules
+
+```bash
+dome rules generate
+```
+
+Generate starter Cedar authorization rules.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--from-tools` | bool | Generate rules based on registered tools |
+| `--output` | string | Write rules to file (default: stdout) |
+
+## Simulate rules
+
+```bash
+dome rules simulate
+```
+
+Simulate an authorization decision against active rules.
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--agent` | string | Yes | agent ID or name |
+| `--action` | string | Yes | Action to evaluate (e.g., `mcp:call`) |
+| `--resource` | string | Yes | Resource identifier |
+| `--resource-type` | string | No | `mcp_tool`, `llm_model`, or `resource` (default: `mcp_tool`) |
+| `--eval-context` | key=value | No | Evaluation context key-value pairs (repeatable), surfaced as `context.<key>` |
+| `--eval-arguments` | string | No | Per-call arguments as a JSON object, surfaced as `resource.arguments.<key>` |
+| `--actas-sub` | string | No | Act-as subject identifier |
+| `--actas-email` | string | No | Act-as email |
+| `--actas-roles` | string | No | Act-as roles (comma-separated) |
+| `--actas-groups` | string | No | Act-as groups (comma-separated) |

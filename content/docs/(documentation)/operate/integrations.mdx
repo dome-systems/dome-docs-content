@@ -1,0 +1,99 @@
+---
+title: Integrations
+sidebarTitle: Integrate systems
+description: Connect supported audit destinations and configure organization single sign-on
+---
+
+Connect supported audit destinations and configure organization single sign-on.
+Keep provider credentials in Dome's secret store instead of agent code or shell history.
+
+## Supported integrations
+
+The workspace integration catalog currently supports four provider-backed destinations:
+
+| Integration | Use it for | Delivery |
+| --- | --- | --- |
+| Datadog | Export audit records and stream new audit evidence | Batch export and continuous streaming |
+| Grafana Loki | Stream new audit evidence to Grafana Cloud Logs or Loki | Continuous streaming |
+| Amazon S3 | Export retained audit records to object storage | Batch export |
+| Google Cloud Storage | Export retained audit records to object storage | Batch export |
+
+The catalog can show entries that are unavailable in your deployment. Use this list as the implementation-backed support matrix.
+
+## Configure an integration
+
+1. Open **Operate → Integrations** in the dashboard.
+2. Select a provider card.
+3. Enter the provider configuration and credential.
+4. Select **Connect**.
+
+Dome stores the configuration in its secret store. The dashboard does not return saved credential values.
+
+Use [Export data](/manage/export) to create batch exports. Enable or manage continuous Datadog and Grafana Loki streams from the connected integration's Streaming tab.
+
+## Monitor integration health
+
+Dome checks connected integrations in the background and shows the most recently observed result in the catalog and on the integration page. Use it to repair credentials or connectivity before an export or stream fails.
+
+| Status | Meaning | Next step |
+| --- | --- | --- |
+| **Connected** | Dome reached the destination with the configured credentials. | Continue monitoring normal delivery. |
+| **Invalid credentials** | The destination rejected the configured credentials. | Update the credential and reconnect the integration. |
+| **Unreachable** | Dome could not reach the destination. | Check the destination URL, network policy, and service availability. |
+
+Run `dome integrations list` to inspect the same status from the CLI.
+
+### Permissions and limits
+
+| Permission | Grants |
+| --- | --- |
+| `integrations.view` | View the catalog and connected instances |
+| `integrations.manage` | Connect, edit, and disconnect workspace integrations |
+
+Your plan limits integration instances per workspace. Reaching that limit prevents new connections but preserves access to connected instances.
+
+## Identity providers
+
+Enterprise SSO connects the identity provider your organization already uses to the Dome Dashboard and CLI. Configure a guided connection for common providers or bring your own SAML or OIDC configuration.
+
+| Capability | Support |
+| --- | --- |
+| Guided provider setup | Common identity providers, including Okta, Microsoft Entra ID, Google, ADP, Auth0, CAS, ClassLink, and Cloudflare |
+| Custom SAML | Any compatible SAML 2.0 identity provider |
+| Custom OIDC | Any compatible OpenID Connect identity provider |
+
+Use the provider picker to search the available guided configurations. Select **Custom SAML** or **Custom OIDC** when your provider is not listed.
+
+<Callout type="info">
+Single sign-on is organization-scoped: one configured connection applies to every tenant and workspace in that organization. Platform API keys remain available for CI and other non-interactive automation.
+</Callout>
+
+### Configure single sign-on
+
+Configure the connection through **Settings → Single Sign-On** in the dashboard.
+
+- Requires organization `config.manage`.
+- Requires an organization plan with enterprise SSO enabled.
+- Opens a guided administrator setup flow for the corporate connection.
+- Requires a verified organization domain before you can require SSO for that domain.
+- Requires an active SSO connection before you can enforce the requirement.
+
+Disabling required SSO remains available if the plan or provider changes. This keeps an organization from being locked behind an unavailable connection.
+
+### Keep identity paths separate
+
+| Path | Purpose |
+| --- | --- |
+| Enterprise SSO | Sign platform users into the Dome Dashboard and CLI |
+| Delegated Act-As | Carry an end user beside an agent credential |
+| Interactive OAuth | Let a human MCP client use one designated agent through a gateway |
+
+Agent identities and Act-As verification are separate from platform SSO. Configure OIDC or HMAC verification under [Callers](/connect/callers).
+
+## Related integrations
+
+Agent-facing integrations use their own connection surfaces:
+
+- [Models](/connect/models) for LLM providers
+- [Tools](/connect/tools) for MCP servers and managed REST adapters
+- [All integrations](/concepts/integrations) for the complete documentation index

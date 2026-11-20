@@ -1,0 +1,69 @@
+---
+title: Rules
+description: Why Dome authorizes agent tool and model calls with scoped Cedar rule bundles
+---
+
+import { rule } from '@/snippets/glossary';
+
+<p>{rule}</p>
+
+## High-level overview
+
+Dome stores rules in **bundles** at organization, tenant, workspace, and agent scope. Before forwarding a request, Dome combines every active bundle that covers the authenticated agent and evaluates the request against that set.
+
+Dome allows the request only when at least one `permit` matches and no `forbid` matches, regardless of which scope each rule came from. Dome also denies any request it cannot evaluate because a rule errors or its rule data is missing or stale.
+
+Applying a rule and hitting it at runtime looks like this:
+
+1. An operator applies a workspace bundle that permits `mcp:call` on `github/list_issues` for a named agent.
+2. Minutes later that agent calls the tool through its gateway.
+3. Dome loads the agent's effective rules, finds a matching `permit` and no matching `forbid`, and forwards the call.
+4. A later org-scoped `forbid` on the same tool would deny the call even if the workspace `permit` still exists.
+
+### What a Rule states
+
+A rule states an effect (`permit` or `forbid`) and the requests that effect applies to. Inside the parentheses it names a principal, an action, and a resource. Optional `when` / `unless` conditions narrow the match further.
+
+```cedar title="starter.cedar"
+permit(
+  principal,
+  action == Dome::Action::"mcp:discover",
+  resource
+);
+```
+
+That rule lets every agent in scope list available tools. It does not let them call a tool. Constraint forms, actions, and attributes are on the [Rules](/reference/controls/rules) reference.
+
+### Bundles, not lone Rules
+
+Dome never stores or deploys a single rule on its own. You organize rules into one or more `.cedar` files and apply them together as a **rule bundle** at one scope. Each scope holds one active user-authored bundle. Applying a new bundle replaces the active one. An apply must include every file that should remain active. Earlier versions stay in history so you can roll back.
+
+Dome also writes its own **generated bundles** alongside yours at the same scope. Agent allowed resources, Act-As settings, blocked tools, and other managed configuration produce them. Change those rules through the feature that created them, not by applying or rolling back their bundle directly.
+
+### Where Rules apply
+
+A rule's constraints decide which requests it matches. The scope of the bundle holding it decides which agents it can affect at all.
+
+| Scope | agents affected |
+|-------|-----------------|
+| Organization | agents in every tenant in the organization |
+| Tenant | agents in every workspace in the tenant |
+| Workspace | Every agent in the workspace |
+| agent | One agent |
+
+Scope decides which rules take part in a decision, not which rule wins. Dome evaluates every covering bundle as one set. A narrower scope carries no extra weight. A `permit` from any scope can allow a request. A `forbid` from any scope denies it. An agent-scoped `permit` cannot reopen access that an organization-scoped `forbid` closes.
+
+### Effective Rules
+
+The **effective rules** for an agent are the merged set of every active bundle that covers that agent, including generated bundles. The assembled set includes flat Cedar files for the evaluator, a content hash for change detection, and the list of contributing bundles.
+
+The gateway caches effective rules and polls for content-hash changes (default sync interval: 10 seconds). Rule changes propagate without restarting the gateway. There is a brief delay between apply and enforcement. Assembly steps, freshness windows, and fail-closed behavior when rules are missing or stale are on the [Authorization Model](/concepts/architecture/authorization-model#effective-policy) concept.
+
+## Next steps
+
+With that rules authorization model in mind, continue with:
+
+- [Authorize Access](/govern/rules)
+- [Authorization Model](/concepts/architecture/authorization-model) concept
+- [Rules](/reference/controls/rules) reference
+- [Gateways](/concepts/gateways) concept — reachability before rules run

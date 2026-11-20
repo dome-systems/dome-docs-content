@@ -1,0 +1,285 @@
+---
+title: Guards
+description: Inspect, redact, and constrain content on tool and model connections
+---
+
+import { guard } from '@/snippets/glossary';
+
+<p>{guard}</p>
+
+Refer to [Guards](/govern/guards) for filters, validators, and assignment. Editing a filter or validator deploys a new active version; assigned connections pick it up on the next gateway sync. All tools require workspace context.
+
+## Filters
+
+### dome_guards_list_filters
+
+List the workspace's filters, each with its active version and config.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| — | — | — | No parameters |
+
+### dome_guards_get_filter
+
+Fetch one filter's active version and config.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `filter` | string | Yes | filter name or UUID |
+
+### dome_guards_list_filter_versions
+
+List a filter's version history, newest first. Rollback-produced versions cite their source version id.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `filter` | string | Yes | filter name or UUID |
+
+### dome_guards_create_filter
+
+Create a filter — its first active version. Supply the config via the convenience params (text-only) or `config_json` (any kind).
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | filter name (workspace-scoped) |
+| `description` | string | No | One-line description |
+| `redact_substrings` | array of string | No | Substrings to redact in matched responses (text) |
+| `block_substrings` | array of string | No | Substrings that block the response on a match (text) |
+| `redact_ssn` | bool | No | Redact US SSN patterns (text) |
+| `block_ssn` | bool | No | Block the response on an SSN match (text) |
+| `config_json` | string | For JSON filters, or full-fidelity text | Protojson `dome.guards.v1.FilterConfig`. Overrides the convenience params. |
+
+The convenience params build at most two components — a `redact` component and a `block` component, redact ordered first — and only produce text filters. Pass `config_json` to author a JSON filter or a multi-component text chain.
+
+#### JSON Filter config
+
+```json
+{
+  "json": {
+    "components": [
+      {
+        "field_actions": [
+          { "matcher": { "key": "ssn" },   "action": "FILTER_ACTION_OMIT" },
+          { "matcher": { "key": "email" }, "action": "FILTER_ACTION_REDACT" },
+          { "matcher": { "key": "card" },  "action": "FILTER_ACTION_BLOCK" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+`BLOCK` withholds the whole message. `OMIT` removes the key and value. `REDACT` rewrites the value with a redaction sentinel. When multiple actions target the same key: `BLOCK` > `OMIT` > `REDACT`.
+
+### dome_guards_update_filter
+
+Edit metadata in place (`new_name`, `description`), or deploy a new active version by passing any config param. History is preserved.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `filter` | string | Yes | filter name or UUID |
+| `new_name` | string | No | New name for the logical filter |
+| `description` | string | No | New description |
+| `redact_substrings` / `block_substrings` / `redact_ssn` / `block_ssn` / `config_json` | — | No | Any config param deploys a new active version |
+
+Pass at least one of `new_name`, `description`, or a config param.
+
+### dome_guards_rollback_filter
+
+Roll a filter back to an earlier version. The target version's config is copied forward into a new active version.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `filter` | string | Yes | filter name or UUID |
+| `to_version` | number | Yes | Version number to roll back to |
+
+### dome_guards_delete_filter
+
+Hard-delete a filter and its connection assignments.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `filter` | string | Yes | filter name or UUID |
+
+## Filter assignment
+
+### dome_models_guards_filters_list
+
+List the text filters assigned to a model connection, in chain order, grouped by direction.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `connection` | string | Yes | model connection name |
+
+### dome_models_guards_filters_set
+
+Replace the entire ordered filter chain for one direction on a model connection. Only `text`-kind filters may be assigned.
+
+`response` filters completions the agent receives. `request` filters the outbound prompt before dispatch to the model provider — a match can redact or block the call.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `connection` | string | Yes | model connection name |
+| `direction` | string | Yes | `response` or `request` |
+| `filters` | array of string | Yes | Ordered filter names or UUIDs; empty clears the chain |
+
+### dome_tools_guards_filters_list
+
+List the JSON filters assigned to an MCP server (tool) connection, in chain order, grouped by direction.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `connection` | string | Yes | MCP server connection name |
+
+### dome_tools_guards_filters_set
+
+Replace the entire ordered filter chain for one direction on a tool connection. Only `json`-kind filters may be assigned.
+
+`request` filters run over tool arguments **before** the call reaches the upstream MCP server — matched fields are redacted or omitted, or the whole call is blocked. `response` filters run over the tool result before the agent sees it.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `connection` | string | Yes | MCP server connection name |
+| `direction` | string | Yes | `response` or `request` |
+| `filters` | array of string | Yes | Ordered filter names or UUIDs; empty clears the chain |
+
+## Validators
+
+### dome_guards_list_validators
+
+List the workspace's validators, each with its active version and kind.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| — | — | — | No parameters |
+
+### dome_guards_get_validator
+
+Fetch one validator's active version and config.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `validator` | string | Yes | validator name or UUID |
+
+### dome_guards_list_validator_versions
+
+List a validator's version history, newest first.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `validator` | string | Yes | validator name or UUID |
+
+### dome_guards_create_validator
+
+Create a validator — its first active version.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | validator name (workspace-scoped) |
+| `config_json` | string | Yes | Protojson `dome.guards.v1.ValidatorConfig` |
+| `description` | string | No | One-line description |
+
+Kind (`tool_request` or `tool_response`) is derived from the config arm and is immutable.
+
+#### Example config
+
+```json
+{
+  "toolRequest": {
+    "json": {
+      "requiredPaths": ["user_id"],
+      "maximumSize": 4096
+    }
+  }
+}
+```
+
+### dome_guards_update_validator
+
+Edit metadata in place, or pass `config_json` to deploy a new active version.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `validator` | string | Yes | validator name or UUID |
+| `new_name` | string | No | New name |
+| `description` | string | No | New description |
+| `config_json` | string | No | Deploy a new active version |
+
+Pass at least one of `new_name`, `description`, or `config_json`.
+
+### dome_guards_rollback_validator
+
+Roll a validator back to an earlier version.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `validator` | string | Yes | validator name or UUID |
+| `to_version` | number | Yes | Version number to roll back to |
+
+### dome_guards_delete_validator
+
+Hard-delete a validator and its connection assignments.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `validator` | string | Yes | validator name or UUID |
+
+## Validator assignment
+
+### dome_tools_guards_validators_list
+
+List validators assigned to a tool connection, grouped by direction.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `connection` | string | Yes | MCP server connection name |
+
+### dome_tools_guards_validators_add
+
+Attach validators to one direction on a tool connection. Response validators are MCP-only.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `connection` | string | Yes | MCP server connection name |
+| `direction` | string | Yes | `request` or `response` |
+| `validators` | array of string | Yes | validator names or UUIDs |
+
+### dome_tools_guards_validators_remove
+
+Detach validators from one direction on a tool connection.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `connection` | string | Yes | MCP server connection name |
+| `direction` | string | Yes | `request` or `response` |
+| `validators` | array of string | Yes | validator names or UUIDs |
+
+## Agent and gateway assignment
+
+Agent and gateway bindings run after connection bindings. Gateway bindings run before agent bindings. These tools replace all bindings for the selected direction; pass an empty `guards` list to clear that direction.
+
+### dome_agents_guards_list / dome_gateways_guards_list
+
+List guards bound to an agent or gateway, grouped by direction and execution order.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `agent` or `gateway` | string | Yes | Agent or gateway name or UUID |
+
+### dome_agents_guards_set / dome_gateways_guards_set
+
+Replace the guards bound to one direction of an agent or gateway.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `agent` or `gateway` | string | Yes | Agent or gateway name or UUID |
+| `direction` | string | Yes | `request` or `response` |
+| `guards` | array of string | Yes | Filter or validator names or UUIDs; an empty list clears the direction |
+
+## Next steps
+
+Create and assign filters and validators from Govern. Catalogs cover windows, path syntax, and validator conditions:
+
+- [Configure Guards](/govern/guards)
+- [Guards](/concepts/controls/guards) concept
+- [Guards](/reference/controls/guards) reference

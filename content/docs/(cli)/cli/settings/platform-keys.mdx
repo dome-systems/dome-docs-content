@@ -1,0 +1,69 @@
+---
+title: dome platform-keys
+description: Manage platform API keys for users and CI
+---
+
+`dome platform-keys` manages the API keys that give users and CI pipelines programmatic access, and the permissions each key carries. For the keys an agent authenticates with instead, use [`dome agents create-key`](/cli/build/agents#create-key).
+
+| Command | |
+|---------|---|
+| [List keys](#list-keys) | `dome platform-keys list` |
+| [Create key](#create-key) | `dome platform-keys create` |
+| [Revoke key](#revoke-key) | `dome platform-keys revoke [name-or-id]` |
+| [Permissions](#permissions) | `dome platform-keys permissions` |
+
+## List keys
+
+```bash
+dome platform-keys list
+```
+
+List platform API keys for the current workspace.
+
+## Create key
+
+```bash
+dome platform-keys create
+```
+
+Create a new platform API key.
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--name` | string | Yes | Key name |
+| `--permissions` | string[] | Conditional | Permissions to grant. Required in non-interactive mode; in an interactive terminal a picker is shown if omitted. |
+| `--expires-at` | string | No | Expiration time (RFC3339) |
+
+The interactive picker fetches the grantable permissions for your role at the current scope. Use [`dome platform-keys permissions`](#permissions) to discover the same list non-interactively.
+
+## Revoke key
+
+```bash
+dome platform-keys revoke [name-or-id]
+```
+
+Revoke a platform API key by name or ID.
+
+## Permissions
+
+```bash
+dome platform-keys permissions
+```
+
+List the permissions you can grant to a new platform API key at the current context's scope. The output is exactly what `dome platform-keys create --permissions` will accept for your role; the server re-validates on submit.
+
+Use this for CI scripts that need to know valid `--permissions` values, or to confirm what `create` would offer in its interactive picker.
+
+The scope follows your active context: a workspace context returns workspace permissions, a tenant context adds tenant permissions, and an org context adds org permissions on top.
+
+```bash
+dome platform-keys permissions
+```
+
+```bash
+dome platform-keys permissions --format json
+```
+
+<Callout type="info">
+  Workspace admins do not see tenant-only permissions such as `agents.delete` or `agentkeys.manage` in this list. Switch to a tenant or org context (or have a tenant admin run the command) to grant them.
+</Callout>

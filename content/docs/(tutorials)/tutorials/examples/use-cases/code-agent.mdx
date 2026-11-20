@@ -1,0 +1,132 @@
+---
+hidden: true
+title: Code Execution Agent
+description: "Governing an agent that generates and executes code"
+---
+
+A code execution agent generates code from natural language and runs it in an isolated execution environment. The risk profile is unlike a traditional application: the agent decides what to write and execute, the "threat actor" and "authorized user" can be the same process, and static analysis doesn't apply to code that doesn't exist yet.
+
+Governance treats every execution as a first-class, authorizable event. The gateway restricts which tools the agent can call, Cedar rules bound the surfaces it can reach, response filtering strips sensitive data before it flows back to the model, and every call lands in an immutable audit trail.
+
+## Threat Model
+
+| Threat | Description |
+|--------|-------------|
+| **Arbitrary code execution** | The agent generates and runs malicious or unintended code that escapes the isolation boundary |
+| **Data exfiltration via output** | Code output contains file paths, credentials, environment variables, or internal network addresses |
+| **Resource exhaustion** | Generated code consumes unbounded CPU, memory, or disk, affecting other workloads |
+| **Unauthorized system access** | The agent accesses filesystem, network, or database resources outside its intended scope |
+
+## Governance Approach
+
+| Threat | Dome Capability | How It Helps |
+|--------|----------------|--------------|
+| Arbitrary code execution | [Register](/build/agents/external#register-agent) with allowed tools, [Authorize](/govern/rules) | Allow only the code-execution tool, so no other tool is reachable |
+| Data exfiltration via output | [Guards](/govern/guards) | Classify output fields containing paths and credentials, redact before returning to the agent |
+| Resource exhaustion | [Register](/build/agents/external#register-agent) with allowed tools, [Pass identity for delegated agents](/develop#pass-identity-for-delegated-agents) | Enforce tool-level authorization so the agent cannot invoke resource-intensive tools |
+| Unauthorized system access | [Authorize](/govern/rules), [Stream Live Events](/operate/observe) | Forbid access to production and database tools, audit every tool call for anomaly detection |
+
+## Implementation
+
+<Steps>
+  <Step title="Register the agent">
+    Register the code execution agent and label its trust tier. The `tier` metadata is what the rules below test:
+
+    ```bash
+    dome agents register \
+      --name "code-exec-agent" \
+      --metadata tier=isolated
+    ```
+
+    Once the code-execution backend exists, allow it on the agent with `dome agents update code-exec-agent --tool code-execution/run`.
+  </Step>
+  <Step title="Configure the code-execution backend">
+    Add the isolated code-execution environment as a backend with field classifications on sensitive output fields:
+
+    ```bash
+    dome tools add \
+      --name "code-execution" \
+      --url "https://executor.internal:8443" \
+      --protocol streamable-http \
+      --field-classification output_paths=SENSITIVE,env_vars=SENSITIVE,stderr=PII \
+      --gateway Default
+    ```
+
+    `--gateway` makes the connection reachable through a [Gateway](/build/gateways); the agent also needs a [grant](/build/gateways#manage-agent-access) to that gateway.
+  </Step>
+  <Step title="Define Cedar authorization rules">
+    Write rules that permit the agent to call only code-execution tools and forbid access to production infrastructure:
+
+    ```bash
+    dome rules validate code-exec-rules.cedar
+    dome rules apply code-exec-rules.cedar --name "code-exec-policy"
+    ```
+
+    See the [Policy Example](#policy-example) below for the Cedar rule content.
+  </Step>
+  <Step title="Simulate before deploying">
+    Test the rules against historical events to verify they do not break existing workflows:
+
+    ```bash
+    dome rules simulate code-exec-rules.cedar
+    ```
+
+    Review the DecisionDiffs to confirm that only the intended changes occur.
+  </Step>
+  <Step title="Enable audit streaming">
+    Stream audit events for real-time monitoring of code execution activity:
+
+    ```bash
+    dome audit stream --agent code-exec-agent
+    ```
+
+    Every tool call, authorization decision, and field redaction action appears in the audit stream.
+  </Step>
+</Steps>
+
+## Policy Example
+
+```cedar title="code-exec-rules.cedar"
+// Permit the code execution agent to call the code-execution tool
+permit(
+  principal == Dome::Agent::"code-exec-agent",
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"code-execution/run"
+);
+
+// Permit the agent to discover available tools
+permit(
+  principal == Dome::Agent::"code-exec-agent",
+  action == Dome::Action::"mcp:discover",
+  resource
+);
+
+// Keep every isolated-tier agent off production deploys, not just this one.
+forbid(
+  principal,
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"deployment/production-deploy"
+) when {
+  principal has metadata &&
+  principal.metadata has tier &&
+  principal.metadata.tier == "isolated"
+};
+
+// Prevent the code execution agent from writing to databases.
+forbid(
+  principal == Dome::Agent::"code-exec-agent",
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"database/write"
+);
+```
+
+<Callout type="info">
+  Cedar evaluates all rules against every request. If any `forbid` matches, the request is denied regardless of `permit` rules. The default decision when no rule matches is deny.
+</Callout>
+
+## Next steps
+
+- [Authorize Access](/govern/rules) to write and deploy Cedar
+- [Tools](/connect/tools) to attach code-execution environments and catalogs
+- [Multi-Adapter Tools Agent](/tutorials/examples/use-cases/tools-agent) for multiple tool adapters
+- [Develop](/develop) to authenticate and route runtime traffic

@@ -1,0 +1,366 @@
+---
+title: Simulate rules
+sidebarTitle: Simulate rules
+description: Test rules against real and synthetic scenarios before they reach production
+---
+
+import { simulation } from '@/snippets/glossary';
+
+<p>{simulation}</p>
+
+## Overview
+
+Simulation takes candidate rules and replays them against recorded authorization decisions from your audit log. For each historical event, it compares the original decision with the decision the candidate rules would produce. The output is a set of DecisionDiffs: entries where the allow/deny outcome differs between the current rules and the candidate rules.
+
+Use simulation to answer questions like:
+
+- Would this new `forbid` have blocked any requests that were previously allowed?
+- Does this `permit` open access to anything that was previously denied?
+
+You can also probe a single synthetic request against the active effective rules without performing the action. That path returns the decision and the rule that determined it. Use it when you want a fast check for one agent, action, and resource before you look at historical diffs.
+
+Simulation sits between writing rules and deploying them. Refer to [Authorize Access](/govern/rules) for deploy and rollback.
+
+The typical workflow is:
+
+1. [Run a simulation](#run-a-simulation) for one agent, action, and resource against the rules in effect.
+2. Optionally [simulate draft rules in the editor](#simulate-draft-rules-in-the-editor) before you apply.
+3. Optionally [simulate with agent Act-As](#simulate-with-agent-act-as) or [simulate with arguments](#simulate-with-arguments).
+4. [Read results](#read-results) for historical DecisionDiffs when you replay candidate rules against audit history.
+
+## Requirements
+
+Before you begin:
+
+- Authenticate to Dome and select a workspace
+- Have an active rule bundle
+- For historical replay, have authorization events available in the audit log
+
+### Permissions
+
+Simulation and DecisionDiff reads require `rules.view`. All workspace roles hold it.
+
+| Default roles | Permission | Grants |
+|---------------|------------|--------|
+| All workspace roles | `rules.view` | Run simulations and read DecisionDiff results |
+
+## Run a simulation
+
+Simulate an authorization decision for one agent, action, and resource against the rules currently in effect.
+
+<Callout icon="key">Requires `rules.view`.</Callout>
+
+Write or refine the Cedar rules you want to test before you deploy them:
+
+```cedar title="candidate-rules.cedar"
+permit(
+  principal == Dome::Agent::"data-pipeline",
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"database-query"
+);
+```
+
+Then run the simulation with the caller, action, and resource you care about:
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome rules simulate \
+      --agent data-pipeline \
+      --action mcp:call \
+      --resource database-query \
+      --resource-type mcp_tool
+    ```
+
+    | Flag | Type | Default | Description |
+    |------|------|---------|-------------|
+    | `--agent` | string | **Required** | agent name or ID to simulate as the caller |
+    | `--action` | string | **Required** | Action to evaluate (for example `mcp:call`) |
+    | `--resource` | string | **Required** | Resource identifier (for example `database-query`) |
+    | `--resource-type` | string | `mcp_tool` | `mcp_tool`, `llm_model`, or `resource` |
+    | `--eval-context` | key=value | — | Context key=value pair (repeatable) |
+    | `--eval-arguments` | JSON object | — | Per-call arguments surfaced as `resource.arguments.<key>` (for example `'{"query":"Atlas"}'`) |
+    | `--actas-sub` | string | — | Act-as subject identifier |
+    | `--actas-email` | string | — | Act-as email |
+    | `--actas-roles` | string | — | Act-as roles (comma-separated) |
+    | `--actas-groups` | string | — | Act-as groups (comma-separated) |
+
+    <Callout icon="terminal">Reference: [`dome rules simulate`](/cli/govern/rules#simulate-rules)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_rules_simulate`
+
+    ```json
+    {
+      "agent_id": "data-pipeline",
+      "action": "mcp:call",
+      "resource": "database-query",
+      "resource_type": "mcp_tool"
+    }
+    ```
+
+    | Param | Type | Default | Description |
+    |-------|------|---------|-------------|
+    | `agent_id` | string | **Required** | agent ID or name (names are resolved to UUIDs by the tool) |
+    | `action` | string | **Required** | Action to evaluate |
+    | `resource` | string | **Required** | Resource identifier |
+    | `resource_type` | string | **Required** | `mcp_tool`, `llm_model`, or `resource` |
+    | `context` | object | — | Additional context key-value pairs |
+    | `actas_sub` | string | — | Act-as subject identifier |
+    | `actas_email` | string | — | Act-as email |
+    | `actas_roles` | string | — | Act-as roles (comma-separated) |
+    | `actas_groups` | string | — | Act-as groups (comma-separated) |
+
+    `dome_rules_simulate` calls `Authorization.Evaluate` synchronously and returns the decision immediately. The separate `dome_rules_simulate_result` tool polls the historical-replay Simulation service by simulation ID.
+
+    <Callout icon="cpu">Reference: [`dome_rules_simulate`](/reference/mcp/rules#rules-simulate)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /v1/authz/evaluate
+    Content-Type: application/json
+
+    {
+      "caller": {
+        "agent_id": "<agent-uuid>"
+      },
+      "action": "mcp:call",
+      "resource": "database-query",
+      "resource_type": "mcp_tool",
+      "workspace_id": "<workspace-uuid>"
+    }
+    ```
+
+    | Field | Type | Default | Description |
+    |-------|------|---------|-------------|
+    | `caller.agent_id` | string | **Required** | agent UUID |
+    | `action` | string | **Required** | Action to evaluate |
+    | `resource` | string | **Required** | Resource identifier |
+    | `resource_type` | string | **Required** | `mcp_tool`, `llm_model`, or `resource` (lowercase string) |
+    | `workspace_id` | string | **Required** (simulation) | When set, the API server fetches the workspace effective rules and evaluates against them (simulation mode). When empty, the pre-loaded global evaluator is used (gateway path). |
+    | `context` | map\<string,string\> | — | Additional context key-value pairs |
+    | `act_as` | ActAs | — | End-user identity (`sub`, `email`, `roles`, `groups`, `claims`) |
+    | `arguments` | bytes | — | JSON object encoded as bytes. Top-level keys become `resource.arguments.<key>` (for example `{"query":"Atlas"}`) |
+
+    <Callout icon="code">Reference: [`Evaluate`](/api/tag/authorization/evaluate)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Simulate Rules"
+    Simulate authorization for agent "data-pipeline" doing mcp:call on mcp_tool "database-query".
+    ```
+  </Tab>
+</Tabs>
+
+## Simulate draft Rules in the editor
+
+In the rules editor, click **Simulate** in the toolbar. The slide-over shows an **Against: Deployed | Draft** toggle (defaults to Draft). On Draft, the editor's current unsaved files ship as the override for the scope being edited. Production traffic is untouched — the override lasts for that `Evaluate` call only.
+
+`Evaluate` accepts an optional `override` that replaces one scope's bundle for the duration of the call. Workspace and agent scopes only.
+
+```json
+{
+  "caller": { "agent_id": "<agent-uuid>" },
+  "action": "mcp:call",
+  "resource": "database-query",
+  "resource_type": "mcp_tool",
+  "workspace_id": "<workspace-uuid>",
+  "override": {
+    "scope_kind": "workspace",
+    "scope_id": "<workspace-uuid>",
+    "files": [
+      { "path": "rules.cedar", "content": "permit(principal, action, resource);" }
+    ]
+  }
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `override.scope_kind` | `workspace` or `agent` |
+| `override.scope_id` | UUID of the scope whose bundle is overridden |
+| `override.files` | Draft Cedar files to evaluate in place of the deployed bundle |
+
+An empty, missing, or unknown-scope `override` is a no-op — the call evaluates the deployed policy.
+
+## Simulate with Agent Act-As
+
+Include Act-As claims when your Cedar rules reference end-user identity and you want to verify behavior for specific profiles.
+
+<Callout icon="key">Requires `rules.view`.</Callout>
+
+The Act-As flags populate the `act_as` record on the principal that Cedar rules can reference. For example, a rule that checks `principal.act_as.roles.contains("admin")` evaluates against the roles you provide.
+
+Simulation accepts these claims as test input. Live requests must pass [Delegated agents](/build/agents/delegated) verification before the same values become available to rules.
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome rules simulate \
+      --agent support-agent \
+      --action mcp:call \
+      --resource customer-records \
+      --resource-type mcp_tool \
+      --actas-sub user-123 \
+      --actas-email admin@example.com \
+      --actas-roles admin,manager \
+      --actas-groups support
+    ```
+
+    | Flag | Cedar value |
+    |------|-------------|
+    | `--actas-sub` | `principal.act_as.sub` |
+    | `--actas-email` | `principal.act_as.email` |
+    | `--actas-roles` | `principal.act_as.roles` |
+    | `--actas-groups` | `principal.act_as.groups` |
+
+    <Callout icon="terminal">Reference: [`dome rules simulate`](/cli/govern/rules#simulate-rules)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_rules_simulate`
+
+    ```json
+    {
+      "agent_id": "support-agent",
+      "action": "mcp:call",
+      "resource": "customer-records",
+      "resource_type": "mcp_tool",
+      "actas_sub": "user-123",
+      "actas_email": "admin@example.com",
+      "actas_roles": "admin,manager",
+      "actas_groups": "support"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_rules_simulate`](/reference/mcp/rules#rules-simulate)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /v1/authz/evaluate
+    Content-Type: application/json
+
+    {
+      "caller": {
+        "agent_id": "<agent-uuid>"
+      },
+      "action": "mcp:call",
+      "resource": "customer-records",
+      "resource_type": "mcp_tool",
+      "workspace_id": "<workspace-uuid>",
+      "act_as": {
+        "sub": "user-123",
+        "email": "admin@example.com",
+        "roles": ["admin", "manager"],
+        "groups": ["support"]
+      }
+    }
+    ```
+
+    | Field | Type | Default | Description |
+    |-------|------|---------|-------------|
+    | `act_as.sub` | string | — | Subject identifier |
+    | `act_as.email` | string | — | Email claim |
+    | `act_as.roles` | string[] | — | Roles claim |
+    | `act_as.groups` | string[] | — | Groups claim |
+    | `act_as.claims` | map\<string,string\> | — | Additional custom claims |
+
+    <Callout icon="code">Reference: [`Evaluate`](/api/tag/authorization/evaluate)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Simulate with Act-As"
+    Simulate authorization for agent "support-agent" doing mcp:call on mcp_tool "customer-records" acting as user "user-123" with email "admin@example.com" and roles "admin,manager".
+    ```
+  </Tab>
+</Tabs>
+
+## Simulate with arguments
+
+Pass per-call arguments when your rules reference `resource.arguments.<key>` and you want to verify behavior for a specific payload. Top-level keys of the JSON object become Cedar keys on the resource. Refer to [conditions on attributes or arguments](/govern/rules#condition-on-attributes-or-arguments) for the full shape.
+
+<Callout icon="key">Requires `rules.view`.</Callout>
+
+A rule like `resource.arguments.query like "*Atlas*"` matches the example below. Keys whose JSON values are unrepresentable in Cedar (fractional floats, `null`, mixed-type lists) are dropped silently. Rules that reference them will not match.
+
+<Tabs items={["CLI","Dashboard","API"]}>
+  <Tab value="CLI">
+    ```bash
+    dome rules simulate \
+      --agent data-pipeline \
+      --action mcp:call \
+      --resource vector-search \
+      --resource-type mcp_tool \
+      --eval-arguments '{"query":"Atlas","limit":50}'
+    ```
+
+    | Flag | Type | Default | Description |
+    |------|------|---------|-------------|
+    | `--eval-arguments` | JSON object | — | Per-call arguments as a JSON object surfaced as `resource.arguments.<key>` |
+
+    <Callout icon="terminal">Reference: [`dome rules simulate`](/cli/govern/rules#simulate-rules)</Callout>
+  </Tab>
+  <Tab value="Dashboard">
+    In the Simulate panel, open the **Arguments** section and add one key-value row per argument. Each row becomes `resource.arguments.<key>` for the evaluation.
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /v1/authz/evaluate
+    Content-Type: application/json
+
+    {
+      "caller": { "agent_id": "<agent-uuid>" },
+      "action": "mcp:call",
+      "resource": "vector-search",
+      "resource_type": "mcp_tool",
+      "workspace_id": "<workspace-uuid>",
+      "arguments": "eyJxdWVyeSI6IkF0bGFzIn0="
+    }
+    ```
+
+    | Field | Type | Default | Description |
+    |-------|------|---------|-------------|
+    | `arguments` | bytes | — | Base64-encoded JSON object. Top-level keys are surfaced as `resource.arguments.<key>`. Non-object payloads are dropped silently. |
+
+    <Callout icon="code">Reference: [`Evaluate`](/api/tag/authorization/evaluate)</Callout>
+  </Tab>
+</Tabs>
+
+## Read results
+
+DecisionDiffs show where allow/deny outcomes would change between the current effective rules and the candidate rules. Each diff entry includes:
+
+- The original decision (allow or deny) under the current rules
+- The new decision under the candidate rules
+- The specific event that produced the diff (agent, action, resource)
+- The rule that matched in each case
+
+```json
+{
+  "status": "completed",
+  "total_events": 142,
+  "decision_diffs": [
+    {
+      "event_id": "evt-...",
+      "current": "allow",
+      "candidate": "deny",
+      "rule_id": "rule-..."
+    }
+  ]
+}
+```
+
+Review diffs carefully before deploying. A simulation that shows no diffs means the candidate rules produce identical outcomes for all historical events. It does not guarantee behavior for requests absent from that history. Add synthetic simulations for important unobserved cases.
+
+Use historical replay to answer:
+
+- Which previously allowed requests would a new `forbid` block?
+- Which previously denied requests would a new `permit` allow?
+- Do the candidate rules preserve all observed outcomes?
+
+<Callout type="info">
+`dome_rules_simulate` evaluates one request synchronously. `dome_rules_simulate_result` retrieves the result of a historical replay by simulation ID. Both tools support AI-assisted rule authoring: an agent writes rules, simulates them, and iterates on results.
+</Callout>
+
+## Next steps
+
+- [Write and apply Rules](/govern/rules#write-rules) through the normal rule lifecycle
+- [Delegated agents](/build/agents/delegated) so live Act-As claims match what you simulated
+- [Authorization model](/concepts/architecture/authorization-model) concept for entity attributes a simulation may reference

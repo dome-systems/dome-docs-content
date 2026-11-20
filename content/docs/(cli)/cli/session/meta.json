@@ -1,0 +1,7 @@
+{
+  "pages": [
+    "auth",
+    "context",
+    "sessions"
+  ]
+}

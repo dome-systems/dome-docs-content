@@ -1,0 +1,354 @@
+---
+title: Triggers
+sidebarTitle: Triggers
+description: Start managed agents manually, on a schedule, or from signed webhooks
+---
+
+<PreviewBadge />
+
+Use triggers to decide when managed agents run. A trigger is a workspace resource that can start one or more managed agent runs manually, on a schedule, or from a signed webhook.
+
+## Requirements
+
+Before you begin:
+
+- Ask an organization owner or administrator to [enable public preview](/manage/public-preview) for the organization.
+- Create a [managed agent](/build/agents/managed) and run it manually before automating it.
+- Authenticate the Dome CLI and select a workspace.
+
+Trigger operations require the `managedagents.manage` permission. Firing a trigger also requires `managedagents.invoke`.
+
+## Create schedule
+
+Create a schedule trigger after the managed agent succeeds in a manual run. A schedule belongs to the trigger, not to the agent.
+
+<Callout icon="key">Requires `managedagents.manage`.</Callout>
+
+<Tabs items={["CLI", "MCP", "API", "Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome triggers create \
+      --name nightly-triage \
+      --kind schedule \
+      --cron "0 2 * * *" \
+      --timezone America/Los_Angeles \
+      --input "Triage issues filed since the previous run." \
+      --target nightly-triage \
+      --max-concurrent 1
+    ```
+
+    <Callout icon="terminal">Reference: [`dome triggers create`](/cli/build/triggers#create-trigger)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_triggers_create`
+
+    ```json
+    {
+      "name": "nightly-triage",
+      "kind": "schedule",
+      "cron": "0 2 * * *",
+      "timezone": "America/Los_Angeles",
+      "input": "Triage issues filed since the previous run.",
+      "targets": ["nightly-triage"],
+      "max_concurrent_runs": 1
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_triggers_create`](/reference/mcp/triggers)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    POST /v1/triggers
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "name": "nightly-triage",
+      "kind": "schedule",
+      "config": {
+        "cron": "0 2 * * *",
+        "timezone": "America/Los_Angeles"
+      },
+      "input": "Triage issues filed since the previous run.",
+      "max_concurrent_runs": 1,
+      "targets": [{ "kind": "managed_agent", "id": "{{AGENT_ID}}", "enabled": true }]
+    }
+    ```
+
+    <Callout icon="code">Reference: [`CreateTrigger`](/api/tag/triggers/create-trigger)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Schedule a managed agent"
+    Create a schedule named "nightly-triage" that runs the "nightly-triage" managed agent at 2:00 AM every day in America/Los_Angeles.
+    ```
+  </Tab>
+</Tabs>
+
+The cron expression follows the selected timezone's wall clock, including daylight-saving changes. Omit `--timezone` to use UTC. Schedules have a five-minute minimum interval.
+
+Use `--catch-up once|all|skip` to control occurrences missed while the scheduler cannot queue work. Use `--catch-up-deadline` to set how late a missed occurrence may run. Use `--max-retries` to control retries after infrastructure failures.
+
+`--max-concurrent` limits concurrent runs across every target on the trigger. Runs over that limit remain pending until a slot is available.
+
+Use a [run quota](/govern/quotas#limit-managed-agent-runs) when you also need a fixed daily or monthly limit on how many runs the trigger queues. A run quota refuses a run before it enters the queue; it does not replace `--max-concurrent`.
+
+## Create signed webhook
+
+Create a webhook trigger when another system should start a managed agent run.
+
+<Callout icon="key">Requires `managedagents.manage`.</Callout>
+
+<Tabs items={["CLI", "MCP", "API", "Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome triggers create \
+      --name github-issue-triage \
+      --kind webhook \
+      --target nightly-triage
+    ```
+
+    <Callout icon="terminal">Reference: [`dome triggers create`](/cli/build/triggers#create-trigger)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_triggers_create`
+
+    ```json
+    {
+      "name": "github-issue-triage",
+      "kind": "webhook",
+      "targets": ["nightly-triage"]
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_triggers_create`](/reference/mcp/triggers)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    POST /v1/triggers
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "name": "github-issue-triage",
+      "kind": "webhook",
+      "targets": [{ "kind": "managed_agent", "id": "{{AGENT_ID}}", "enabled": true }]
+    }
+    ```
+
+    <Callout icon="code">Reference: [`CreateTrigger`](/api/tag/triggers/create-trigger)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Create a webhook trigger"
+    Create a signed webhook trigger named "github-issue-triage" that starts the "nightly-triage" managed agent.
+    ```
+  </Tab>
+</Tabs>
+
+The response contains the endpoint URL and signing secret. Store the secret immediately: Dome shows it once and never returns it again. Sign every request with Standard Webhooks v1 using `webhook-id`, `webhook-timestamp`, and `webhook-signature` headers.
+
+Use a fresh `webhook-id` for every distinct message. Reuse that ID only when retrying the same delivery: Dome accepts repeated IDs for 24 hours but starts no additional run.
+
+Webhook request bodies become the first user message for the run. A webhook trigger has unlimited concurrency by default; set `--max-concurrent` when downstream capacity needs a limit.
+
+## Fire a trigger
+
+Start a run for every enabled target. Add `--input` to override the trigger's configured input for this fire.
+
+<Tabs items={["CLI", "MCP", "API", "Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome triggers fire nightly-triage \
+      --input "Triage issues filed since the previous run."
+    ```
+
+    <Callout icon="terminal">Reference: [`dome triggers fire`](/cli/build/triggers#fire-trigger)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_triggers_fire`
+
+    ```json
+    {
+      "trigger_id": "{{TRIGGER_ID}}",
+      "input": "Triage issues filed since the previous run."
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_triggers_fire`](/reference/mcp/triggers)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    POST /v1/triggers/{{TRIGGER_ID}}/fire
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "input": "Triage issues filed since the previous run."
+    }
+    ```
+
+    <Callout icon="code">Reference: [`FireTrigger`](/api/tag/triggers/fire-trigger)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Fire a trigger"
+    Fire the "nightly-triage" trigger with this input: "Triage issues filed since the previous run."
+    ```
+  </Tab>
+</Tabs>
+
+## Pause a trigger
+
+Pause every target on a trigger without deleting its configuration. Use `--enabled` to resume the trigger.
+
+<Tabs items={["CLI", "MCP", "API", "Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome triggers update nightly-triage --disabled
+    ```
+
+    <Callout icon="terminal">Reference: [`dome triggers update`](/cli/build/triggers#update-trigger)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_triggers_update`
+
+    ```json
+    {
+      "trigger_id": "{{TRIGGER_ID}}",
+      "enabled": false
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_triggers_update`](/reference/mcp/triggers)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    PATCH /v1/triggers/{{TRIGGER_ID}}
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "enabled": false
+    }
+    ```
+
+    <Callout icon="code">Reference: [`UpdateTrigger`](/api/tag/triggers/update-trigger)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Pause a trigger"
+    Pause the "nightly-triage" trigger.
+    ```
+  </Tab>
+</Tabs>
+
+## Disable a target
+
+Disable one target when other targets on the same trigger should continue to run. The target stays attached to the trigger.
+
+<Tabs items={["CLI", "MCP", "API", "Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome triggers targets disable nightly-triage nightly-triage
+    ```
+
+    Use `dome triggers targets enable nightly-triage nightly-triage` to enable it again.
+
+    <Callout icon="terminal">Reference: [`dome triggers targets disable`](/cli/build/triggers#disable-target)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_triggers_target_set_enabled`
+
+    ```json
+    {
+      "trigger": "nightly-triage",
+      "target": "nightly-triage",
+      "enabled": false
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_triggers_target_set_enabled`](/reference/mcp/triggers)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    PATCH /v1/triggers/{{TRIGGER_ID}}
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "targets": [
+        { "kind": "managed_agent", "id": "{{AGENT_ID}}", "enabled": false }
+      ]
+    }
+    ```
+
+    The API replaces the target list. Include every target you want to retain.
+
+    <Callout icon="code">Reference: [`UpdateTrigger`](/api/tag/triggers/update-trigger)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Disable a trigger target"
+    Disable the "nightly-triage" managed agent target on the "nightly-triage" trigger.
+    ```
+  </Tab>
+</Tabs>
+
+## Inspect trigger runs
+
+Inspect the runs a trigger started.
+
+<Tabs items={["CLI", "MCP", "API", "Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome triggers runs nightly-triage --limit 50
+    ```
+
+    <Callout icon="terminal">Reference: [`dome triggers runs`](/cli/build/triggers#list-trigger-runs)</Callout>
+  </Tab>
+
+  <Tab value="MCP">
+    Tool: `dome_triggers_runs`
+
+    ```json
+    {
+      "trigger_id": "{{TRIGGER_ID}}",
+      "limit": 50
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_triggers_runs`](/reference/mcp/triggers)</Callout>
+  </Tab>
+
+  <Tab value="API">
+    ```http
+    GET /v1/triggers/{{TRIGGER_ID}}/runs?workspaceId={{WORKSPACE_ID}}&limit=50
+    ```
+
+    <Callout icon="code">Reference: [`ListTriggerRuns`](/api/tag/triggers/list-trigger-runs)</Callout>
+  </Tab>
+
+  <Tab value="Agent">
+    ```text title="Inspect trigger runs"
+    List the 50 most recent runs started by the "nightly-triage" trigger.
+    ```
+  </Tab>
+</Tabs>
+
+A changed schedule, paused trigger, removed target, or suspended agent can cancel a pending schedule run.
+
+## Next steps
+
+- [Configure managed agents](/build/agents/managed) to change the worker that a trigger starts.
+- [Inspect audit events](/operate/audit) to investigate managed agent activity.

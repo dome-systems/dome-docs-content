@@ -1,0 +1,162 @@
+---
+hidden: true
+title: Build a governed app — agent instructions
+sidebarTitle: Build a governed app
+description: "Machine-readable instructions for an AI agent running the Build a governed app tutorial"
+---
+
+These are the instructions an AI agent follows to run the [Build a governed app](/tutorials/get-started/build-a-governed-app) tutorial on your behalf. Read the tutorial instead if you are running the steps yourself.
+
+## Goal
+
+Run the HR application so the user sees the **gold path**: a model + tool agent loop through Dome (Chat), then the explicit allow / redact / deny clicks on tools. Before running, walk through the generic agent flow and the app files that implement each step (with the relevant code from the tutorial). Name the control responsible for each tool outcome.
+
+Use the Vite + Hono reference app at https://github.com/dome-systems/demo-hr-desk. There is no Python path in this tutorial.
+
+## Rules
+
+Follow these even if the rest of this page is unreachable.
+
+- **Confirm before you start.** Before running any commands, present the plan below and wait for the user to say proceed.
+- **Narrate as you go.** Before each step, tell the user in one or two sentences what you are about to do and why it matters (credential separation, gateway URL shape, keeping the agent token off the browser, pool + tools together, response filters, Cedar allowlists). Do not silently run the whole flow.
+- **Confirm the active context.** Run `dome context current` and confirm the workspace name starts with `studio-`. If it does not, stop and ask. Only change the workspace selected for this tutorial.
+- **Require the pool tutorial.** Confirm `employee-summary` and the `llm:invoke` rule exist before starting Chat. If missing, send the user to [Call a model through a pool](/tutorials/get-started/call-a-model-through-a-pool) first.
+- **Never print the agent token.** `dome agents create-key` returns a live bearer token once. Write it straight into `.env`. Do not echo it, log it, or repeat it in chat. Confirm the env file is gitignored before writing the token into it.
+- **Keep the app small.** Prefer the reference app as-is. Do not add auth UI or expand the product.
+- **Teach the flow.** After setup, explain the generic six-step agent flow from the tutorial, then show the matching code in `App.tsx`, `index.ts`, `llm.ts`, `agent.ts`, and `dome.ts` (condensed sections are fine). Do not dump whole files.
+- **Chat first.** After `npm run dev`, have the user open Chat (default), use Try asking, and inspect gateway calls. Then tools for the three explicit outcomes.
+- **Backend only.** Emphasize that `/api/chat` and `/api/tool` are the only paths to Dome; the agent token stays in server `.env`. This is the prerequisite for act-as in the next tutorial.
+- **Stop at the human handoff.** `dome auth login` opens a browser; run it, then wait. For the Vite app, after `npm run dev` starts, tell the user to open http://localhost:5173 and drive Chat / tools themselves.
+- **Never weaken governance to make a call pass.** The denial is the point of the exercise. Do not edit the Cedar bundle or remove the filter. If a call fails that should have worked, stop and report it.
+- **Link the console.** After each create step, give the user a markdown link into the Dome console for the resource you just touched. Derive the base URL from `dome auth status` → `Server`.
+- **Expect re-runs.** Check for existing resources before creating them. Pass `--if-not-exists` where it exists.
+- **Show your evidence.** Never report a step as done without the command output that proves it.
+
+## Quick setup
+
+Before running any commands, present the user with this checklist and wait for confirmation:
+
+```
+Here's what I'll do to get your application running model + tools through Dome.
+
+1. Confirm the workspace from Govern + Call a model through a pool is active
+2. Mint a second API key on the hr-assistant agent, for the app
+3. Clone demo-hr-desk and fill .env (token, gateway URL, DOME_POOL=employee-summary)
+4. Walk you through the generic agent flow, then the app files that implement it
+5. Run Chat — walk you through a Try asking turn (model + tool steps)
+6. On Tools, click through allow, redact, and deny
+7. Show you the same decisions in the audit trail
+
+Shall I proceed?
+```
+
+Do not start step 1 until the user confirms.
+
+## Steps
+
+### 1. Confirm the workspace
+
+This tutorial builds on [Govern your first agent](/tutorials/get-started/govern-your-first-agent) and [Call a model through a pool](/tutorials/get-started/call-a-model-through-a-pool). It needs `demo-hr`, `redact-contact`, `hr-assistant`, the tool rule bundle, the `employee-summary` pool, and the `hr-assistant-llm` rule.
+
+```bash
+dome context current
+```
+
+The workspace must read `studio-get-started`. If it does not, run `dome context current`. If that workspace does not exist, run the earlier tutorials' setup before continuing, and say so rather than improvising a different scenario.
+
+Confirm the prerequisites are actually present before writing any code:
+
+```bash
+dome tools guards filters list demo-hr
+dome rules show --agent hr-assistant
+dome models pool get employee-summary
+dome rules simulate --agent hr-assistant --action llm:invoke \
+  --resource employee-summary --resource-type llm_pool
+```
+
+The filter chain on the response direction must list `redact-contact`, the agent must have a tool bundle, the pool must exist, and simulation must `ALLOW` `llm:invoke`. If any is missing, stop and report it.
+
+### 2. Mint a credential for the app
+
+```bash
+dome agents create-key hr-assistant --name service
+```
+
+Capture the token without printing it. Explain that both keys resolve to the same identity, so both are governed by the same rules and both appear in audit under `hr-assistant`.
+
+Link the agents page: `<Server>/agents`.
+
+### 3. Set up the project
+
+```bash
+dome context current
+dome gateways list
+```
+
+The gateway URL must include the `/gateways/<id>` segment and must **not** include `/mcp` or `/v1`.
+
+```bash
+git clone https://github.com/dome-systems/demo-hr-desk.git
+cd demo-hr-desk
+npm install
+cp .env.example .env
+```
+
+Write `.env` (gitignored):
+
+```
+DOME_TOKEN=<agent token>
+DOME_GATEWAY_URL=https://<gateway-host>/gateways/<DEFAULT_GATEWAY_ID>
+DOME_POOL=employee-summary
+```
+
+Explain that this tutorial uses plain HTTP through a Hono proxy so the wire shape stays visible, and the agent token stays off the browser. However, any OpenAI-compatible client, AI SDK, or MCP client can point at the gateway with the agent token — chat completions at `…/gateways/<id>/v1`, tools at `…/gateways/<id>/mcp`.
+
+### 4. Teach the flow and the code
+
+Walk the user through the tutorial's **How a governed agent works** (six steps), then **How this application implements it**. The implementation headings mirror those six steps. For each subsection, show the condensed code blocks from the human tutorial (or the matching snippets in the cloned repo). Do not paste entire files. Tell them they can skip ahead to **Run the agent loop** if they want to try the app first.
+
+### 5. Run Chat, then Tools
+
+```bash
+npm run dev
+```
+
+Tell the user to open http://localhost:5173 and stay on **Chat** (default). Have them use **Try asking** — start with **Who is E001 and how do I reach them?** Wait for them to report what they see. Expected:
+
+1. A model step naming `employee-summary` (**View gateway call** shows `"model": "employee-summary"`)
+2. A `get_employee` tool step with `"email": "[REDACTED]"`
+3. A final assistant reply
+
+Then have them try **What is Alice's salary?** so a denied tool appears inside the loop.
+
+After Chat, switch to **tools** and click each button in order:
+
+| Action | Status |
+|---|---|
+| List employees | Allowed — demo employees including `E001` |
+| Who is E001? | Allowed · redacted — `"email": "[REDACTED]"` |
+| What is Alice's salary? | Denied — a rule reason |
+
+Walk the user through what Dome did for each click:
+
+| Click | What Dome did |
+|---|---|
+| List employees | Cedar allowed `mcp:call` on `demo-hr/hr/list_employees`. |
+| Who is E001? | Cedar allowed the call. The `redact-contact` guard filter masked `email` on the response. |
+| What is Alice's salary? | Cedar denied `mcp:call` on `demo-hr/finance/get_salary` because it is outside the allowlist. |
+
+Point out that the app contains no filtering and no allowlist. If the email arrives unmasked or the payroll call succeeds, say so plainly rather than moving on.
+
+### 6. Show the record
+
+```bash
+dome audit query --limit 20
+dome audit query --results denied --limit 10
+```
+
+Point out completed `model.call` events for Chat, completed `tool.call` events for allowed tools, `guard.filter.evaluate` for the employee lookup, and the payroll `tool.call` with `result=denied` — all attributed to `hr-assistant`. Link the console audit view: `<Server>/audit/events`.
+
+### 7. Offer the exit
+
+Point the user at [Govern per end user](/tutorials/get-started/govern-per-end-user) next. Keep the `studio-get-started` workspace and the `hr-assistant` credentials — the next tutorial builds on them. Do not tear the workspace down. Leave the `service` key in place unless the user asks to revoke it.

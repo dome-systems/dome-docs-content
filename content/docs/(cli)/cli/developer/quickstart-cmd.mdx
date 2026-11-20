@@ -1,0 +1,34 @@
+---
+title: dome quickstart
+description: Scaffold a new Dome-enabled project
+---
+
+`dome quickstart` scaffolds a project that is already wired to Dome — SDK integration, starter authorization rules, and configuration — so your first governed call works without assembling it by hand. The project targets whichever environment your active context selects; refer to [Environments](/manage/environments) for how to point it elsewhere.
+
+## Scaffold a project
+
+```bash
+dome quickstart [name]
+```
+
+Creates a new project directory with Dome SDK integration, starter rules, and configuration.
+
+```bash
+dome quickstart my-agent-project
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--language` | string | `go` | Project language (supported: `go`) |
+| `--non-interactive` | bool | false | Skip confirmation prompts |
+
+### Generated files
+
+| File | Description |
+|------|-------------|
+| `main.go` | Entry point with Dome SDK integration |
+| `go.mod` | Go module definition |
+| `dome.yaml` | Dome configuration |
+| `.env.example` | Environment variable template |
+| `Dockerfile` | Container build definition |
+| `rules.cedar` | Starter authorization rules |

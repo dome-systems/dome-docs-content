@@ -1,0 +1,186 @@
+---
+title: How agents borrow your identity
+description: Standing and delegated identity, and why one shared agent beats one agent per person
+full: true
+story: true
+---
+
+<IdentityStory />
+
+<MarkdownOnly>
+
+## Two ways an agent can act
+
+An agent can act as itself or for a person. That choice decides whether its
+access stays the same or changes depending on who is using it.
+
+With **standing identity**, the agent acts as itself. No one asked it to run and
+no one is waiting for it, so the access it needs belongs to the job rather than a
+person. The authorization check only needs the agent identity.
+
+- A reconciler that runs at 2am and does the same work every night.
+- A CI reviewer for one repository.
+- An incident responder with a fixed set of actions.
+
+Most unattended automation works this way. Giving a nightly job someone's
+permissions would give it more access than it needs.
+
+Most of the agents people call theirs work this way too. Dana's assistant knows
+how she writes, which of her reports to loop in, and what she decided last
+quarter, and that history is what makes it feel like hers.
+
+It is memory, not permission. It shapes the answers, and it changes nothing about
+what she is allowed to do. The credentials behind every call are the same either
+way, so the same permissions apply no matter who is asking.
+
+Standing identity is right for Dana because she is the only one using it. If two
+people with different access share the agent, standing identity no longer works.
+
+Now take a finance assistant shared by the whole company. Marina is the CFO, Leo
+is an intern, and both ask it for the private Q3 forecast. The agent makes the
+same tool call for either person:
+
+`send_forecast({ "quarter": "Q3", "to": "me" })`
+
+With standing identity, both people get the forecast. Your app knew who signed
+in, but the tool call includes only `finance-assistant`, so the authorization
+check cannot tell Marina and Leo apart.
+
+Leo could not access that forecast on his own, but the assistant gives it to him.
+Remove the agent's access and Marina loses it too. The permission is not the
+problem; the request is missing the person using the agent.
+
+With **delegated identity**, the agent sends two things: its own identity, and
+the person it is acting for.
+
+- `finance-assistant` acting for `marina@acme.com`, a finance executive: allowed.
+- `finance-assistant` acting for `leo@acme.com`, an intern: refused.
+
+Marina gets the forecast and Leo is refused. Both calls use the same code,
+endpoint, prompt, and tools. Only the person on the request changes, and each
+person gets the access they would have without the assistant.
+
+The same approach works for other shared agents:
+
+- A shared HR assistant where an HR partner can open anyone's record and everyone
+  else can open only their own.
+- A support assistant where the customer who signed in decides which tenant's
+  data is in reach, rather than an argument the model picks.
+
+Marina's identity is attached to one request. The agent does not keep it, so the
+next call has to include her again. Delegation cannot give the agent access that
+Marina does not already have.
+
+## You do not need one agent per person
+
+A shared agent runs as one service. The same deployment handles Marina's request
+and Leo's request.
+
+You could give people different permissions by registering a separate agent for
+each of them. Every one of those agents runs the same code, and each still needs
+a key to rotate, grants to review, and someone to delete it the day its owner
+leaves.
+
+Register the code once as `finance-assistant` and attach the person to each
+request instead:
+
+`agent=finance-assistant  acting_for=<signed-in user>`
+
+The two identities answer different questions. The agent identity says which
+service called. The person says who it called for this time.
+
+In an ordinary week, someone joins, someone is promoted, someone moves teams,
+and someone leaves. The finance assistant stays the same. When each request
+includes the person, Leo gets his new access on his next call. With one agent per
+person, all four changes create work for the platform team.
+
+## The agent cannot pick who it acts for
+
+The agent cannot simply write "I am the CFO" into its own request. An identity
+provider has to verify the person outside the model.
+
+Marina signs in wherever your company already signs people in, such as Okta,
+Google Workspace, Microsoft Entra ID, or Auth0. That provider hands back a token
+that says who she is: her email, her roles, her groups. Nobody typed any of it,
+and the signature gets checked against the provider's published keys before a
+rule reads a word of it.
+
+The request can arrive in three states. An unsigned identity from the agent is no
+more trustworthy than one added by application code:
+
+- **No person attached.** Nothing about a person rides along on the call, so
+  there is nothing to verify and nothing for a rule to read.
+- **A claim nobody signed.** The request has an address but no proof of who put
+  it there, so Dome drops it rather than trusting it.
+- **Signed by your identity provider.** The signature matches, so the token opens
+  into claims a rule can act on without taking anyone's word for it.
+
+Once a call goes through, both identities are on the record. Every audit event
+carries an `identity_chain`, and a delegated call fills in two hops: the agent
+that ran, then the person it ran for, with their roles. A refusal is a record
+too. Marina's forecast wrote `tool.call` at attempted and completed stages. Leo
+asked for the same forecast and wrote a completed `tool.call` with
+`result=denied`, his identity, and the refusing rule in the shared `denial`
+block.
+
+## Which one you need
+
+Should two people using this agent have the same access? If not, the person has
+to be on the request. If everyone should have the same access, standing identity
+is enough.
+
+Use **standing identity** when the agent does its own job with fixed permissions:
+
+- Nobody is waiting on the other end of the call.
+- It runs on a schedule, or reacts to a system rather than a person.
+- Everyone who can trigger it should reach the same things anyway.
+
+That covers nightly reconciliation, a deploy bot, a monitoring agent, and the
+personal assistant only its owner ever uses.
+
+Use **delegated identity** when one deployment acts for many people and the
+person changes what it may call:
+
+- One service is shared by people with different access.
+- A tool the CFO is allowed to use is one the intern should be refused.
+- You need to be able to say who a call was for, months later.
+
+That covers the finance assistant, an internal support copilot, and anything
+sitting behind a login that people query about their own work.
+
+Neither model is always better. Standing identity cannot distinguish between
+people sharing an agent. Delegated identity adds a person where unattended jobs
+do not need one.
+
+## How Dome does it
+
+Dome verifies the person against that provider using OIDC, HMAC, or a
+server-bound enrollment identity, and a workspace can require a verified person
+on every call. See [Delegated agents](/build/agents/delegated) to set it up.
+
+Once the check passes, the person's claims land on `principal.act_as` as their
+subject, email, roles, groups, and anything custom your provider sends. Rules
+read them directly:
+
+```cedar
+permit(
+  principal,
+  action == Dome::Action::"mcp:call",
+  resource == Dome::MCPTool::"send_forecast"
+) when {
+  principal has act_as &&
+  principal.act_as.roles.contains("finance-executive")
+};
+```
+
+The agent is still `finance-assistant`, and Marina's identity applies only to
+this call. Dome records both identities, the result, and the reason for the
+decision.
+
+To try this with one shared HR application, follow
+[Govern per end user](/tutorials/get-started/govern-per-end-user). For the
+technical model and configuration, see
+[Identity patterns](/concepts/identity-patterns) and
+[Agent identity](/concepts/agents/identity).
+
+</MarkdownOnly>

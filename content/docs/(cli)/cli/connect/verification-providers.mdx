@@ -1,0 +1,227 @@
+---
+title: dome verification-providers
+description: Manage the OIDC and HMAC providers that verify end-user identity on agent traffic
+---
+
+`dome verification-providers` manages the named OIDC and HMAC configurations Dome verifies an Act-As assertion against. An agent bound to a provider may act for a person, and the gateway checks every such call against that provider before authorizing it.
+
+Set up alongside [`dome callers`](/cli/connect/callers): providers are what you configure, callers are the end users those providers turned out to verify.
+
+| Command | |
+|---------|---|
+| [List providers](#list-providers) | `dome verification-providers list` |
+| [Get provider](#get-provider) | `dome verification-providers get <provider-id>` |
+| [Create provider](#create-provider) | `dome verification-providers create` |
+| [Update provider](#update-provider) | `dome verification-providers update <provider-id>` |
+| [Delete provider](#delete-provider) | `dome verification-providers delete <provider-id>` |
+| [Get workspace selection](#workspace-act-as) | `dome workspaces actas get` |
+| [Update workspace selection](#workspace-act-as) | `dome workspaces actas update` |
+| [Get tenant selection](#tenant-act-as) | `dome tenant actas get` |
+| [Update tenant selection](#tenant-act-as) | `dome tenant actas update` |
+| [Get organization selection](#organization-act-as) | `dome orgs actas get` |
+| [Update organization selection](#organization-act-as) | `dome orgs actas update` |
+
+Every command requires `config.manage` at the target scope, and the CLI hides them when the active context does not carry it. Alias: `list` = `ls`.
+
+<Callout type="info">
+These commands configure runtime Act-As only. Signing operators into Dome is [`dome auth login`](/cli/session/auth) and the SSO connection under **Settings → Single Sign-On**.
+</Callout>
+
+## Scope
+
+Reads accept `--scope workspace` (default), `tenant`, or `org`. Writes are workspace-only: organization providers are synchronized from the dashboard SSO connection, and tenant-scoped writes are not exposed yet.
+
+| Value | Target | Needs |
+|-------|--------|-------|
+| `workspace` (default) | Active workspace | An active workspace context |
+| `tenant` | Active tenant | An active tenant context |
+| `org` | Caller's org, or `--org` | An org on the active context, or `--org` |
+
+A provider is visible to every workspace beneath the scope that owns it. That visible set is what an agent binding or a scope selection may name.
+
+Setting up SSO can leave you a provider you did not create: when the issuer is available, the connection also creates a matching org-scoped OIDC provider, and Act-As can reuse it.
+
+`dome workspaces verification-providers` is a workspace-only convenience subset (`list` / `create` / `delete`), documented on [`dome workspaces`](/cli/settings/workspace#verification-providers). Prefer the scope-aware group here for reads, updates, and HMAC secret generation.
+
+## Act-As provider selection
+
+Creating a provider makes it available at its scope. The Act-As commands select which available provider agents use by default or must use.
+
+- **Default provider:** the nearest configured scope wins: workspace, then tenant, then organization.
+- **Required provider:** the broadest configured scope wins: organization, then tenant, then workspace. It forces Act-As and pins every non-bound agent beneath that scope to the selected provider.
+
+All three `update` commands use full-replace semantics. The resulting selection contains exactly the provider flags you pass; omitting a provider flag clears that field.
+
+### Workspace Act-As
+
+```bash
+dome workspaces actas get [workspace-id-or-slug]
+dome workspaces actas update [workspace-id-or-slug]
+```
+
+Get or update the Act-As policy and provider selection for a workspace. The workspace defaults to the active context.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--required` | bool | Require Act-As on all requests |
+| `--allowed-methods` | string[] | Allowed verification methods: `oidc`, `hmac`, or both |
+| `--default-provider` | string | Default provider UUID |
+| `--required-provider` | string | Required provider UUID |
+
+Workspace updates replace the complete policy. Omitted flags clear provider selections and allowed methods; omitting `--required` sets it to `false`. Pass the full intended state each time.
+
+Refer to [`dome workspaces`](/cli/settings/workspace#act-as) for the complete workspace command reference.
+
+### Tenant Act-As
+
+```bash
+dome tenant actas get
+dome tenant actas update \
+  --default-provider {{PROVIDER_ID}} \
+  --required-provider {{PROVIDER_ID}}
+```
+
+Get or update the provider selection for a tenant. The provider must be owned by that tenant or its organization.
+
+| Flag | Command | Type | Description |
+|------|---------|------|-------------|
+| `--tenant` | `get`, `update` | string | Tenant UUID. Defaults to the active context's tenant |
+| `--default-provider` | `update` | string | Default provider UUID |
+| `--required-provider` | `update` | string | Required provider UUID |
+
+Tenant scope does not set `--required` or `--allowed-methods`. A required provider itself forces Act-As for non-bound agents beneath the tenant.
+
+Refer to [`dome tenant`](/cli/settings/tenant) for the dedicated command-group reference.
+
+### Organization Act-As
+
+```bash
+dome orgs actas get
+dome orgs actas update \
+  --default-provider {{PROVIDER_ID}} \
+  --required-provider {{PROVIDER_ID}}
+```
+
+Get or update the provider selection for an organization. The provider must be owned by that organization.
+
+| Flag | Command | Type | Description |
+|------|---------|------|-------------|
+| `--org` | `get`, `update` | string | Organization UUID. Defaults to the active context's organization |
+| `--default-provider` | `update` | string | Default provider UUID |
+| `--required-provider` | `update` | string | Required provider UUID |
+
+An organization-level required provider applies to every non-bound agent in the organization and overrides required selections at tenant or workspace scope.
+
+Refer to [`dome orgs`](/cli/settings/org) for the dedicated command-group reference.
+
+## List providers
+
+```bash
+dome verification-providers list
+```
+
+List providers at a scope. Columns are `ID`, `NAME`, `METHOD`, `SCOPE`, and `CREATED`; pass `--json` for the raw response.
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--scope` | string | No | `workspace` (default), `tenant`, or `org` |
+| `--org` | string | No | Org UUID for `--scope org`. Defaults to the active context's org |
+| `--include-chain` | bool | No | Workspace scope only: also list the tenant- and org-scoped providers visible to the workspace |
+
+```bash title="Workspace providers plus the inherited chain"
+dome verification-providers list --scope workspace --include-chain
+```
+
+```bash title="Tenant- or org-owned providers"
+dome verification-providers list --scope tenant
+dome verification-providers list --scope org
+```
+
+## Get provider
+
+```bash
+dome verification-providers get <provider-id>
+```
+
+Get one provider at its owning scope. Output covers method, scope, org, tenant and workspace IDs, the OIDC discovery URL, and `HMAC Configured` as `true` or `false`. The HMAC secret is never returned.
+
+| Argument / Flag | Type | Required | Description |
+|-----------------|------|----------|-------------|
+| `<provider-id>` | string | Yes | Provider UUID |
+| `--scope` | string | No | `workspace` (default), `tenant`, or `org` |
+| `--org` | string | No | Org UUID for `--scope org` |
+
+## Create provider
+
+```bash
+dome verification-providers create
+```
+
+Create a provider in the active workspace.
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--name` | string | Yes | Provider name, unique within its scope |
+| `--method` | string | Yes | `oidc` or `hmac` |
+| `--oidc-url` | string | Conditional | OIDC issuer base URL, required for `--method oidc`. Dome appends `/.well-known/openid-configuration` |
+| `--hmac-secret` | string | Conditional | HMAC shared secret. Alternative to `--generate-secret` |
+| `--generate-secret` | bool | Conditional | Have the server mint the HMAC secret. Mutually exclusive with `--hmac-secret` |
+| `--scope` | string | No | Must be `workspace`; `tenant` and `org` are refused client-side |
+
+```bash title="OIDC"
+dome verification-providers create \
+  --name google-workspace \
+  --method oidc \
+  --oidc-url https://accounts.google.com
+```
+
+```bash title="HMAC with a secret you supply"
+dome verification-providers create \
+  --name internal-signer \
+  --method hmac \
+  --hmac-secret "$HMAC_SECRET"
+```
+
+```bash title="HMAC with a server-minted secret"
+dome verification-providers create \
+  --name internal-signer \
+  --method hmac \
+  --generate-secret
+```
+
+`--generate-secret` prints the plaintext **once** and it is never retrievable again. With `--json`, the payload is `{provider, secret_ref, secret_plaintext}` — store `secret_plaintext` immediately.
+
+<Callout type="warning">
+`--scope tenant` fails with `tenant-scoped verification providers aren't available yet`. `--scope org` fails with guidance to **Settings → Single Sign-On**.
+</Callout>
+
+## Update provider
+
+```bash
+dome verification-providers update <provider-id>
+```
+
+Update a workspace-scoped provider. Only the flags you pass change, and the method is immutable.
+
+| Argument / Flag | Type | Required | Description |
+|-----------------|------|----------|-------------|
+| `<provider-id>` | string | Yes | Provider UUID |
+| `--name` | string | No | New provider name |
+| `--oidc-url` | string | No | New OIDC issuer base URL, for OIDC providers |
+| `--hmac-secret` | string | No | New HMAC shared secret, for HMAC providers. Write-only |
+| `--scope` | string | No | Must be `workspace` |
+
+## Delete provider
+
+```bash
+dome verification-providers delete <provider-id>
+```
+
+Delete a workspace-scoped provider.
+
+| Argument / Flag | Type | Required | Description |
+|-----------------|------|----------|-------------|
+| `<provider-id>` | string | Yes | Provider UUID |
+| `--scope` | string | No | Must be `workspace` |
+
+Agents and scope selections that named the provider lose that binding and fail closed at the gateway until another provider resolves. Refer to [Delegated agents](/build/agents/delegated) for how a binding resolves.

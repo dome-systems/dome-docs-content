@@ -1,0 +1,114 @@
+---
+title: Quickstart
+sidebarTitle: Quickstart
+description: Install the Python SDK and call a governed tool through the Dome gateway
+---
+
+Call MCP tools and LLM models through the Dome gateway from a Python application. The SDK handles authentication, act-as encoding, audit correlation, and typed error decoding — your code talks to one client.
+
+<Callout type="info">
+**Prerequisites:**
+- Python 3.12+
+- A registered agent and an agent API key (`dome_...`) — refer to [Developer Quickstart](/tutorials/role/developer)
+- The gateway URL for the [Gateway](/sdks/python/reference#gateways) the agent is granted (`https://gateway.../gateways/{id}`)
+</Callout>
+
+## Install
+
+```bash
+pip install dome-sdk
+```
+
+Provider SDKs are optional. `client.gateway.openai_client()` lazy-imports `openai`; `client.gateway.anthropic_client()` lazy-imports `anthropic`. Install those packages only in agents that use the provider-native factories.
+
+## Initialize
+
+Construct a `Client` with the agent token and gateway URL. The SDK does not read environment variables — pass values directly.
+
+```python
+import dome
+
+client = dome.Client(
+    token="{{AGENT_TOKEN}}",
+    gateway_url="https://gateway.domesystems.ai/gateways/{{GATEWAY_ID}}",
+    act_as_method="none",
+)
+client.connect()
+```
+
+The `/gateways/{id}` segment names the gateway the agent is granted. Pass the complete URL returned by agent-key creation or token exchange. Bare roots and URLs ending in `/mcp` or `/v1` raise `DomeGatewayConfigurationError` at `connect()` — the SDK does not compose a customer URL from an infrastructure endpoint.
+
+`connect()` prepares token and transport state. It does not block on local policy sync — call `start_policy_sync()` only when you want in-process Cedar checks.
+
+## Call a tool
+
+`client.gateway.tools.call()` runs an MCP tool through the gateway. Authorization, credential resolution, and audit happen server-side.
+
+```python
+result = client.gateway.tools.call(
+    "github/list_issues",
+    {"repo": "dome"},
+    act_as=dome.PlainActAs(email="alice@corp.com"),
+)
+print(result.structured_content or result.content)
+```
+
+`result.content` is the raw tuple of MCP content blocks. By default, an upstream `isError=true` result raises `DomeToolExecutionError`. Pass `raise_on_tool_error=False` when you need the failed `ToolCallResult` and its partial content.
+
+## Call an LLM
+
+`client.gateway.llm.chat()` posts OpenAI-shaped chat requests through the gateway. The response is the provider-shaped dict.
+
+```python
+response = client.gateway.llm.chat(
+    model="prod-gpt",
+    messages=[{"role": "user", "content": "Summarize the open incidents"}],
+    act_as=dome.PlainActAs(email="alice@corp.com"),
+)
+```
+
+For Anthropic shapes, use `client.gateway.llm.messages(model=..., messages=..., max_tokens=...)`. For provider-native clients, refer to [Reference](/sdks/python/reference#provider-native-clients).
+
+## Correlate work with an activity
+
+Wrap a run in `client.activity(...)` to stamp every gateway call and audit event with the same opaque activity ID.
+
+```python
+with client.activity(metadata={"case": "incident-123"}) as activity:
+    client.gateway.tools.call("github/list_issues", {"repo": "dome"})
+    print("activity_id:", activity.activity_id)
+```
+
+Direct calls outside an activity carry no activity ID. The SDK never mints one implicitly.
+
+## Shut down
+
+Always close the client to release transports.
+
+```python
+client.close()
+```
+
+Or use the context manager form:
+
+```python
+with dome.Client(token=..., gateway_url=...) as client:
+    client.gateway.tools.call("github/list_issues", {"repo": "dome"})
+```
+
+## Next steps
+
+<Cards>
+  <Card title="Reference" href="/sdks/python/reference">
+    Full client configuration, act-as methods, errors, and audit reads.
+  </Card>
+  <Card title="Tutorial" href="/sdks/python/tutorial">
+    Wire the SDK into a service and verify in audit.
+  </Card>
+  <Card title="LangChain adapter" href="/sdks/python/adapters">
+    Use gateway tools and governed chat models inside LangChain agents.
+  </Card>
+  <Card title="Data plane concepts" href="/concepts/architecture/dataplane">
+    How the gateway authorizes, resolves credentials, and audits every call.
+  </Card>
+</Cards>

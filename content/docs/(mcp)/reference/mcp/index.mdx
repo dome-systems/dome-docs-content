@@ -1,0 +1,238 @@
+---
+title: MCP Server Reference
+sidebarTitle: Overview
+description: Dome MCP tools for agents — permission-aware discovery across Build, Connect, Govern, Operate, and Manage
+---
+
+The Dome MCP server exposes platform tools organized into groups. Tool discovery is permission-aware and fail-closed: for API-key and CLI sessions, Dome introspects the credential scope and hides tools the caller cannot invoke. You only see tools matching your permissions.
+
+<Callout type="info">
+  [Dome MCP](/manage/mcp) and `dome mcp serve` expose the same Dome management tools. Dome MCP is the remote server at `https://mcp.domesystems.ai` and signs each person in with their Dome account. `dome mcp serve` is a local stdio server that uses the active CLI context or a platform API key.
+</Callout>
+
+## Setup
+
+```bash
+dome auth login
+dome context use <workspace>
+dome mcp serve
+```
+
+### Connect a client
+
+`dome mcp serve` speaks JSON-RPC 2.0 over stdio. Your client launches that process and discovers tools filtered by the active workspace role. Pick the integration that matches your client:
+
+<Tabs items={["Claude Code","Claude Desktop","Cursor","Codex","Other MCP Client"]}>
+  <Tab value="Claude Code">
+    Sign in, pick a workspace, then register the server with Claude Code:
+
+    ```bash
+    dome auth login
+    dome context use <workspace>
+    claude mcp add dome -- dome mcp serve
+    ```
+
+    Restart or reload Claude Code if tools do not appear. Tools auto-discover.
+  </Tab>
+  <Tab value="Claude Desktop">
+    Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+    ```json
+    {
+      "mcpServers": {
+        "dome": {
+          "command": "dome",
+          "args": ["mcp", "serve"]
+        }
+      }
+    }
+    ```
+
+    Restart Claude Desktop to connect.
+  </Tab>
+  <Tab value="Cursor">
+    Add to your Cursor MCP configuration:
+
+    ```json
+    {
+      "mcpServers": {
+        "dome": {
+          "command": "dome",
+          "args": ["mcp", "serve"]
+        }
+      }
+    }
+    ```
+  </Tab>
+  <Tab value="Codex">
+    Sign in, pick a workspace, then register the server with Codex:
+
+    ```bash
+    dome auth login
+    dome context use <workspace>
+    codex mcp add dome -- dome mcp serve
+    ```
+
+    Codex stores this in `~/.codex/config.toml`. You can also write it by hand:
+
+    ```toml
+    [mcp_servers.dome]
+    command = "dome"
+    args = ["mcp", "serve"]
+    ```
+
+    Confirm with `codex mcp list`, then type `/mcp` in a Codex session.
+  </Tab>
+  <Tab value="Other MCP Client">
+    Sign in, pick a workspace, then start the server on stdio and point your client at stdin/stdout:
+
+    ```bash
+    dome auth login
+    dome context use <workspace>
+    dome mcp serve
+    ```
+
+    Any MCP-compatible client that launches a stdio process works.
+  </Tab>
+</Tabs>
+
+Switch workspaces mid-session with `dome_context_use` — the tool list updates to reflect your new permissions.
+
+## Guided prompts
+
+The MCP server ships three guided prompts that run end-to-end onboarding flows from your client. Invoke them with `/dome:quickstart`, `/dome:tutorial`, or `/dome:adopt` in Claude Code (other clients expose prompts through their own UI).
+
+<Cards>
+  <Card title="Quickstart" href="/reference/mcp/prompts#quickstart">
+    Role-aware first-time setup.
+  </Card>
+  <Card title="Tutorial" href="/reference/mcp/prompts#tutorial">
+    Guided governed-agent walkthrough.
+  </Card>
+  <Card title="Adopt" href="/reference/mcp/prompts#adopt">
+    Brownfield onboarding — route an existing codebase's LLM traffic through the gateway with no code changes.
+  </Card>
+</Cards>
+
+## Tool Groups
+
+### Build
+
+<Cards>
+  <Card title="Agents" href="/reference/mcp/agents">
+    Register agents, issue credentials, allow resources, and manage lifecycle.
+  </Card>
+  <Card title="Managed agents" href="/reference/mcp/managed-agents">
+    Configure and run agents that Dome hosts.
+  </Card>
+  <Card title="Gateways" href="/reference/mcp/gateway">
+    Group tools and models behind gateways and grant agent access.
+  </Card>
+  <Card title="Triggers" href="/reference/mcp/triggers">
+    Start managed agents manually, on a schedule, or from signed webhooks.
+  </Card>
+</Cards>
+
+### Connect
+
+<Cards>
+  <Card title="Callers" href="/reference/mcp/callers">
+    Inspect or erase verified end users projected from workspace audit activity.
+  </Card>
+  <Card title="Tools" href="/reference/mcp/tools">
+    Attach MCP servers, configure upstream authentication, and publish governed tools.
+  </Card>
+  <Card title="Models" href="/reference/mcp/models">
+    Connect LLM providers, secure upstream credentials, and publish governed model endpoints.
+  </Card>
+  <Card title="Pools" href="/reference/mcp/pools">
+    Route and fail over LLM traffic across model connections.
+  </Card>
+</Cards>
+
+### Govern
+
+<Cards>
+  <Card title="Rules" href="/reference/mcp/rules">
+    Control which tools and models each agent is allowed to use.
+  </Card>
+  <Card title="Guards" href="/reference/mcp/guards">
+    Inspect, redact, and constrain content on tool and model connections.
+  </Card>
+  <Card title="Quotas" href="/reference/mcp/quotas">
+    Cap governed LLM spend across workspaces, agents, gateways, pools, and models.
+  </Card>
+</Cards>
+
+### Operate
+
+<Cards>
+  <Card title="Audit" href="/reference/mcp/audit">
+    Query audit events by class, result, actor, resource, correlation, and payload.
+  </Card>
+  <Card title="Webhooks" href="/reference/mcp/webhooks">
+    Subscribe to Dome events and deliver signed webhooks with retries and replay.
+  </Card>
+</Cards>
+
+### Manage
+
+<Cards>
+  <Card title="Billing" href="/reference/mcp/billing">
+    Inspect plans and invoices, change seats, and manage subscription state.
+  </Card>
+  <Card title="Platform" href="/reference/mcp/platform">
+    Check platform status, manage scoped API keys, read configuration, and create tenants.
+  </Card>
+  <Card title="Import & Export" href="/reference/mcp/import-export">
+    Move reviewed configuration between compatible scopes and follow import jobs.
+  </Card>
+  <Card title="Workspaces" href="/reference/mcp/workspaces">
+    Create workspaces, manage members, and configure act-as enforcement and policy freshness.
+  </Card>
+  <Card title="Verification" href="/reference/mcp/verification">
+    Configure OIDC and HMAC providers that verify act-as identity for delegated agents.
+  </Card>
+  <Card title="Context" href="/reference/mcp/context">
+    Switch org, tenant, and workspace sessions and check authentication status.
+  </Card>
+</Cards>
+
+## Permission Model
+
+After selecting a context with `dome_context_use`, tools are filtered based on your workspace, tenant, and org roles. Higher-scope roles cascade into the tools visible inside a workspace context (an org owner sees every workspace tool).
+
+| Role | Access |
+|------|--------|
+| **admin** | Every workspace tool — agents, gateway, rules, audit, members, API keys, configuration |
+| **operator** | agents, gateway, rules (deploy and rollback), audit (view, no export), API keys, configuration |
+| **security** | rules (deploy, rollback, simulate), audit (view and export), agent suspend, gateway view |
+| **developer** | agents, agent keys, rules view, audit view, gateway view |
+| **viewer** | Read-only queries and listings |
+
+A handful of tools are gated only by an active context (no role requirement) — refer to [Context](/reference/mcp/context) and the platform tools `dome_status_get`, `dome_config_get`, `dome_workspaces_list`, `dome_workspaces_get`, `dome_platform_keys_available_permissions`. `dome_workspaces_create` requires tenant-level `tenants.manage`; the tenant management tools `dome_tenants_list`, `dome_tenants_get`, and `dome_tenants_create` require an org role.
+
+<Callout type="info">
+  Context management tools are always available regardless of role. You do not need workspace context to list or switch contexts.
+</Callout>
+
+## Tool Documentation Standard
+
+Each MCP tool page documents:
+
+- **Tool name** — the exact `dome_*` identifier used in JSON-RPC calls
+- **Parameters** — typed parameter table with required/optional markers
+- **Description** — one-line purpose
+- **Permission** — a key callout naming the RBAC permission(s) the tool requires
+- **Destructive flag** — noted in the permission callout when the tool modifies or deletes data
+
+Tools follow the [MCP specification](https://modelcontextprotocol.io/) for tool discovery and invocation. The server returns tool schemas via `tools/list` that MCP clients use for auto-discovery.
+
+## Next steps
+
+Connect a client, then start with agents or rules:
+
+- [Setup AI assistant](/setup-ai-assistant) to connect Claude Code, Cursor, Codex, or another client
+- [Agents](/reference/mcp/agents) for the first tool group most operators use
+- [Rules](/reference/mcp/rules) to draft and deploy Cedar from an assistant
+- [Quickstart](/quickstart) to verify governed traffic end to end

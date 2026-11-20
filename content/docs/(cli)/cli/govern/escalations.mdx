@@ -1,0 +1,97 @@
+---
+title: dome escalations
+description: Manage versioned escalation workflows and resolve review judgments
+---
+
+<PreviewBadge />
+
+Manage [escalation workflows](/govern/escalations) and resolve review judgments from the CLI. Each configuration change publishes a new active version and preserves history.
+
+<Callout icon="key">
+  All commands use the active workspace. `escalations.view` reads workflows and judgments. `escalations.manage` changes workflows. `escalations.resolve` resolves judgments.
+</Callout>
+
+## Manage workflows
+
+| Command | Description |
+|---------|-------------|
+| `dome escalations list` | List active workflows in the workspace. |
+| `dome escalations get <name-or-id>` | Show a workflow's active configuration. |
+| `dome escalations create <name>` | Create a workflow and its first active version. |
+| `dome escalations update <name-or-id>` | Change metadata or publish a new active configuration. |
+| `dome escalations delete <name-or-id>` | Delete a workflow and its version history. |
+
+### List workflows
+
+```bash
+dome escalations list
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--limit` | int | `10` | Maximum workflows to return, up to `50`. |
+| `--page-token` | string | — | Cursor from the previous response. |
+
+### Create a workflow
+
+```bash
+dome escalations create high-risk-review \
+  --description "Require approval for high-risk tool calls." \
+  --config-from approval-workflow.json
+```
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--description` | string | No | One-line description. |
+| `--config-from` | path or `-` | Yes | ProtoJSON `dome.escalations.v1.EscalationConfig` file, or standard input. |
+
+The configuration selects the trigger kind. You cannot change that kind later.
+
+### Update a workflow
+
+```bash
+dome escalations update high-risk-review \
+  --config-from revised-workflow.json
+```
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--name` | string | New workflow name. |
+| `--description` | string | New description. |
+| `--config-from` | path or `-` | Publish a new active configuration version. |
+
+Pass at least one flag. Updating configuration preserves the earlier version.
+
+## Inspect versions
+
+```bash
+dome escalations versions high-risk-review
+dome escalations rollback high-risk-review --to-version 2
+```
+
+| Command | Description |
+|---------|-------------|
+| `dome escalations versions <name-or-id>` | List versions, newest first. Supports `--limit` and `--page-token`. |
+| `dome escalations rollback <name-or-id> --to-version <n>` | Copy an earlier configuration into a new active version. |
+
+## Resolve judgments
+
+```bash
+dome escalations judgments list high-risk-review --status pending
+dome escalations judgments get high-risk-review <judgment-id>
+dome escalations judgments resolve high-risk-review <judgment-id> --verdict approve
+```
+
+| Command | Description |
+|---------|-------------|
+| `dome escalations judgments list <name-or-id>` | List `pending` or `resolved` judgments. Supports `--status`, `--limit`, and `--page-token`. |
+| `dome escalations judgments get <name-or-id> <judgment-id>` | Show one judgment's status and verdict. |
+| `dome escalations judgments resolve <name-or-id> <judgment-id> --verdict <approve\|deny>` | Record the final verdict for a pending judgment. |
+
+Each verdict applies to one request. A resolved judgment cannot change.
+
+## Next steps
+
+- [Configure escalations](/govern/escalations) and attach a Cedar policy
+- [Use the MCP tools](/reference/mcp/escalations) from an MCP client
+- [Use the REST API](/api/tag/escalations/list-escalations) from an application

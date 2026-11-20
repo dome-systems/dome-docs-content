@@ -1,0 +1,80 @@
+---
+title: Guards
+description: Why Dome inspects request and response content on tool and model connections
+---
+
+import { guard } from '@/snippets/glossary';
+
+<p>{guard}</p>
+
+## High-level overview
+
+Guards attach to a specific model or tool **connection** and to one **direction** (`request` or `response`). They run on the content path after the call is authorized. When an assigned guard cannot be evaluated, the gateway blocks that connection and direction. It never relays the traffic without inspection.
+
+Two guard types are available:
+
+- **Filters** rewrite or withhold content. You assign them in an ordered chain on a connection and direction.
+- **Validators** are pure predicates on tool connections. They never mutate. Every assigned validator must pass.
+
+Assigning a filter and seeing it run looks like this:
+
+1. An operator creates a text filter that redacts SSNs and assigns it to the response direction on a model connection.
+2. On the next gateway config sync, that connection runs the filter over streamed completions.
+3. Matching spans are redacted before the agent sees them.
+4. If an assigned filter later cannot be decoded, the gateway blocks that direction until the operator rolls back or clears the chain.
+
+Guards inspect content at the connection and fail closed when inspection cannot run.
+
+### Directions
+
+Each guard assignment binds to one direction on a connection.
+
+| Direction | model connection | tool connection |
+|-----------|------------------|-----------------|
+| `request` | Prompt before dispatch to the model provider | tool arguments before dispatch to the MCP server |
+| `response` | Streamed completion before it reaches the agent | tool result before it reaches the agent |
+
+Request guards can transform content or block a call. Response guards run before any inspected content reaches the caller.
+
+### Filters
+
+A filter is workspace-scoped and versioned. Assigned connections pick up the active version on the next gateway sync. Previous versions remain available for rollback. Filter kind is immutable and decides which connections the filter can attach to.
+
+| Kind | Connection | Role |
+|------|------------|------|
+| `text` | model | Substring and pattern inspection on prompts or completions |
+| `json` | tool | Field-path and optional value-content inspection on tool arguments or results |
+
+Each `(connection, direction)` slot holds one ordered filter chain. Setting a chain replaces the complete list for that slot. Model connections accept only `text` filters. Tool connections accept only `json` filters.
+
+Narrow transforms ahead of broad blocking matchers keep audit attribution predictable when multiple matchers could fire. A matching `BLOCK` short-circuits the chain. Kinds, actions, path syntax, and content matchers are on the [Guards](/reference/controls/guards#filters) reference.
+
+JSON filters apply symmetrically to MCP tool calls. A request-direction filter inspects outbound `tools/call` arguments before the gateway forwards them. A response-direction filter inspects the tool result before it reaches the agent. Use filters when sensitivity is a property of the content (free-text arguments, documents, transcripts). Prefer path matchers when sensitivity is a property of the field name.
+
+On a JSON chain, `REDACT` and `OMIT` can co-occur — neither short-circuits the other. `BLOCK` wins the chain, but earlier actions remain in the audit payload. Acting filters emit the verdictless `guard.filter.evaluate` event with `direction`, `actions`, `blockedByFilterIds`, `redactedByFilterIds`, and `omittedByFilterIds`. A block makes the enclosing `tool.call` or `model.call` complete with `result=denied` and `denial.reason=guard_blocked`. Payload details are on the [Guards](/reference/controls/guards#guard-audit-events) reference.
+
+### Validators
+
+A validator is workspace-scoped and versioned. It checks structured conditions on a tool request or MCP tool response and blocks when any condition fails. Validators never redact or omit fields.
+
+| Kind | Edge | Role |
+|------|------|------|
+| `tool_request` | Request | Required paths and size limits on tool arguments |
+| `tool_response` | Response | Required paths and shape checks on MCP tool results |
+
+Validators attach as an unordered set on a tool connection and direction. Every assigned validator must pass. Response validators are MCP-only. Condition catalogs are on the [Guards](/reference/controls/guards#validators) reference.
+
+### Streaming model responses
+
+LLM chat responses arrive as fragmented SSE chunks. The gateway buffers each connection's response into a sliding window and runs response filters over the decoded text so multi-chunk patterns are visible.
+
+The effective window is `max(workspace floor, connection override, per-request override)`. A layer set to `0` drops out of the max. Window bounds and where each layer is set are on the [Guards](/reference/controls/guards#streaming-window) reference. How to set them is on [Guards](/govern/guards#configure-the-streaming-window).
+
+## Next steps
+
+With the guards content-inspection model in mind, continue with:
+
+- [Architecture](/concepts/architecture#guards) concept for where guards sit in the request path
+- [Rules](/concepts/controls/rules) concept for allow and deny before content inspection
+- [Guards](/reference/controls/guards) reference for filter and validator catalogs
+- [Configure Guards](/govern/guards) to create filters and validators, assign them, and tune streaming windows

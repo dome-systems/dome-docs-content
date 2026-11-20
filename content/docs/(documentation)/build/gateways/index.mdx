@@ -1,0 +1,1372 @@
+---
+title: Gateways
+sidebarTitle: Gateways
+description: Group tools and models behind gateways, grant agent access, and configure scoped runtime endpoints
+keywords: ['gateway', 'gateways', 'routing', 'access']
+---
+
+import { gateway } from '@/snippets/glossary';
+
+<p>{gateway}</p>
+
+## Overview
+
+A gateway carries two related controls:
+
+- **Resource membership** makes a tool, pool, or model addressable through the gateway's runtime endpoint.
+- **Agent access** admits the agent at the edge and generates rules that permit all current and future resource members.
+
+Other workspace and custom rules still apply. Those rules can deny a resource member after the agent passes gateway admission.
+
+The typical workflow is:
+
+1. [Create a gateway](#create-gateway) or reuse the [Default gateway](#default-gateway).
+2. [Add the resource as a member](#manage-resource-memberships).
+3. [Grant the agent access](#manage-agent-access) to the gateway.
+4. Point the client at the [gateway's endpoint](#build-the-runtime-endpoint).
+5. [Verify reachability](#verify-reachability) with that agent's API key.
+
+### Resource membership
+
+Membership determines which resources a gateway exposes:
+
+| Kind | What it exposes |
+|------|-----------------|
+| Individual tool | One selected tool from a connection |
+| tool source | Every tool on an MCP connection, including tools discovered later |
+| Pool | A pool behind its stable name |
+| Direct model | One model connection by name |
+
+A resource with no gateway membership stays valid. The resource shows as **Unreachable** because no runtime endpoint addresses it. Removing a membership leaves the underlying resource intact. Gateway membership is available in rules through `resource.gateways.contains("<id>")`. Refer to the [Rules reference](/reference/controls/rules#resource-attributes).
+
+You can change what a gateway exposes when you [add or remove members](#manage-resource-memberships).
+
+### Agent access
+
+A **per-agent** grant adds the gateway to that agent's allowed resources (`agents.register` and `rules.deploy`). A **workspace-wide** grant covers every current and future agent in the workspace (`rules.deploy` and `gateways.manage`). `gateways.manage` alone cannot grant runtime access. Revoking a workspace-wide grant leaves per-agent grants in place.
+
+Without either grant, invocation fails at edge admission (the completed operation has `result=denied`, `denial.reason=permission_denied`, and the gateway-admission denial detail). Discovery such as `tools/list` and `GET /v1/models` is exempt from admission and stays membership- and Cedar-filtered. With a grant, other rules can still deny individual resource members. Generated permit rules are shown read-only in the dashboard.
+
+You can change who reaches a gateway when you [grant or revoke access](#manage-agent-access).
+
+### Default gateway
+
+Every new workspace starts with an active **Default** gateway that has no resource memberships or agent grants. Migrated workspaces may already have resources attached, but callers still need an explicit per-agent or all-agents grant.
+
+The default marker only pre-selects a gateway in dashboard dialogs that create tools, pools, and models. The marker adds no resources, grants no access, and overrides no rules.
+
+Free and Pro workspaces support one gateway, and the auto-created Default counts toward that limit. Team, Enterprise, and self-managed workspaces support additional gateways. Exceeding the plan cap returns HTTP `429` / `RESOURCE_EXHAUSTED`.
+
+You can move the marker when you [set the Default gateway](#set-default-gateway).
+
+### Runtime endpoints
+
+Each gateway has its own path under the workspace gateway host. Callers select a gateway in the request URL. The base URL depends on the client protocol. A disabled gateway rejects requests but keeps its memberships and grants.
+
+Refer to [Build the runtime endpoint](#build-the-runtime-endpoint) for client-specific URL paths.
+
+### Cost quotas
+
+A gateway cost quota caps aggregate LLM spend for member pools and direct model connections. Exceeding the cap blocks further LLM calls through that gateway until the active window resets. Filter audit by `producer_gateway_id`. Metrics dashboards do not break down by gateway.
+
+You can cap spend when you [set a cost quota](#set-a-cost-quota). Window and scope semantics are on the [Quotas](/reference/controls/quotas) reference.
+
+### Interactive access
+
+People can also reach a gateway by signing in with their own Dome account, instead of you minting them an agent key. Enabling it creates one managed agent that every allow-listed person shares and rides individually, each audited under their own identity.
+
+Enabling, eligibility, client setup, and token behavior are on [Interactive MCP access](/build/gateways/interactive-mcp-access).
+
+## Requirements
+
+Before you begin:
+
+- Authenticate to Dome and select a workspace
+- Collect the resource and agent identifiers the operation needs
+- Have an active agent key with access to the selected gateway when you verify runtime reachability
+
+### Permissions
+
+Gateway membership, grants, and related operations require platform permissions. Each operation states its required permission inline.
+
+| Default roles | Permission | Grants |
+|---------------|------------|--------|
+| All workspace roles | `gateways.view` | List gateways and inspect membership |
+| `admin`, `operator` | `gateways.manage` | Create, update, and delete gateways and membership |
+| All workspace roles | `agents.view` | List agents when managing grants |
+| `admin`, `operator`, `developer` | `agents.register` | Per-agent gateway grants (with `rules.deploy`) |
+| `admin`, `operator`, `security` | `rules.deploy` | Required for gateway access-grant changes |
+
+## Create Gateway
+
+Create a separate gateway when callers need a resource set or endpoint boundary that the Default gateway should not share. A new gateway starts active with empty membership and no grants.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome gateways create prod-resources --description "Production tools and models"
+    ```
+
+    <Callout icon="terminal">Reference: [`dome gateways create`](/cli/build/gateway#create-gateway)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_gateways_create`
+
+    ```json
+    {
+      "name": "prod-resources",
+      "description": "Production tools and models"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_gateways_create`](/reference/mcp/gateway#dome_gateways_create)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /dome.gateway.v1.GatewayService/CreateGateway
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "name": "prod-resources",
+      "description": "Production tools and models"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`CreateGateway`](/api/tag/gateways/create-gateway)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Create a Gateway"
+    Create a Gateway named "prod-resources" for production tools and models.
+    ```
+  </Tab>
+</Tabs>
+
+<Callout type="info">
+Free and Pro workspaces support only one gateway. Reuse, rename, or delete the Default gateway before creating another one.
+</Callout>
+
+After creation, [retrieve the gateway](#get-gateway) to confirm its ID, active state, empty membership, and grant settings.
+
+## Update Gateway
+
+Update a gateway to change its name or description.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome gateways update prod-resources --description "Production tools, pools, and models"
+    ```
+
+    Omitted values remain unchanged.
+
+    <Callout icon="terminal">Reference: [`dome gateways update`](/cli/build/gateway#update-gateway)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_gateways_update`
+
+    ```json
+    {
+      "name": "prod-resources",
+      "new_name": "production-resources",
+      "description": "Production tools, pools, and models"
+    }
+    ```
+
+    Omitted values remain unchanged.
+
+    <Callout icon="cpu">Reference: [`dome_gateways_update`](/reference/mcp/gateway#dome_gateways_update)</Callout>
+  </Tab>
+  <Tab value="API">
+    An empty `name` keeps the current name. The API always writes `description`, so include the current description when it must remain unchanged.
+
+    ```http
+    POST /dome.gateway.v1.GatewayService/UpdateGateway
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "gateway_id": "{{GATEWAY_ID}}",
+      "name": "production-resources",
+      "description": "Production tools, pools, and models"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`UpdateGateway`](/api/tag/gateways/update-gateway)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Update a Gateway"
+    Rename "prod-resources" to "production-resources" and update its description to "Production tools, pools, and models".
+    ```
+  </Tab>
+</Tabs>
+
+After the update, [retrieve the gateway](#get-gateway) to confirm its name and description.
+
+## Get Gateway
+
+Retrieve one gateway to inspect its state, default marker, workspace-wide grant, and resource memberships.
+
+<Callout icon="key">Requires `gateways.view`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome gateways get prod-resources
+    ```
+
+    <Callout icon="terminal">Reference: [`dome gateways get`](/cli/build/gateway#get-gateway)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_gateways_get`
+
+    ```json
+    {
+      "name": "prod-resources"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_gateways_get`](/reference/mcp/gateway#dome_gateways_get)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /dome.gateway.v1.GatewayService/GetGateway
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "gateway_id": "{{GATEWAY_ID}}"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`GetGateway`](/api/tag/gateways/get-gateway)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Get a Gateway"
+    Get "prod-resources" and show its state, grants, and resource memberships.
+    ```
+  </Tab>
+</Tabs>
+
+## List Gateways
+
+List gateways to retrieve their names, IDs, states, default markers, and canonical endpoint paths.
+
+<Callout icon="key">Requires `gateways.view`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome gateways list
+    ```
+
+    <Callout icon="terminal">Reference: [`dome gateways list`](/cli/build/gateway#list-gateways)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_gateways_list`
+
+    ```json
+    {}
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_gateways_list`](/reference/mcp/gateway#dome_gateways_list)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /dome.gateway.v1.GatewayService/ListGateways
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`ListGateways`](/api/tag/gateways/list-gateways)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="List Gateways"
+    List the Gateways in the active workspace with their IDs, states, and endpoint paths.
+    ```
+  </Tab>
+</Tabs>
+
+## Set Default gateway
+
+Set a gateway as the workspace default to pre-select it in dashboard dialogs that create tools, pools, and models. Setting a new default clears the previous marker. A disabled default is not pre-selected.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome gateways set-default prod-resources
+    ```
+
+    <Callout icon="terminal">Reference: [`dome gateways set-default`](/cli/build/gateway#set-default-gateway)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_gateways_set_default`
+
+    ```json
+    {
+      "name": "prod-resources"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_gateways_set_default`](/reference/mcp/gateway#dome_gateways_set_default)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /dome.gateway.v1.GatewayService/SetGatewayDefault
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "gateway_id": "{{GATEWAY_ID}}"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`SetGatewayDefault`](/api/tag/gateways/set-gateway-default)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Set the default Gateway"
+    Set "prod-resources" as the workspace's Default gateway.
+    ```
+  </Tab>
+</Tabs>
+
+After setting the default, [retrieve the gateway](#get-gateway) and confirm that it is marked as the workspace default.
+
+## Manage lifecycle
+
+Manage a gateway's availability without changing resource memberships or agent grants. Delete a gateway only when callers no longer need that endpoint.
+
+### Enable Gateway
+
+Enable a disabled gateway to restore its endpoint. Disabling a gateway preserves existing memberships and grants.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome gateways enable prod-resources
+    ```
+
+    <Callout icon="terminal">Reference: [`dome gateways enable`](/cli/build/gateway#enable-gateway)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_gateways_set_state`
+
+    ```json
+    {
+      "name": "prod-resources",
+      "state": "active"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_gateways_set_state`](/reference/mcp/gateway#dome_gateways_set_state)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /dome.gateway.v1.GatewayService/SetGatewayState
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "gateway_id": "{{GATEWAY_ID}}",
+      "state": "active"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`SetGatewayState`](/api/tag/gateways/set-gateway-state)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Enable a Gateway"
+    Enable the "prod-resources" Gateway.
+    ```
+  </Tab>
+</Tabs>
+
+### Disable Gateway
+
+Disable a gateway to block its endpoint without removing memberships or grants. Requests stay rejected until you enable the gateway again.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome gateways disable prod-resources
+    ```
+
+    <Callout icon="terminal">Reference: [`dome gateways disable`](/cli/build/gateway#disable-gateway)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_gateways_set_state`
+
+    ```json
+    {
+      "name": "prod-resources",
+      "state": "disabled"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_gateways_set_state`](/reference/mcp/gateway#dome_gateways_set_state)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /dome.gateway.v1.GatewayService/SetGatewayState
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "gateway_id": "{{GATEWAY_ID}}",
+      "state": "disabled"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`SetGatewayState`](/api/tag/gateways/set-gateway-state)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Disable a Gateway"
+    Disable "prod-resources" while preserving its memberships and grants.
+    ```
+  </Tab>
+</Tabs>
+
+After enabling or disabling a gateway, [retrieve the gateway](#get-gateway) to confirm the resulting state.
+
+### Delete Gateway
+
+Delete a gateway only after moving callers to another endpoint. Deletion removes the gateway and its resource memberships. The `/gateways/{{GATEWAY_ID}}/...` endpoint starts rejecting requests. Deletion does not remove the underlying tools, connections, pools, or models.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Callout type="warning">
+Deletion is permanent. Per-agent grants for the deleted ID no longer admit callers. Callers must use another gateway ID.
+</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome gateways delete prod-resources
+    ```
+
+    <Callout icon="terminal">Reference: [`dome gateways delete`](/cli/build/gateway#delete-gateway)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_gateways_delete`
+
+    ```json
+    {
+      "name": "prod-resources"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_gateways_delete`](/reference/mcp/gateway#dome_gateways_delete)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /dome.gateway.v1.GatewayService/DeleteGateway
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "gateway_id": "{{GATEWAY_ID}}"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`DeleteGateway`](/api/tag/gateways/delete-gateway)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Delete a Gateway"
+    Delete "prod-resources" without deleting its underlying resources.
+    ```
+  </Tab>
+</Tabs>
+
+After deletion, [list the gateways](#list-gateways) to confirm the deleted gateway no longer appears.
+
+## Manage resource memberships
+
+Add or remove members so resources are addressable through a gateway. Membership kinds are in [Overview](#resource-membership). Membership changes do not modify or delete the underlying resources.
+
+### Individual tools
+
+Add or remove one tool without exposing the rest of its connection.
+
+##### Add individual tool
+
+Add one tool without exposing the other tools from its connection.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome gateways tools add prod-resources {{TOOL_ID}}
+    ```
+
+    <Callout icon="terminal">Reference: [`dome gateways tools add`](/cli/build/gateway#add-tool)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_gateways_tool_add`
+
+    ```json
+    {
+      "gateway": "prod-resources",
+      "connection": "notion",
+      "tool": "create_page"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_gateways_tool_add`](/reference/mcp/gateway#dome_gateways_tool_add)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /dome.gateway.v1.GatewayService/AddGatewayTool
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "gateway_id": "{{GATEWAY_ID}}",
+      "tool_id": "{{TOOL_ID}}"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`AddGatewayTool`](/api/tag/gateways/add-gateway-tool)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Add an individual tool"
+    Add the "create_page" tool from the "notion" connection to "prod-resources".
+    ```
+  </Tab>
+</Tabs>
+
+##### Remove individual tool
+
+Remove an individual membership to stop exposing the tool on its own. The tool stays addressable when a tool-source membership also covers that tool.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome gateways tools remove prod-resources {{TOOL_ID}}
+    ```
+
+    <Callout icon="terminal">Reference: [`dome gateways tools remove`](/cli/build/gateway#remove-tool)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_gateways_tool_remove`
+
+    ```json
+    {
+      "gateway": "prod-resources",
+      "connection": "notion",
+      "tool": "create_page"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_gateways_tool_remove`](/reference/mcp/gateway#dome_gateways_tool_remove)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /dome.gateway.v1.GatewayService/RemoveGatewayTool
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "gateway_id": "{{GATEWAY_ID}}",
+      "tool_id": "{{TOOL_ID}}"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`RemoveGatewayTool`](/api/tag/gateways/remove-gateway-tool)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Remove an individual tool"
+    Remove the "create_page" tool from "prod-resources" without deleting the tool.
+    ```
+  </Tab>
+</Tabs>
+
+### Tool source
+
+Add or remove an entire MCP connection. Newly discovered tools on that connection join the gateway automatically.
+
+##### Add tool source
+
+Add a tool source to include every tool currently on that connection.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome gateways tool-sources add prod-resources notion
+    ```
+
+    <Callout icon="terminal">Reference: [`dome gateways tool-sources add`](/cli/build/gateway#add-tool-source)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_gateways_tool_source_add`
+
+    ```json
+    {
+      "gateway": "prod-resources",
+      "connection": "notion"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_gateways_tool_source_add`](/reference/mcp/gateway#dome_gateways_tool_source_add)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /dome.gateway.v1.GatewayService/AddGatewayToolSource
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "gateway_id": "{{GATEWAY_ID}}",
+      "connection_id": "{{CONNECTION_ID}}"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`AddGatewayToolSource`](/api/tag/gateways/add-gateway-tool-source)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Add a tool source"
+    Add the entire "notion" tool source to "prod-resources", including newly discovered tools.
+    ```
+  </Tab>
+</Tabs>
+
+##### Remove tool source
+
+Remove a tool-source membership to stop automatically including tools from that connection. Individually added tools remain in the gateway.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome gateways tool-sources remove prod-resources notion
+    ```
+
+    <Callout icon="terminal">Reference: [`dome gateways tool-sources remove`](/cli/build/gateway#remove-tool-source)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_gateways_tool_source_remove`
+
+    ```json
+    {
+      "gateway": "prod-resources",
+      "connection": "notion"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_gateways_tool_source_remove`](/reference/mcp/gateway#dome_gateways_tool_source_remove)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /dome.gateway.v1.GatewayService/RemoveGatewayToolSource
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "gateway_id": "{{GATEWAY_ID}}",
+      "connection_id": "{{CONNECTION_ID}}"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`RemoveGatewayToolSource`](/api/tag/gateways/remove-gateway-tool-source)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Remove a tool source"
+    Remove the "notion" tool source from "prod-resources" without deleting the connection.
+    ```
+  </Tab>
+</Tabs>
+
+### Pool
+
+Add or remove a pool so agents can call it by its stable name through the gateway. Changes to the pool's members do not require a membership update.
+
+##### Add pool
+
+Add a pool to expose its routed models through the gateway.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome gateways model-pools add prod-resources production
+    ```
+
+    <Callout icon="terminal">Reference: [`dome gateways model-pools add`](/cli/build/gateway#add-model-pool)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_gateways_model_pool_add`
+
+    ```json
+    {
+      "gateway": "prod-resources",
+      "pool": "production"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_gateways_model_pool_add`](/reference/mcp/gateway#dome_gateways_model_pool_add)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /dome.gateway.v1.GatewayService/AddGatewayLLMPool
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "gateway_id": "{{GATEWAY_ID}}",
+      "llm_pool_id": "{{POOL_ID}}"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`AddGatewayLLMPool`](/api/tag/gateways/add-gateway-llm-pool)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Add a model pool"
+    Add the "production" model pool to "prod-resources".
+    ```
+  </Tab>
+</Tabs>
+
+##### Remove pool
+
+Remove a pool to stop exposing that pool through the gateway. The pool and its members remain configured.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome gateways model-pools remove prod-resources production
+    ```
+
+    <Callout icon="terminal">Reference: [`dome gateways model-pools remove`](/cli/build/gateway#remove-model-pool)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_gateways_model_pool_remove`
+
+    ```json
+    {
+      "gateway": "prod-resources",
+      "pool": "production"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_gateways_model_pool_remove`](/reference/mcp/gateway#dome_gateways_model_pool_remove)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /dome.gateway.v1.GatewayService/RemoveGatewayLLMPool
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "gateway_id": "{{GATEWAY_ID}}",
+      "llm_pool_id": "{{POOL_ID}}"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`RemoveGatewayLLMPool`](/api/tag/gateways/remove-gateway-llm-pool)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Remove a model pool"
+    Remove the "production" model pool from "prod-resources" without deleting the pool.
+    ```
+  </Tab>
+</Tabs>
+
+### Direct model
+
+Add or remove one model connection without routing through a pool.
+
+##### Add direct model
+
+Add a direct model connection to make that model name addressable through the gateway.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome gateways models add prod-resources claude-prod
+    ```
+
+    <Callout icon="terminal">Reference: [`dome gateways models add`](/cli/build/gateway#add-model)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_gateways_model_add`
+
+    ```json
+    {
+      "gateway": "prod-resources",
+      "model": "claude-prod"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_gateways_model_add`](/reference/mcp/gateway#dome_gateways_model_add)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /dome.gateway.v1.GatewayService/AddGatewayLLMModel
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "gateway_id": "{{GATEWAY_ID}}",
+      "llm_model_connection_id": "{{MODEL_CONNECTION_ID}}"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`AddGatewayLLMModel`](/api/tag/gateways/add-gateway-llm-model)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Add a direct model"
+    Add "claude-prod" directly to "prod-resources".
+    ```
+  </Tab>
+</Tabs>
+
+##### Remove direct model
+
+Remove a direct model connection to stop exposing it through the gateway without deleting the connection.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome gateways models remove prod-resources claude-prod
+    ```
+
+    <Callout icon="terminal">Reference: [`dome gateways models remove`](/cli/build/gateway#remove-model)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_gateways_model_remove`
+
+    ```json
+    {
+      "gateway": "prod-resources",
+      "model": "claude-prod"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_gateways_model_remove`](/reference/mcp/gateway#dome_gateways_model_remove)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /dome.gateway.v1.GatewayService/RemoveGatewayLLMModel
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "gateway_id": "{{GATEWAY_ID}}",
+      "llm_model_connection_id": "{{MODEL_CONNECTION_ID}}"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`RemoveGatewayLLMModel`](/api/tag/gateways/remove-gateway-llm-model)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Remove a direct model"
+    Remove "claude-prod" from "prod-resources" without deleting the model connection.
+    ```
+  </Tab>
+</Tabs>
+
+After any membership change, [retrieve the gateway](#get-gateway) to confirm its individual tool, tool source, model pool, and direct model memberships.
+
+## Manage agent access
+
+Grant or revoke who is admitted at the gateway edge. Per-agent and workspace-wide grants are in [Overview](#agent-access). Other rules can still deny individual members after admission.
+
+### List agent access
+
+List agents and show whether each agent has a per-agent grant to the gateway. Revoked agents are excluded. Suspended agents remain listed so you can inspect their grants before reactivation.
+
+<Callout icon="key">Requires `agents.view`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome gateways access list prod-resources
+    ```
+
+    <Callout icon="terminal">Reference: [`dome gateways access list`](/cli/build/gateway#list-access)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_gateways_access_list`
+
+    ```json
+    {
+      "gateway": "prod-resources"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_gateways_access_list`](/reference/mcp/gateway#dome_gateways_access_list)</Callout>
+  </Tab>
+  <Tab value="API">
+    The API returns every agent in the workspace. Exclude revoked agents, then check whether each remaining agent's `allowed_gateway_ids` contains the target gateway ID.
+
+    ```http
+    GET /v1/agents?workspace_id={{WORKSPACE_ID}}
+    ```
+
+    <Callout icon="code">Reference: [`ListAgents`](/api/tag/agents/list-agents)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="List agent access"
+    List agents and show whether each one has a per-agent grant to "prod-resources".
+    ```
+  </Tab>
+</Tabs>
+
+### Grant one agent
+
+Grant one agent access while preserving its existing gateway grants. Dome generates and manages the permit rules. You cannot edit those rules directly.
+
+<Callout icon="key">Requires `agents.register` and `rules.deploy`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome gateways access grant prod-resources data-pipeline-agent
+    ```
+
+    <Callout icon="terminal">Reference: [`dome gateways access grant`](/cli/build/gateway#grant-access)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_gateways_agent_grant`
+
+    ```json
+    {
+      "gateway": "prod-resources",
+      "agent_id": "{{AGENT_ID}}"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_gateways_agent_grant`](/reference/mcp/gateway#dome_gateways_agent_grant)</Callout>
+  </Tab>
+  <Tab value="API">
+    The `allowed_gateway_ids` field replaces the agent's full list. Include every existing gateway ID that the agent should keep, plus the new ID.
+
+    ```http
+    PATCH /v1/agents/{{AGENT_ID}}
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "allowed_gateway_ids": [
+        "{{EXISTING_GATEWAY_ID}}",
+        "{{GATEWAY_ID}}"
+      ],
+      "update_mask": "allowed_gateway_ids"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`UpdateAgent`](/api/tag/agents/update-agent)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Grant one agent"
+    Grant "data-pipeline-agent" access to "prod-resources" and preserve its existing Gateway grants.
+    ```
+  </Tab>
+</Tabs>
+
+### Revoke one agent
+
+Revoke one agent's access to the gateway while preserving its other gateway grants. Requests from that agent to the gateway endpoint fail at edge admission unless a workspace-wide grant also applies.
+
+<Callout icon="key">Requires `agents.register` and `rules.deploy`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome gateways access revoke prod-resources data-pipeline-agent
+    ```
+
+    <Callout icon="terminal">Reference: [`dome gateways access revoke`](/cli/build/gateway#revoke-access)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_gateways_agent_revoke`
+
+    ```json
+    {
+      "gateway": "prod-resources",
+      "agent_id": "{{AGENT_ID}}"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_gateways_agent_revoke`](/reference/mcp/gateway#dome_gateways_agent_revoke)</Callout>
+  </Tab>
+  <Tab value="API">
+    The `allowed_gateway_ids` field replaces the agent's full list. Omit the revoked ID and preserve every other ID the agent should keep.
+
+    ```http
+    PATCH /v1/agents/{{AGENT_ID}}
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "allowed_gateway_ids": [
+        "{{OTHER_GATEWAY_ID}}"
+      ],
+      "update_mask": "allowed_gateway_ids"
+    }
+    ```
+
+    <Callout icon="code">Reference: [`UpdateAgent`](/api/tag/agents/update-agent)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Revoke one agent"
+    Revoke "data-pipeline-agent" access to "prod-resources" and preserve its other Gateway grants.
+    ```
+  </Tab>
+</Tabs>
+
+### Grant every workspace agent
+
+Grant every current and future workspace agent access when all agents need the same endpoint. Other rules can still deny individual resources after admission.
+
+<Callout icon="key">Requires `gateways.manage` and `rules.deploy`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome gateways access grant-all prod-resources
+    ```
+
+    <Callout icon="terminal">Reference: [`dome gateways access grant-all`](/cli/build/gateway#grant-access-to-all-agents)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_gateways_all_agents_grant`
+
+    ```json
+    {
+      "gateway": "prod-resources"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_gateways_all_agents_grant`](/reference/mcp/gateway#dome_gateways_all_agents_grant)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /dome.gateway.v1.GatewayService/SetGatewayAllAgentsGrant
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "gateway_id": "{{GATEWAY_ID}}",
+      "granted": true
+    }
+    ```
+
+    <Callout icon="code">Reference: [`SetGatewayAllAgentsGrant`](/api/tag/gateways/set-gateway-all-agents-grant)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Grant every workspace agent"
+    Grant every current and future workspace agent access to "prod-resources".
+    ```
+  </Tab>
+</Tabs>
+
+### Revoke every workspace agent
+
+Revoke the workspace-wide grant to stop automatically admitting every agent. Existing per-agent grants remain in place.
+
+<Callout icon="key">Requires `gateways.manage` and `rules.deploy`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome gateways access revoke-all prod-resources
+    ```
+
+    <Callout icon="terminal">Reference: [`dome gateways access revoke-all`](/cli/build/gateway#revoke-access-from-all-agents)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_gateways_all_agents_revoke`
+
+    ```json
+    {
+      "gateway": "prod-resources"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_gateways_all_agents_revoke`](/reference/mcp/gateway#dome_gateways_all_agents_revoke)</Callout>
+  </Tab>
+  <Tab value="API">
+    ```http
+    POST /dome.gateway.v1.GatewayService/SetGatewayAllAgentsGrant
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "gateway_id": "{{GATEWAY_ID}}",
+      "granted": false
+    }
+    ```
+
+    <Callout icon="code">Reference: [`SetGatewayAllAgentsGrant`](/api/tag/gateways/set-gateway-all-agents-grant)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Revoke every workspace agent"
+    Revoke the workspace-wide grant from "prod-resources" without changing per-agent grants.
+    ```
+  </Tab>
+</Tabs>
+
+After any access change, [list agent access](#list-agent-access) to confirm the resulting per-agent grants. For a workspace-wide grant, [retrieve the gateway](#get-gateway) and check its workspace-wide grant setting.
+
+## Manage cost quotas
+
+Cap aggregate LLM spend for member pools and direct model connections on this gateway. Refer to [Overview](#cost-quotas). Window and scope semantics are on the [Quotas](/reference/controls/quotas) reference.
+
+### List cost quotas
+
+List gateway cost quotas in the workspace or filter the result to one gateway.
+
+<Callout icon="key">Requires `gateways.view`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome quotas list --gateway prod-resources
+    ```
+
+    <Callout icon="terminal">Reference: [`dome quotas list`](/cli/govern/quota#list-quotas)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_quotas_list`
+
+    ```json
+    {
+      "gateway": "prod-resources"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_quotas_list`](/reference/mcp/quotas#dome_quotas_list)</Callout>
+  </Tab>
+  <Tab value="API">
+    The API returns every LLM quota in the workspace. Filter the response to records with `subject_type` equal to `gateway` and the desired `subject_id`.
+
+    ```http
+    GET /v1/quotas?workspace_id={{WORKSPACE_ID}}
+    ```
+
+    <Callout icon="code">Reference: [`ListLLMQuotas`](/api/tag/quotas/list-llm-quotas)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="List cost quotas"
+    List the cost quotas for the "prod-resources" Gateway.
+    ```
+  </Tab>
+</Tabs>
+
+### Set a cost quota
+
+Set a daily or monthly USD spend cap for LLM calls through a gateway. Once spend exceeds the cap, LLM calls addressed to that gateway return HTTP `429`.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome quotas set --subject gateway --gateway prod-resources --limit 500 --window monthly --name "prod-monthly"
+    ```
+
+    <Callout icon="terminal">Reference: [`dome quotas set`](/cli/govern/quota#set-quota)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_quotas_set`
+
+    ```json
+    {
+      "subject": "gateway",
+      "gateway": "prod-resources",
+      "limit_usd": 500,
+      "window": "monthly",
+      "name": "prod-monthly"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_quotas_set`](/reference/mcp/quotas#dome_quotas_set)</Callout>
+  </Tab>
+  <Tab value="API">
+    The API expresses the limit in millionths of a US dollar. For example, `$500` is `500000000`.
+
+    ```http
+    POST /v1/quotas
+    Content-Type: application/json
+
+    {
+      "workspace_id": "{{WORKSPACE_ID}}",
+      "subject_type": "gateway",
+      "subject_id": "{{GATEWAY_ID}}",
+      "limit_micros": "500000000",
+      "window": "monthly",
+      "name": "prod-monthly",
+      "enabled": true
+    }
+    ```
+
+    <Callout icon="code">Reference: [`CreateLLMQuota`](/api/tag/quotas/create-llm-quota)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Set a cost quota"
+    Create a monthly $500 cost quota named "prod-monthly" for "prod-resources".
+    ```
+  </Tab>
+</Tabs>
+
+### Remove a cost quota
+
+Remove a gateway cost quota to stop enforcing that cap.
+
+<Callout icon="key">Requires `gateways.manage`.</Callout>
+
+<Callout type="warning">
+Removing a quota takes away an active spending control. Confirm the quota ID with the list operation first.
+</Callout>
+
+<Tabs items={["CLI","MCP","API","Agent"]}>
+  <Tab value="CLI">
+    ```bash
+    dome quotas rm {{QUOTA_ID}}
+    ```
+
+    <Callout icon="terminal">Reference: [`dome quotas rm`](/cli/govern/quota#remove-quota)</Callout>
+  </Tab>
+  <Tab value="MCP">
+    Tool: `dome_quotas_remove`
+
+    ```json
+    {
+      "quota_id": "{{QUOTA_ID}}"
+    }
+    ```
+
+    <Callout icon="cpu">Reference: [`dome_quotas_remove`](/reference/mcp/quotas#dome_quotas_remove)</Callout>
+  </Tab>
+  <Tab value="API">
+    Confirm that the quota has `subject_type: gateway` before deleting it. The generic API endpoint does not add the CLI and MCP subject-type guard.
+
+    ```http
+    DELETE /v1/quotas/{{QUOTA_ID}}?workspace_id={{WORKSPACE_ID}}
+    ```
+
+    <Callout icon="code">Reference: [`DeleteLLMQuota`](/api/tag/quotas/delete-llm-quota)</Callout>
+  </Tab>
+  <Tab value="Agent">
+    ```text title="Remove a cost quota"
+    Confirm that "{{QUOTA_ID}}" is a Gateway quota, then remove it.
+    ```
+  </Tab>
+</Tabs>
+
+After any quota change, [list cost quotas](#list-cost-quotas) to confirm the active caps and reset windows.
+
+## Build the runtime endpoint
+
+Build the runtime endpoint from the workspace gateway host and the gateway ID. Retrieve the ID with [List gateways](#list-gateways).
+
+<Callout icon="key">Requires `gateways.view` to retrieve the ID. Runtime calls require an active agent key and a grant to the gateway.</Callout>
+
+Use the ID in the canonical prefix:
+
+```text
+https://{{GATEWAY_HOST}}/gateways/{{GATEWAY_ID}}
+```
+
+Choose the base URL that matches the client.
+
+| Client | Base URL | Client appends |
+|--------|----------|----------------|
+| Dome SDK | `https://{{GATEWAY_HOST}}/gateways/{{GATEWAY_ID}}` | nothing, used as-is |
+| Anthropic SDK | `https://{{GATEWAY_HOST}}/gateways/{{GATEWAY_ID}}` | `/v1/messages` (SDK-managed) |
+| OpenAI-compatible SDK | `https://{{GATEWAY_HOST}}/gateways/{{GATEWAY_ID}}/v1` | `/chat/completions`, `/embeddings`, … |
+| MCP client | `https://{{GATEWAY_HOST}}/gateways/{{GATEWAY_ID}}/mcp` | protocol frames |
+
+Do not add `/v1` to the Anthropic base URL because the Anthropic SDK appends `/v1/messages`. Bare `/mcp` and `/v1` requests return HTTP `400`. Every caller must select a gateway in the URL.
+
+The `/mcp` endpoint speaks Streamable HTTP only, not the legacy standalone SSE transport. Configure MCP clients for `http` (or `streamable-http`), not `sse`.
+
+Run `dome gateways get <name-or-id> --json` to retrieve the complete `gateway_url`, `mcp_url`, `openai_base_url`, and `anthropic_base_url`. SDK agent-key creation and token exchange return the same authoritative endpoint set. Refer to [Python SDK Gateways](/sdks/python/reference#gateways).
+
+## Verify reachability
+
+Verify discovery before invoking a tool or model. Discovery returns only members of the selected gateway that the agent's grant and applicable rules permit.
+
+<Callout icon="key">Requires an active agent key, access to the gateway, and rules that allow discovery.</Callout>
+
+List MCP tools through the scoped endpoint:
+
+```bash
+curl -X POST "https://{{GATEWAY_HOST}}/gateways/{{GATEWAY_ID}}/mcp" \
+  -H "Authorization: Bearer {{DOME_AGENT_KEY}}" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+List model pools and direct model connections through the OpenAI-compatible endpoint:
+
+```bash
+curl "https://{{GATEWAY_HOST}}/gateways/{{GATEWAY_ID}}/v1/models" \
+  -H "Authorization: Bearer {{DOME_AGENT_KEY}}"
+```
+
+Configure runtime credentials and SDK clients in [Develop](/develop).
+
+## Check synchronization
+
+After deploying rules or changing gateway membership, query the gateway's operational status with an agent credential from the workspace:
+
+```bash
+curl "https://{{GATEWAY_HOST}}/admin/status" \
+  -H "Authorization: Bearer {{DOME_AGENT_KEY}}"
+```
+
+`rules_version` is the version of your workspace's latest policy snapshot that this gateway has applied. It stays empty until the gateway applies a snapshot. `sync_health` reports the most recent successful synchronization and consecutive failures; `connections` reports the connection health visible to your workspace. The response never exposes another workspace's configuration.
+
+## Troubleshoot reachability
+
+Use the observed response to locate the failed layer.
+
+| Symptom | Likely cause | Resolution |
+|---------|--------------|------------|
+| HTTP `400` asks for a gateway | The client used bare `/mcp` or `/v1` | Add `/gateways/{{GATEWAY_ID}}` before the protocol path |
+| gateway is unavailable | The ID is unknown, disabled, or not yet synchronized | Verify the ID, enable the gateway, and wait for gateway synchronization to complete |
+| Invocation is denied before rules evaluate | The agent lacks access to the gateway | Add a per-agent or workspace-wide grant |
+| Discovery returns no resources | The agent lacks access, the gateway has no matching members, or rules deny discovery | Check agent access, membership, and rules |
+| tool is missing from `tools/list` | The tool lacks membership, is blocked, or rules deny discovery | Check individual and tool-source membership, tool status, and rules |
+| Pool or model is missing from `/v1/models` | The resource lacks membership or rules deny discovery | Check pool or direct-model membership and model rules |
+| Resource shows **Unreachable** | The resource belongs to no gateway | Add the resource or its containing tool source or pool |
+| LLM call returns HTTP `429` | A gateway or other LLM cost quota is exhausted | List active quotas and check their reset windows |
+| gateway creation is rejected at the plan limit | The workspace already has the maximum number of gateways | Reuse, rename, or delete the Default gateway, or change plans |
+| Anthropic request returns HTTP `404` | The client base URL includes an extra `/v1` | Use `https://{{GATEWAY_HOST}}/gateways/{{GATEWAY_ID}}` |
+
+After changing memberships or grants, wait for gateway synchronization before testing again. If discovery succeeds but invocation fails, inspect the resource rules and the agent's lifecycle state.
+
+## Next steps
+
+- [Gateways](/concepts/gateways) concept for how membership and grants work
+- [Interactive MCP access](/build/gateways/interactive-mcp-access) to let people sign in with their own account instead of an agent key
+- [Register external agents](/build/agents/external) to create agent identities and keys
+- [Tools](/connect/tools) to configure tool connections and catalog state
+- [Pools](/connect/pools) to configure pools and routing

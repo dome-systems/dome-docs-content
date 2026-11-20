@@ -1,0 +1,46 @@
+---
+title: Escalations
+description: Why Dome routes selected authorization decisions through versioned review workflows
+---
+
+import { escalation } from '@/snippets/glossary';
+
+<PreviewBadge />
+
+<p>{escalation}</p>
+
+## High-level overview
+
+The escalation control adds a review step to selected authorization decisions. A Cedar `escalate` policy identifies the requests that need review, and the workflow ends with an allow or deny outcome.
+
+Escalation workflows are workspace-scoped and versioned. Use them when a static rule is not enough because a designated reviewer must approve or deny an individual request.
+
+An escalation handles a sensitive request as follows:
+
+1. A Cedar `escalate` policy matches an agent, action, and resource.
+2. The request does not proceed while its required judgment is pending.
+3. A reviewer inspects the judgment context and records `approve` or `deny`.
+4. The caller retries the request, and Dome applies the workflow’s terminal outcome.
+
+Each judgment applies to one triggering request. A later matching request creates its own review, even when it reaches the same escalation.
+
+### When to use an escalation
+
+Use an escalation when an action needs case-by-case review, such as accessing sensitive employee records or running a high-impact tool. Keep deterministic rules for requests that should always allow or deny without review.
+
+Start with a narrow Cedar policy. Expand it only after reviewers confirm that the judgment volume and context are useful.
+
+### What reviewers see
+
+Reviewers see the triggering request's audit context and the rules that routed it to review. They do not see the raw request body in the judgment record.
+
+Resolved judgments and escalation outcomes remain in the audit trail. Export audit records when your SIEM or review process needs the same decision history.
+
+## Next steps
+
+With the escalations model in mind, continue with:
+
+- [escalations](/govern/escalations) to create workflows, attach Cedar policies, and resolve judgments
+- [rules](/concepts/controls/rules) concept for deterministic authorization
+- [Authorization model](/concepts/architecture/authorization-model) concept for Cedar evaluation
+- [Audit events](/concepts/audit) concept to investigate and export decision history

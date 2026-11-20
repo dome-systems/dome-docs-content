@@ -1,0 +1,9 @@
+{
+  "pages": [
+    "index",
+    "govern-your-first-agent",
+    "call-a-model-through-a-pool",
+    "build-a-governed-app",
+    "govern-per-end-user"
+  ]
+}

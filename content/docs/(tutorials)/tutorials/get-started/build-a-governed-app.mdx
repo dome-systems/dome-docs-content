@@ -1,0 +1,465 @@
+---
+title: Build a governed app
+sidebarTitle: Build a governed app
+description: "Wire model and tool calls in one app. Watch allow, redact, and deny."
+---
+
+Tool calls and inference are what an agent actually does. The application puts both on one path: the model names the `employee-summary` pool, may call tools through the same gateway, and every step stays governed, including allow, redact, and deny.
+
+<Prompt
+  description="Hand this to an AI agent. It runs the HR application so you see model + tools together, then allow, redact, and deny."
+  icon="sparkles"
+  actions={["copy", "cursor"]}
+>
+Build a small governed HR application that runs a model + tool agent loop through Dome, then hand me the Chat and tools walks that prove it.
+
+Use the Vite + Hono reference app at https://github.com/dome-systems/demo-hr-desk.
+
+First, show me this plan and ask me to confirm before running anything:
+
+1. Confirm the workspace from Govern + Call a model through a pool is still active (demo-hr, hr-assistant, employee-summary pool, llm rule)
+2. Mint a second API key for the app, separate from my editor's key
+3. Clone the demo app and wire env: token, gateway URL, and DOME_POOL=employee-summary
+4. Walk me through the generic agent flow, then the app files that implement each step (with the relevant code)
+5. Run Chat and walk me through a Try asking prompt so I see model + tool steps
+6. On tools, click through allow, redact, and deny
+7. Show me the same decisions in the audit trail
+
+Follow the commands at https://developer.domesystems.ai/agent/tutorials/get-started/build-a-governed-app.md exactly.
+
+Non-negotiable rules:
+
+- Narrate as you go. Before each step, tell me in one or two sentences what you are about to do and why it matters. Do not silently run the whole flow.
+- Confirm the active context. Run `dome context current` and confirm the workspace name starts with `studio-`. If it does not, stop and ask me. Never modify a workspace you did not provision in this session.
+- Never print the `dome_...` agent token in chat. Write it into `.env` and confirm that file is gitignored.
+- `dome auth login` opens a browser. Run it, then wait for me before continuing. After a successful sign-in, run `dome context sync` so stale workspaces drop out of the local cache.
+- Do not weaken the rules to make a call succeed. The denial is the point of the exercise. If a call fails that should have worked, tell me instead of editing the Cedar bundle.
+- Keep the app small. Prefer the reference app as-is. Do not add auth UI or expand the product.
+- Chat runs the model via the pool and tools via MCP, both through Dome from the **backend**. The browser never holds the agent token and never calls the gateway.
+- After each create step, give me a markdown link into the Dome console for that resource. Derive the base URL from `dome auth status` → `Server`.
+- Expect re-runs. Check for existing resources before creating them and use `--if-not-exists` where available.
+- Never report a step as done without showing the command output.
+
+When the app runs, walk me through Chat first (model + tool steps, View gateway call), then the three tools outcomes and which control produced each: Cedar allowlist, response filter, and the forbid rule.
+
+Then offer to run `dome audit query --results denied --limit 10` so I can see the denial attributed to the agent.
+</Prompt>
+
+In this tutorial, you will run a small HR application against the gateway you already set up. The model calls `employee-summary` and may invoke tools. Dome governs every allow, redact, and deny, and records each step in the audit trail.
+
+The walkthrough uses the Vite + Hono [demo-hr-desk](https://github.com/dome-systems/demo-hr-desk) reference app.
+
+To do this, you will:
+
+<Steps>
+  <Step title="Mint a credential for the app">
+    Issue a second key on the existing agent identity.
+  </Step>
+  <Step title="Set up the project">
+    Clone the reference app and fill `.env`.
+  </Step>
+  <Step title="Understand the agent flow">
+    See the generic loop, then the app files that implement it.
+  </Step>
+  <Step title="Run the agent loop">
+    Chat through the pool and watch model and tool steps.
+  </Step>
+  <Step title="Show allow, redact, and deny">
+    Click the three tool actions on the tools tab.
+  </Step>
+  <Step title="Verify the results">
+    Match what you saw against the audit trail.
+  </Step>
+</Steps>
+
+## Prerequisites
+
+For this tutorial, you will need:
+
+- The Dome CLI. Refer to [Install](/install) for Homebrew and direct-download instructions.
+- [Govern your first agent](/tutorials/get-started/govern-your-first-agent) completed, with its workspace still active. That tutorial created the `demo-hr` connection, the `redact-contact` filter, the `hr-assistant` agent, and the tool rule bundle.
+- [Call a model through a pool](/tutorials/get-started/call-a-model-through-a-pool) completed. This application needs the `employee-summary` pool and the `hr-assistant-llm` rule so Chat can invoke the model.
+- Node.js 18 or later.
+
+Confirm you are still on the workspace before you start:
+
+```bash
+dome context current
+```
+
+The workspace should read `studio-get-started`. If it does not, switch back:
+
+```bash
+dome context current
+```
+
+> This tutorial runs entirely in a workspace. In a production workspace, minting agent credentials is a developer action, while the rules this app runs under are owned by security.
+
+## Mint a credential for the app
+
+An agent identity can hold several credentials. Your editor already has one. The app needs its own, so you can revoke either without disturbing the other.
+
+```bash
+dome agents create-key hr-assistant --name service
+```
+
+The token is shown once. Copy the `Token: dome_…` value. Both keys resolve to `hr-assistant`, so both are governed by the same rules and both appear in audit under the same agent.
+
+## Set up the project
+
+Clone the reference HR application, change into the directory, create a new `.env` file, then install the dependencies.
+
+```bash
+git clone https://github.com/dome-systems/demo-hr-desk.git
+cd demo-hr-desk
+cp .env.example .env
+npm install
+```
+
+Fill `.env` from the CLI. The gateway URL must include the `/gateways/<id>` segment and must **not** include `/mcp` or `/v1`. The Hono proxy appends those itself:
+
+```bash title=".env"
+DOME_TOKEN=dome_...
+DOME_GATEWAY_URL=https://GATEWAY_HOST/gateways/DEFAULT_GATEWAY_ID
+DOME_POOL=employee-summary
+```
+
+```bash
+dome context current
+dome gateways list
+```
+
+This tutorial uses plain HTTP so the wire shape stays visible.
+
+However, you can use any OpenAI-compatible client, AI SDK, or MCP client at the gateway URL with the agent token. Chat completions go to `…/gateways/<id>/v1`, and tools go to `…/gateways/<id>/mcp`.
+
+## How a governed agent works
+
+Any app that puts a model and tools behind Dome follows the same shape. **The frontend never calls Dome.** The agent token is a bearer credential for the gateway. If it lives in the browser, anyone who opens DevTools can call tools and models as that agent. Keep the token on your backend and have the UI talk only to your server.
+
+1. **UI → your backend.** The client posts a user message (or a direct tool click) to your server, never to the gateway.
+2. **Backend → model (pool).** The server `POST`s OpenAI-shaped chat completions to `…/gateways/<id>/v1/chat/completions`, with `model` set to the **pool name** (`employee-summary`), not a vendor model id. The agent token stays in server env.
+3. **Model may request tools.** If the completion includes `tool_calls`, the server maps each short name to a qualified MCP tool and `POST`s JSON-RPC `tools/call` to `…/gateways/<id>/mcp`.
+4. **Tools return through Dome.** Allow, redact, and deny happen on that MCP path before your code sees the result. Denied calls become structured errors you feed back to the model.
+5. **Loop.** Tool results go into the message list. The server calls the pool again until the model returns plain text (or you hit a round limit).
+6. **Optional direct tools.** A tools UI can hit your backend's `/api/tool`, which then calls `/mcp`, with still no browser → Dome path. Useful for proving allow / redact / deny in isolation.
+
+Dome manages authorization, filtering, and audit. Your application manages the agent loop: what to ask the model, which tools to attempt, and how to show the results.
+
+## How this application implements it
+
+[demo-hr-desk](https://github.com/dome-systems/demo-hr-desk) is the reference application for this tutorial. The sections below are a guided tour of how it implements each step above. Skip ahead to [Run the agent loop](#run-the-agent-loop) if you want to try it first.
+
+### UI → your backend
+
+`src/App.tsx` posts conversation history to `/api/chat`. The agent token never leaves the server.
+
+```tsx title="src/App.tsx"
+async function sendChat(prompt: string) {
+  // ...
+  const messages = [...prior, { role: "user" as const, content: text }];
+  // ...
+  const res = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ messages }),
+  });
+  const result = (await res.json()) as AgentResponse;
+  // ...
+}
+```
+
+`server/index.ts` mounts the backend routes. Only these handlers (and the helpers they call) may use `DOME_TOKEN` or reach the gateway.
+
+```ts title="server/index.ts"
+app.post("/api/chat", async (c) => {
+  // ... build messages from body.messages or body.prompt
+  const result = await runAgent({
+    messages,
+    pool: body.pool,
+  });
+  return c.json(result);
+});
+```
+
+### Backend → model (pool)
+
+`server/llm.ts` is the curl from [Call a model through a pool](/tutorials/get-started/call-a-model-through-a-pool) in TypeScript: gateway + `/v1/chat/completions`, bearer agent token, `model` = pool.
+
+```ts title="server/llm.ts"
+export async function chatCompletion(options: {
+  prompt?: string;
+  messages?: ChatMessage[];
+  pool?: string;
+  tools?: unknown[];
+}): Promise<CallTrace> {
+  const base = process.env.DOME_GATEWAY_URL;
+  const token = process.env.DOME_TOKEN;
+  const pool = options.pool || process.env.DOME_POOL || DEFAULT_POOL;
+
+  const requestBody: Record<string, unknown> = {
+    model: pool,
+    messages,
+  };
+  if (options.tools?.length) {
+    requestBody.tools = options.tools;
+    requestBody.tool_choice = "auto";
+  }
+  // ...
+  const url = `${base.replace(/\/$/, "")}/v1/chat/completions`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(requestBody),
+  });
+  // ...
+}
+```
+
+### Model may request tools
+
+When the completion includes `tool_calls`, `server/agent.ts` maps each short name to a qualified MCP tool and calls `server/dome.ts`.
+
+```ts title="server/agent.ts"
+export const TOOL_MAP: Record<string, string> = {
+  list_employees: "demo-hr/hr/list_employees",
+  get_employee: "demo-hr/hr/get_employee",
+  get_salary: "demo-hr/finance/get_salary",
+  // ...
+};
+
+for (const call of toolCalls) {
+  const shortName = call.function?.name ?? "";
+  const mcpName = TOOL_MAP[shortName] ?? shortName;
+  // ... parse arguments
+  const toolTrace = await callTool(mcpName, args);
+  // ...
+}
+```
+
+### Tools return through Dome
+
+`server/dome.ts` posts JSON-RPC `tools/call` to `/mcp`. Allow, redact, and deny happen on that path before your code sees the result.
+
+```ts title="server/dome.ts"
+export async function callTool(
+  name: string,
+  args: Record<string, unknown> = {},
+): Promise<CallTrace> {
+  const base = process.env.DOME_GATEWAY_URL;
+  const token = process.env.DOME_TOKEN;
+
+  const requestBody = {
+    jsonrpc: "2.0" as const,
+    id: 1,
+    method: "tools/call" as const,
+    params: { name, arguments: args },
+  };
+  // ...
+  const url = `${base.replace(/\/$/, "")}/mcp`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(requestBody),
+  });
+  // ... map body.error → denied, result → allowed / error
+}
+```
+
+### Loop
+
+`server/agent.ts` runs the rounds. Tool results go into the message list. The server calls the pool again until the model returns plain text (or you hit a round limit).
+
+```ts title="server/agent.ts"
+export async function runAgent(options: {
+  messages: ChatMessage[];
+  pool?: string;
+}): Promise<AgentResult> {
+  // ... seed system prompt + user messages
+  for (let round = 0; round < MAX_ROUNDS; round++) {
+    const trace = await chatCompletion({
+      messages: messages as ChatMessage[],
+      pool: options.pool,
+      tools: OPENAI_TOOLS,
+    });
+    steps.push({ type: "model", trace });
+    // ... return early if denied / no tool_calls
+
+    for (const call of toolCalls) {
+      const shortName = call.function?.name ?? "";
+      const mcpName = TOOL_MAP[shortName] ?? shortName;
+      // ... parse arguments
+      const toolTrace = await callTool(mcpName, args);
+      steps.push({ type: "tool", name: shortName, mcpName, arguments: args, trace: toolTrace });
+      messages.push({
+        role: "tool",
+        tool_call_id: call.id,
+        content: toolResultContent(toolTrace),
+      });
+    }
+  }
+  // ...
+}
+```
+
+Each `steps` entry is what the Chat transcript and **View gateway call** sheet show: model requests naming `employee-summary`, tool requests naming `demo-hr/…`.
+
+### Optional direct tools
+
+A tools UI can hit `/api/tool` for one MCP call without the model loop. Still no browser → Dome path. Useful for proving allow, redact, and deny in isolation.
+
+```tsx title="src/App.tsx"
+async function runTool(action: (typeof TOOL_ACTIONS)[number]) {
+  // ...
+  const res = await fetch("/api/tool", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: action.name, arguments: action.args }),
+  });
+  const trace = (await res.json()) as CallTrace;
+  // ...
+}
+```
+
+```ts title="server/index.ts"
+app.post("/api/tool", async (c) => {
+  const body = await c.req.json<{
+    name?: string;
+    arguments?: Record<string, unknown>;
+  }>();
+  // ...
+  const trace = await callTool(body.name, body.arguments ?? {});
+  return c.json(trace);
+});
+```
+
+That is the whole app: UI → your backend → pool and/or MCP. The frontend never calls Dome. The agent token never leaves the server.
+
+## Run the agent loop
+
+Start the application:
+
+```bash
+npm run dev
+```
+
+Open [http://localhost:5173](http://localhost:5173). Stay on **Chat** (the default). Use **Try asking** and start with **Who is E001 and how do I reach them?**
+
+You should see:
+
+1. A model step that named `employee-summary` (open **View gateway call** on that step to confirm `"model": "employee-summary"`).
+2. A tool step for `get_employee` with contact fields already `[REDACTED]`.
+3. A final assistant reply that uses the tool result.
+
+Try **What is Alice's salary?** next. The model may attempt `get_salary`. The gateway denies it, and the transcript shows the refusal, the same Cedar rule as a direct tool click, now inside the loop.
+
+## Show allow, redact, and deny
+
+Chat mixed allow, redact, and deny into the model loop. The tools tab isolates each outcome with one click, so you can see which control fired without the model choosing the tools.
+
+Open **tools** and click each button in order. Your application does not decide who may call which tool, and it does not mask fields. You already defined those controls on the gateway. Your code only receives the allowed, redacted, or denied result.
+
+| Action | Status | What to notice |
+|---|---|---|
+| List employees | Allowed | Demo employees, including `E001`. |
+| Who is E001? | Allowed · redacted | Alice Johnson's record with `"email": "[REDACTED]"`. |
+| What is Alice's salary? | Denied | A `reason` from the rule that matched, not an empty payload. |
+
+The second result is the important one for guard filters. The backend returned a real address. The `redact-contact` guard filter replaced it on the response path before your proxy deserialized it. The page never asked for masking and cannot switch it off.
+
+Each result lists the outcome. Click **View gateway call** to open the side sheet with the outbound request and gateway response (token redacted).
+
+Why each click behaved that way:
+
+| Click | What Dome did |
+|---|---|
+| List employees | Cedar allowed `mcp:call` on `demo-hr/hr/list_employees`. |
+| Who is E001? | Cedar allowed the call. The `redact-contact` guard filter masked `email` on the response. |
+| What is Alice's salary? | Cedar denied `mcp:call` on `demo-hr/finance/get_salary` because it is outside the allowlist. |
+
+<Accordions>
+<Accordion title="Troubleshooting">
+  These are remediation steps if you get stuck:
+
+  - `400` with `select a gateway`, or an application outcome of `denied` on every call including list_employees.
+
+    The gateway URL is missing its `/gateways/<id>` segment, or the token is wrong. Re-read both values:
+
+    ```bash
+    dome context current
+    dome gateways list
+    ```
+
+  - The page loads but every click fails with a network error.
+
+    Confirm `npm run dev` is running and that `/api/chat` and `/api/tool` are reachable. The browser talks only to the Hono proxy. Dome is never called from the client.
+
+  - Every call is denied, including `list_employees`.
+
+    The rule bundle from the first tutorial is missing from this workspace:
+
+    ```bash
+    dome rules show --agent hr-assistant
+    ```
+
+  - The employee record still shows a real email address.
+
+    The filter is not assigned to the response direction on this connection:
+
+    ```bash
+    dome tools guards filters list demo-hr
+    ```
+
+  - Chat fails with a model / pool error, or tools work but Chat does not.
+
+    Confirm the pool tutorial landed: `employee-summary` is attached to Default, and `hr-assistant` has the `llm:invoke` rule.
+
+    ```bash
+    dome models pool get employee-summary
+    dome rules simulate --agent hr-assistant --action llm:invoke \
+      --resource employee-summary --resource-type llm_pool
+    ```
+
+    `.env` must set `DOME_POOL=employee-summary`.
+</Accordion>
+</Accordions>
+
+## Verify the results
+
+The outcomes you saw are also on the record, attributed to the agent rather than to your process.
+
+```bash
+dome audit query --limit 20
+```
+
+You should see, for this run:
+
+1. `model.call` at `stage=attempted` and `stage=completed` for Chat turns through `employee-summary`.
+2. `tool.call` at `stage=attempted` and `stage=completed` for `list_employees` (and any tools the model invoked).
+3. `guard.filter.evaluate` for `get_employee`, which is the filter reporting what it changed.
+4. A completed `tool.call` for `get_salary` with `result=denied` and the shared `denial` block.
+
+To read only the rejection:
+
+```bash
+dome audit query --results denied --limit 10
+```
+
+Both credentials resolve to one identity, so nothing here distinguishes this app from your editor. That is deliberate: the rules and the record follow the agent, not the process that holds the key. When you want them separated in audit, register a second agent rather than a second key.
+
+## Next steps
+
+You learned how to run model and tool calls from one application through the same agent and gateway. Keep the `studio-get-started` workspace for the next tutorial. Continue with:
+
+- [Govern per end user](/tutorials/get-started/govern-per-end-user) to authorize from the person, not only the agent
+
+Refer to the following docs for topics covered in this lab:
+
+- [Develop](/develop) to authenticate and call gateways from your application
+- [Guards](/govern/guards) to inspect and filter request and response content

@@ -1,0 +1,67 @@
+---
+title: Public preview
+sidebarTitle: Public preview
+description: Enable public-preview features for your organization
+---
+
+Public-preview features are released features that are not yet generally available. An organization-wide setting controls access to every public-preview feature available to your organization.
+
+## Requirements
+
+Before you begin:
+
+- Be an organization owner or administrator.
+- Authenticate the Dome CLI with a context for the organization you want to manage.
+
+## Enable public preview
+
+Turn on public preview for the active organization:
+
+```shell
+dome orgs previews enable
+```
+
+To target another organization, pass its ID:
+
+```shell
+dome orgs previews enable --org <organization-id>
+```
+
+You can also turn on public preview in the Dashboard: go to **Settings → Organization**, then enable **Preview features**.
+
+<Callout icon="info">
+  This is one organization-wide setting, not a per-feature selection. Enabling it makes every public-preview feature Dome currently offers your organization available.
+</Callout>
+
+## Check available features
+
+Run the following command to see whether public preview is enabled and the public-preview features currently offered to your organization:
+
+```shell
+dome orgs previews get
+```
+
+The output shows each feature's name, description, and whether it is enabled. Availability can vary by organization and plan, so this command is the source of truth for your organization.
+
+## Current public-preview features
+
+When available to your organization, enabling public preview gives you access to:
+
+- [Managed agents](/build/agents/managed), including scheduled and webhook-triggered runs. Dome runs these agents for you.
+- Escalations, which pause a governed request for an approval or denial before it proceeds.
+- Probes, which run adversarial tests against a bot or gateway and report the governance controls that catch them. Probes are available only to eligible organizations.
+
+## Disable public preview
+
+Turn public preview off for the active organization:
+
+```shell
+dome orgs previews disable
+```
+
+Turning public preview off makes every public-preview feature unavailable immediately, including resources already created with those features. Turn it back on to restore access.
+
+## Next steps
+
+- [Managed agents](/build/agents/managed) to configure agents that Dome runs on demand, on a schedule, or from a webhook.
+- [Govern](/govern) to set policies and controls for governed requests.
