@@ -1,0 +1,26 @@
+name: Publish approved public documentation
+
+on:
+  push:
+    branches: [main]
+    paths: ["content/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm run check
+      - name: Request production portal deployment
+        env:
+          DISPATCH_TOKEN: ${{ secrets.PORTAL_PRODUCTION_DISPATCH_TOKEN }}
+          SHA: ${{ github.sha }}
+        run: |
+          curl --fail --request POST \
+            --url https://api.github.com/repos/dome-systems/web-developer/dispatches \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer ${DISPATCH_TOKEN}" \
+            --data "{\"event_type\":\"content-production\",\"client_payload\":{\"content_repository\":\"dome-systems/dome-docs-content\",\"content_ref\":\"${SHA}\"}}"
