@@ -22,7 +22,7 @@ All commands support these flags:
 | Flag | Type | Description |
 |------|------|-------------|
 | `--context` | string | Use a specific context (overrides active context) |
-| `--server` | string | Target a different Dome Platform host. Resolves a [context](/cli/session/context) for that host (credential and scope), not just the URL. |
+| `--server` | string | Target a different Dome Platform host. Resolves a [context](/docs/cli/session/context) for that host (credential and scope), not just the URL. |
 | `--activity` | string | Stable activity ID this run asserts. Every Connect RPC carries `X-Dome-Activity-Id` so audit events from the run share one [activity chain](/operate/audit#list-activity-chains). Overrides `DOME_ACTIVITY_ID`. |
 | `--format` | string | Output format: `text`, `json`, or `quiet` |
 | `--json` | bool | Output as JSON |
@@ -44,72 +44,72 @@ All commands support these flags:
 
 | Command | Description |
 |---------|-------------|
-| [`agents`](/cli/build/agents) | Manage agent registrations, lifecycle, and API keys |
-| [`managed-agents`](/cli/build/managed-agents) | Create, configure, and run agents that Dome hosts |
-| [`gateways`](/cli/build/gateway) | Manage gateways, membership, and agent access |
-| [`triggers`](/cli/build/triggers) | Schedule managed-agent runs and start them from signed webhooks |
+| [`agents`](/docs/cli/build/agents) | Manage agent registrations, lifecycle, and API keys |
+| [`managed-agents`](/docs/cli/build/managed-agents) | Create, configure, and run agents that Dome hosts |
+| [`gateways`](/docs/cli/build/gateway) | Manage gateways, membership, and agent access |
+| [`triggers`](/docs/cli/build/triggers) | Schedule managed-agent runs and start them from signed webhooks |
 
 ### Connect
 
 | Command | Description |
 |---------|-------------|
-| [`callers`](/cli/connect/callers) | Inspect and erase verified end users projected from audit activity |
-| [`verification-providers`](/cli/connect/verification-providers) | Manage the OIDC and HMAC providers that verify end-user identity |
-| [`tools`](/cli/connect/tools) | Manage MCP server connections the gateway proxies |
-| [`models`](/cli/connect/models) | Manage LLM model connections and routing pools |
+| [`callers`](/docs/cli/connect/callers) | Inspect and erase verified end users projected from audit activity |
+| [`verification-providers`](/docs/cli/connect/verification-providers) | Manage the OIDC and HMAC providers that verify end-user identity |
+| [`tools`](/docs/cli/connect/tools) | Manage MCP server connections the gateway proxies |
+| [`models`](/docs/cli/connect/models) | Manage LLM model connections and routing pools |
 
 ### Govern
 
 | Command | Description |
 |---------|-------------|
-| [`rules`](/cli/govern/rules) | Deploy, validate, simulate, and rollback authorization rules |
-| [`guards`](/cli/govern/guards) | Create and assign content filters and tool validators |
-| [`escalations`](/cli/govern/escalations) | Create review workflows for selected authorization decisions |
-| [`quotas`](/cli/govern/quota) | Cap spend, tokens, or calls for workspace, agent, pool, model, gateway, and tool subjects |
+| [`rules`](/docs/cli/govern/rules) | Deploy, validate, simulate, and rollback authorization rules |
+| [`guards`](/docs/cli/govern/guards) | Create and assign content filters and tool validators |
+| [`escalations`](/docs/cli/govern/escalations) | Create review workflows for selected authorization decisions |
+| [`quotas`](/docs/cli/govern/quota) | Cap spend, tokens, or calls for workspace, agent, pool, model, gateway, and tool subjects |
 
 ### Operate
 
 | Command | Description |
 |---------|-------------|
-| [`audit`](/cli/operate/audit) | Query, stream, and export audit events |
-| [`integrations`](/cli/operate/integrations) | List integrations connected to the active workspace |
-| [`webhooks`](/cli/operate/webhooks) | Manage webhook subscriptions, delivery history, and the provider catalog |
-| [`usage`](/cli/operate/usage) | Show LLM token usage and estimated cost for the active workspace |
-| [`usage-caps`](/cli/operate/usage-caps) | Show free-tier monthly allowances for the active workspace |
+| [`audit`](/docs/cli/operate/audit) | Query, stream, and export audit events |
+| [`integrations`](/docs/cli/operate/integrations) | List integrations connected to the active workspace |
+| [`webhooks`](/docs/cli/operate/webhooks) | Manage webhook subscriptions, delivery history, and the provider catalog |
+| [`usage`](/docs/cli/operate/usage) | Show LLM token usage and estimated cost for the active workspace |
+| [`usage-caps`](/docs/cli/operate/usage-caps) | Show free-tier monthly allowances for the active workspace |
 
 ### Manage
 
 | Command | Description |
 |---------|-------------|
-| [`config`](/cli/settings/config) | Platform configuration |
-| [`import`](/cli/manage/import) | Plan and apply reviewed configuration to the active target scope |
-| [`export`](/cli/manage/export) | Write reviewed configuration from the active source scope |
-| [`platform-keys`](/cli/settings/platform-keys) | Manage platform API keys |
-| [`tenants`](/cli/settings/tenants) | List, inspect, and create tenants |
-| [`tenant`](/cli/settings/tenant) | Manage tenant-level Act-As provider selection |
-| [`orgs`](/cli/settings/org) | Manage organization-level Act-As provider selection |
-| [`workspaces`](/cli/settings/workspace) | Manage workspaces, members, Act-As, and verification providers |
-| [`billing`](/cli/manage/billing) | Manage organization plans, seats, invoices, and payment methods |
+| [`config`](/docs/cli/settings/config) | Platform configuration |
+| [`import`](/docs/cli/manage/import) | Plan and apply reviewed configuration to the active target scope |
+| [`export`](/docs/cli/manage/export) | Write reviewed configuration from the active source scope |
+| [`platform-keys`](/docs/cli/settings/platform-keys) | Manage platform API keys |
+| [`tenants`](/docs/cli/settings/tenants) | List, inspect, and create tenants |
+| [`tenant`](/docs/cli/settings/tenant) | Manage tenant-level Act-As provider selection |
+| [`orgs`](/docs/cli/settings/org) | Manage organization-level Act-As provider selection |
+| [`workspaces`](/docs/cli/settings/workspace) | Manage workspaces, members, Act-As, and verification providers |
+| [`billing`](/docs/cli/manage/billing) | Manage organization plans, seats, invoices, and payment methods |
 
 ### Developer
 
 | Command | Description |
 |---------|-------------|
-| [`quickstart`](/cli/developer/quickstart-cmd) | Scaffold a new Dome-enabled project |
+| [`quickstart`](/docs/cli/developer/quickstart-cmd) | Scaffold a new Dome-enabled project |
 
 ### Session
 
 | Command | Description |
 |---------|-------------|
-| [`auth`](/cli/session/auth) | Authentication management |
-| [`context`](/cli/session/context) | Manage CLI contexts (org/tenant/workspace sessions) |
+| [`auth`](/docs/cli/session/auth) | Authentication management |
+| [`context`](/docs/cli/session/context) | Manage CLI contexts (org/tenant/workspace sessions) |
 
 ### Standalone
 
 | Command | Description |
 |---------|-------------|
-| [`mcp`](/cli/standalone/mcp) | MCP server for AI agents |
-| [`version`](/cli/standalone/version) | Show CLI version |
+| [`mcp`](/docs/cli/standalone/mcp) | MCP server for AI agents |
+| [`version`](/docs/cli/standalone/version) | Show CLI version |
 
 ## Next steps
 
@@ -117,5 +117,5 @@ Authenticate first, then scaffold — or drive the same jobs from MCP:
 
 - [Install](/install) to authenticate and select a workspace
 - [Quickstart](/quickstart) to scaffold and verify governed traffic
-- [MCP](/reference/mcp) when you prefer tool-based access from an assistant
-- [API](/api) for the management and data-plane HTTP surfaces
+- [MCP](/docs/reference/mcp) when you prefer tool-based access from an assistant
+- [API](/docs/api) for the management and data-plane HTTP surfaces

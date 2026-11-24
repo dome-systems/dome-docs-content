@@ -71,7 +71,7 @@ Create a managed agent with a name, system prompt, model or pool, and gateway. D
 
     Each managed agent runs through exactly one gateway. The gateway grant permits every tool the gateway exposes, so Dome rejects separate tool grants on the managed agent.
 
-    <Callout icon="terminal">Reference: [`dome managed-agents create`](/cli/build/managed-agents#create-managed-agent)</Callout>
+    <Callout icon="terminal">Reference: [`dome managed-agents create`](/docs/cli/build/managed-agents#create-managed-agent)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -86,7 +86,7 @@ Create a managed agent with a name, system prompt, model or pool, and gateway. D
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_managed_agents_create`](/reference/mcp/managed-agents)</Callout>
+    <Callout icon="cpu">Reference: [`dome_managed_agents_create`](/docs/reference/mcp/managed-agents)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -105,7 +105,7 @@ Create a managed agent with a name, system prompt, model or pool, and gateway. D
     }
     ```
 
-    <Callout icon="code">Reference: [`CreateManagedAgent`](/api/tag/managed-agents/create-managed-agent)</Callout>
+    <Callout icon="code">Reference: [`CreateManagedAgent`](/docs/api/tag/managed-agents/create-managed-agent)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -119,7 +119,7 @@ Use `dome managed-agents get nightly-triage` to inspect the system prompt, model
 
 ### Create from a file
 
-Use a JSON or YAML definition when you want a reviewable managed agent configuration, such as in CI. The file has the same fields as the [Create managed agent API request](/api/tag/managed-agents/create-managed-agent). The `agent` object is the underlying agent registration; it contains the name and its one gateway grant.
+Use a JSON or YAML definition when you want a reviewable managed agent configuration, such as in CI. The file has the same fields as the [Create managed agent API request](/docs/api/tag/managed-agents/create-managed-agent). The `agent` object is the underlying agent registration; it contains the name and its one gateway grant.
 
 ```yaml managed-agent.yaml
 agent:
@@ -133,7 +133,7 @@ default_model: openai-prod
 dome managed-agents create --file managed-agent.yaml
 ```
 
-<Callout icon="terminal">Reference: [`dome managed-agents create --file`](/cli/build/managed-agents#create-managed-agent)</Callout>
+<Callout icon="terminal">Reference: [`dome managed-agents create --file`](/docs/cli/build/managed-agents#create-managed-agent)</Callout>
 
 ## Update managed agent
 
@@ -148,7 +148,7 @@ Change the system prompt, model or pool, or gateway. Fields you omit keep their 
       --gateway production
     ```
 
-    <Callout icon="terminal">Reference: [`dome managed-agents update`](/cli/build/managed-agents#update-managed-agent)</Callout>
+    <Callout icon="terminal">Reference: [`dome managed-agents update`](/docs/cli/build/managed-agents#update-managed-agent)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -163,7 +163,7 @@ Change the system prompt, model or pool, or gateway. Fields you omit keep their 
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_managed_agents_update`](/reference/mcp/managed-agents)</Callout>
+    <Callout icon="cpu">Reference: [`dome_managed_agents_update`](/docs/reference/mcp/managed-agents)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -178,9 +178,9 @@ Change the system prompt, model or pool, or gateway. Fields you omit keep their 
     }
     ```
 
-    Update the gateway with the regular [Update agent](/api/tag/agents/update-agent) operation.
+    Update the gateway with the regular [Update agent](/docs/api/tag/agents/update-agent) operation.
 
-    <Callout icon="code">Reference: [`UpdateManagedAgent`](/api/tag/managed-agents/update-managed-agent)</Callout>
+    <Callout icon="code">Reference: [`UpdateManagedAgent`](/docs/api/tag/managed-agents/update-managed-agent)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -204,7 +204,7 @@ Rotate the credential Dome holds for a managed agent when you suspect compromise
     dome managed-agents rotate-runner-key nightly-triage
     ```
 
-    <Callout icon="terminal">Reference: [`dome managed-agents rotate-runner-key`](/cli/build/managed-agents#rotate-runner-key)</Callout>
+    <Callout icon="terminal">Reference: [`dome managed-agents rotate-runner-key`](/docs/cli/build/managed-agents#rotate-runner-key)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -216,7 +216,7 @@ Rotate the credential Dome holds for a managed agent when you suspect compromise
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_managed_agents_rotate_runner_key`](/reference/mcp/managed-agents#dome_managed_agents_rotate_runner_key)</Callout>
+    <Callout icon="cpu">Reference: [`dome_managed_agents_rotate_runner_key`](/docs/reference/mcp/managed-agents#dome_managed_agents_rotate_runner_key)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -229,7 +229,7 @@ Rotate the credential Dome holds for a managed agent when you suspect compromise
     }
     ```
 
-    <Callout icon="code">Reference: [`RotateManagedAgentRunnerKey`](/api/tag/managed-agents/rotate-managed-agent-runner-key)</Callout>
+    <Callout icon="code">Reference: [`RotateManagedAgentRunnerKey`](/docs/api/tag/managed-agents/rotate-managed-agent-runner-key)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -273,7 +273,7 @@ Inspect one managed agent's prompt, model, gateway, status, and attached trigger
     dome managed-agents get nightly-triage
     ```
 
-    <Callout icon="terminal">Reference: [`dome managed-agents get`](/cli/build/managed-agents#get-managed-agent)</Callout>
+    <Callout icon="terminal">Reference: [`dome managed-agents get`](/docs/cli/build/managed-agents#get-managed-agent)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -285,7 +285,7 @@ Inspect one managed agent's prompt, model, gateway, status, and attached trigger
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_managed_agents_get`](/reference/mcp/managed-agents)</Callout>
+    <Callout icon="cpu">Reference: [`dome_managed_agents_get`](/docs/reference/mcp/managed-agents)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -293,7 +293,7 @@ Inspect one managed agent's prompt, model, gateway, status, and attached trigger
     GET /v1/managed-agents/{{AGENT_ID}}?workspaceId={{WORKSPACE_ID}}
     ```
 
-    <Callout icon="code">Reference: [`GetManagedAgent`](/api/tag/managed-agents/get-managed-agent)</Callout>
+    <Callout icon="code">Reference: [`GetManagedAgent`](/docs/api/tag/managed-agents/get-managed-agent)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -313,7 +313,7 @@ List managed agents in the active workspace to review their status, model, and g
     dome managed-agents list
     ```
 
-    <Callout icon="terminal">Reference: [`dome managed-agents list`](/cli/build/managed-agents#list-managed-agents)</Callout>
+    <Callout icon="terminal">Reference: [`dome managed-agents list`](/docs/cli/build/managed-agents#list-managed-agents)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -323,7 +323,7 @@ List managed agents in the active workspace to review their status, model, and g
     {}
     ```
 
-    <Callout icon="cpu">Reference: [`dome_managed_agents_list`](/reference/mcp/managed-agents)</Callout>
+    <Callout icon="cpu">Reference: [`dome_managed_agents_list`](/docs/reference/mcp/managed-agents)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -331,7 +331,7 @@ List managed agents in the active workspace to review their status, model, and g
     GET /v1/managed-agents?workspaceId={{WORKSPACE_ID}}
     ```
 
-    <Callout icon="code">Reference: [`ListManagedAgents`](/api/tag/managed-agents/list-managed-agents)</Callout>
+    <Callout icon="code">Reference: [`ListManagedAgents`](/docs/api/tag/managed-agents/list-managed-agents)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -356,7 +356,7 @@ Suspend a managed agent to stop all new runs for it. Requires `agents.suspend`.
       --reason "maintenance window"
     ```
 
-    <Callout icon="terminal">Reference: [`dome agents suspend`](/cli/build/agents#suspend-agent)</Callout>
+    <Callout icon="terminal">Reference: [`dome agents suspend`](/docs/cli/build/agents#suspend-agent)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -369,7 +369,7 @@ Suspend a managed agent to stop all new runs for it. Requires `agents.suspend`.
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_agents_suspend`](/reference/mcp/agents#agents-suspend)</Callout>
+    <Callout icon="cpu">Reference: [`dome_agents_suspend`](/docs/reference/mcp/agents#agents-suspend)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -383,7 +383,7 @@ Suspend a managed agent to stop all new runs for it. Requires `agents.suspend`.
     }
     ```
 
-    <Callout icon="code">Reference: [`SuspendAgent`](/api/tag/agents/suspend-agent)</Callout>
+    <Callout icon="code">Reference: [`SuspendAgent`](/docs/api/tag/agents/suspend-agent)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -403,7 +403,7 @@ Reactivate a suspended managed agent to let new runs start again. Requires `agen
     dome agents reactivate nightly-triage
     ```
 
-    <Callout icon="terminal">Reference: [`dome agents reactivate`](/cli/build/agents#reactivate-agent)</Callout>
+    <Callout icon="terminal">Reference: [`dome agents reactivate`](/docs/cli/build/agents#reactivate-agent)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -415,7 +415,7 @@ Reactivate a suspended managed agent to let new runs start again. Requires `agen
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_agents_reactivate`](/reference/mcp/agents#agents-reactivate)</Callout>
+    <Callout icon="cpu">Reference: [`dome_agents_reactivate`](/docs/reference/mcp/agents#agents-reactivate)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -428,7 +428,7 @@ Reactivate a suspended managed agent to let new runs start again. Requires `agen
     }
     ```
 
-    <Callout icon="code">Reference: [`ReactivateAgent`](/api/tag/agents/reactivate-agent)</Callout>
+    <Callout icon="code">Reference: [`ReactivateAgent`](/docs/api/tag/agents/reactivate-agent)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -449,7 +449,7 @@ Revoke a managed agent to permanently disable it while preserving its audit reco
       --reason "decommissioned"
     ```
 
-    <Callout icon="terminal">Reference: [`dome agents revoke`](/cli/build/agents#revoke-agent)</Callout>
+    <Callout icon="terminal">Reference: [`dome agents revoke`](/docs/cli/build/agents#revoke-agent)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -462,7 +462,7 @@ Revoke a managed agent to permanently disable it while preserving its audit reco
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_agents_revoke`](/reference/mcp/agents#agents-revoke)</Callout>
+    <Callout icon="cpu">Reference: [`dome_agents_revoke`](/docs/reference/mcp/agents#agents-revoke)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -476,7 +476,7 @@ Revoke a managed agent to permanently disable it while preserving its audit reco
     }
     ```
 
-    <Callout icon="code">Reference: [`RevokeAgent`](/api/tag/agents/revoke-agent)</Callout>
+    <Callout icon="code">Reference: [`RevokeAgent`](/docs/api/tag/agents/revoke-agent)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -496,7 +496,7 @@ Delete a managed agent and its underlying agent when you no longer need either r
     dome managed-agents delete nightly-triage
     ```
 
-    <Callout icon="terminal">Reference: [`dome managed-agents delete`](/cli/build/managed-agents#delete-managed-agent)</Callout>
+    <Callout icon="terminal">Reference: [`dome managed-agents delete`](/docs/cli/build/managed-agents#delete-managed-agent)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -508,7 +508,7 @@ Delete a managed agent and its underlying agent when you no longer need either r
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_managed_agents_delete`](/reference/mcp/managed-agents)</Callout>
+    <Callout icon="cpu">Reference: [`dome_managed_agents_delete`](/docs/reference/mcp/managed-agents)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -516,7 +516,7 @@ Delete a managed agent and its underlying agent when you no longer need either r
     DELETE /v1/managed-agents/{{AGENT_ID}}?workspaceId={{WORKSPACE_ID}}
     ```
 
-    <Callout icon="code">Reference: [`DeleteManagedAgent`](/api/tag/managed-agents/delete-managed-agent)</Callout>
+    <Callout icon="code">Reference: [`DeleteManagedAgent`](/docs/api/tag/managed-agents/delete-managed-agent)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -543,7 +543,7 @@ Start one run immediately when you want to test the prompt and access configurat
       --input "Review newly filed issues and return a prioritized summary."
     ```
 
-    <Callout icon="terminal">Reference: [`dome managed-agents run`](/cli/build/managed-agents#run-managed-agent)</Callout>
+    <Callout icon="terminal">Reference: [`dome managed-agents run`](/docs/cli/build/managed-agents#run-managed-agent)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -556,7 +556,7 @@ Start one run immediately when you want to test the prompt and access configurat
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_managed_agents_run`](/reference/mcp/managed-agents)</Callout>
+    <Callout icon="cpu">Reference: [`dome_managed_agents_run`](/docs/reference/mcp/managed-agents)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -570,7 +570,7 @@ Start one run immediately when you want to test the prompt and access configurat
     }
     ```
 
-    <Callout icon="code">Reference: [`RunManagedAgent`](/api/tag/managed-agents/run-managed-agent)</Callout>
+    <Callout icon="code">Reference: [`RunManagedAgent`](/docs/api/tag/managed-agents/run-managed-agent)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -610,7 +610,7 @@ List recent runs to see their status, source, and completion time.
     dome managed-agents runs list nightly-triage --limit 50
     ```
 
-    <Callout icon="terminal">Reference: [`dome managed-agents runs list`](/cli/build/managed-agents#list-runs)</Callout>
+    <Callout icon="terminal">Reference: [`dome managed-agents runs list`](/docs/cli/build/managed-agents#list-runs)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -623,7 +623,7 @@ List recent runs to see their status, source, and completion time.
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_managed_agents_runs_list`](/reference/mcp/managed-agents)</Callout>
+    <Callout icon="cpu">Reference: [`dome_managed_agents_runs_list`](/docs/reference/mcp/managed-agents)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -631,7 +631,7 @@ List recent runs to see their status, source, and completion time.
     GET /v1/managed-agents/{{AGENT_ID}}/runs?workspaceId={{WORKSPACE_ID}}&limit=50
     ```
 
-    <Callout icon="code">Reference: [`ListManagedAgentRuns`](/api/tag/managed-agents/list-managed-agent-runs)</Callout>
+    <Callout icon="code">Reference: [`ListManagedAgentRuns`](/docs/api/tag/managed-agents/list-managed-agent-runs)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -651,7 +651,7 @@ Use the run ID returned by a manual run or shown in run history to inspect its t
     dome managed-agents runs get {{RUN_ID}}
     ```
 
-    <Callout icon="terminal">Reference: [`dome managed-agents runs get`](/cli/build/managed-agents#get-run)</Callout>
+    <Callout icon="terminal">Reference: [`dome managed-agents runs get`](/docs/cli/build/managed-agents#get-run)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -663,7 +663,7 @@ Use the run ID returned by a manual run or shown in run history to inspect its t
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_managed_agents_runs_get`](/reference/mcp/managed-agents)</Callout>
+    <Callout icon="cpu">Reference: [`dome_managed_agents_runs_get`](/docs/reference/mcp/managed-agents)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -671,7 +671,7 @@ Use the run ID returned by a manual run or shown in run history to inspect its t
     GET /v1/managed-agent-runs/{{RUN_ID}}?workspaceId={{WORKSPACE_ID}}
     ```
 
-    <Callout icon="code">Reference: [`GetManagedAgentRun`](/api/tag/managed-agents/get-managed-agent-run)</Callout>
+    <Callout icon="code">Reference: [`GetManagedAgentRun`](/docs/api/tag/managed-agents/get-managed-agent-run)</Callout>
   </Tab>
 
   <Tab value="Agent">

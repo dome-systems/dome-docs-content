@@ -118,7 +118,7 @@ Add a tool for one upstream MCP server. Use Streamable HTTP for a remote server 
 
     Add `--auth-method`, `--credential-type`, and header flags if the upstream needs them.
 
-    <Callout icon="terminal">Reference: [`dome tools add`](/cli/connect/tools#add-connection)</Callout>
+    <Callout icon="terminal">Reference: [`dome tools add`](/docs/cli/connect/tools#add-connection)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -133,7 +133,7 @@ Add a tool for one upstream MCP server. Use Streamable HTTP for a remote server 
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_tools_add`](/reference/mcp/tools#dome_tools_add)</Callout>
+    <Callout icon="cpu">Reference: [`dome_tools_add`](/docs/reference/mcp/tools#dome_tools_add)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -153,7 +153,7 @@ Add a tool for one upstream MCP server. Use Streamable HTTP for a remote server 
 
     The endpoint returns the new tool's UUID, which every other management call uses to address it.
 
-    <Callout icon="code">Reference: [`CreateMCPServerConnection`](/api/tag/tools/create-mcp-server-connection)</Callout>
+    <Callout icon="code">Reference: [`CreateMCPServerConnection`](/docs/api/tag/tools/create-mcp-server-connection)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -204,7 +204,7 @@ Use catalog install when an adapter exists for your upstream. Direct creation wi
     | `credential_type` | `shared` (default) or `per-user`. Only honored when the adapter advertises `supports_per_user`. |
     | `tool_filter` | Optional subset of adapter tools to expose. Empty exposes all. |
 
-    Browse adapters with [`ListCatalogServices`](/api/tag/tool-catalog/list-catalog-services). Each entry advertises `slug`, `auth_method`, the managed `auth_header_name`, and whether `supports_per_user` is allowed.
+    Browse adapters with [`ListCatalogServices`](/docs/api/tag/tool-catalog/list-catalog-services). Each entry advertises `slug`, `auth_method`, the managed `auth_header_name`, and whether `supports_per_user` is allowed.
   </Tab>
 </Tabs>
 
@@ -233,7 +233,7 @@ A header list always replaces the existing list rather than merging into it. How
 
     Only the flags you pass change.
 
-    <Callout icon="terminal">Reference: [`dome tools update`](/cli/connect/tools#update-connection)</Callout>
+    <Callout icon="terminal">Reference: [`dome tools update`](/docs/cli/connect/tools#update-connection)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -248,7 +248,7 @@ A header list always replaces the existing list rather than merging into it. How
 
     Only the parameters you send change.
 
-    <Callout icon="cpu">Reference: [`dome_tools_update`](/reference/mcp/tools#dome_tools_update)</Callout>
+    <Callout icon="cpu">Reference: [`dome_tools_update`](/docs/reference/mcp/tools#dome_tools_update)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -267,7 +267,7 @@ A header list always replaces the existing list rather than merging into it. How
 
     Send the record's full state. The endpoint overwrites `protocol`, `protocol_config`, `field_classifications`, and `write_tools` with whatever the request carries, so omitting `protocol_config` clears the URL and headers. Read the tool with `GetMCPServerConnection` first and send back everything you want to keep. `auth_method`, `credential_type`, `auth_config`, and `name` are the exceptions, where an empty value preserves the stored one.
 
-    <Callout icon="code">Reference: [`UpdateMCPServerConnection`](/api/tag/tools/update-mcp-server-connection)</Callout>
+    <Callout icon="code">Reference: [`UpdateMCPServerConnection`](/docs/api/tag/tools/update-mcp-server-connection)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -305,7 +305,7 @@ Use a shared bearer token when every call should present the same upstream crede
 
     The stored value is never shown again. Other stored secrets keep their values.
 
-    <Callout icon="terminal">Reference: [`dome tools update`](/cli/connect/tools#update-connection)</Callout>
+    <Callout icon="terminal">Reference: [`dome tools update`](/docs/cli/connect/tools#update-connection)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -320,7 +320,7 @@ Use a shared bearer token when every call should present the same upstream crede
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_tools_update`](/reference/mcp/tools#dome_tools_update)</Callout>
+    <Callout icon="cpu">Reference: [`dome_tools_update`](/docs/reference/mcp/tools#dome_tools_update)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -340,7 +340,7 @@ Use a shared bearer token when every call should present the same upstream crede
 
     Send `protocol` and `protocol_config` alongside these fields, as described in [Update tool](#update-tool).
 
-    <Callout icon="code">Reference: [`UpdateMCPServerConnection`](/api/tag/tools/update-mcp-server-connection)</Callout>
+    <Callout icon="code">Reference: [`UpdateMCPServerConnection`](/docs/api/tag/tools/update-mcp-server-connection)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -377,7 +377,7 @@ You can change which egress headers the gateway sends, including an act-as heade
 
     To append without replacing the full list, use [Add headers](#add-headers).
 
-    <Callout icon="terminal">Reference: [`dome tools update`](/cli/connect/tools#update-connection)</Callout>
+    <Callout icon="terminal">Reference: [`dome tools update`](/docs/cli/connect/tools#update-connection)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -392,7 +392,7 @@ You can change which egress headers the gateway sends, including an act-as heade
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_tools_update`](/reference/mcp/tools#dome_tools_update)</Callout>
+    <Callout icon="cpu">Reference: [`dome_tools_update`](/docs/reference/mcp/tools#dome_tools_update)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -414,7 +414,7 @@ You can change which egress headers the gateway sends, including an act-as heade
 
     Headers live inside `protocol_config`, which the endpoint overwrites, so send the URL and any headers you want to keep in the same call.
 
-    <Callout icon="code">Reference: [`UpdateMCPServerConnection`](/api/tag/tools/update-mcp-server-connection)</Callout>
+    <Callout icon="code">Reference: [`UpdateMCPServerConnection`](/docs/api/tag/tools/update-mcp-server-connection)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -436,7 +436,7 @@ Retrieve a tool by name to inspect its endpoint, protocol, authentication, and g
     dome tools get notion
     ```
 
-    <Callout icon="terminal">Reference: [`dome tools get`](/cli/connect/tools#get-connection)</Callout>
+    <Callout icon="terminal">Reference: [`dome tools get`](/docs/cli/connect/tools#get-connection)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -448,7 +448,7 @@ Retrieve a tool by name to inspect its endpoint, protocol, authentication, and g
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_tools_get`](/reference/mcp/tools#dome_tools_get)</Callout>
+    <Callout icon="cpu">Reference: [`dome_tools_get`](/docs/reference/mcp/tools#dome_tools_get)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -458,7 +458,7 @@ Retrieve a tool by name to inspect its endpoint, protocol, authentication, and g
 
     The management API addresses a tool by UUID rather than by name. Call `ListMCPServerConnections` to resolve a name to its ID.
 
-    <Callout icon="code">Reference: [`GetMCPServerConnection`](/api/tag/tools/get-mcp-server-connection)</Callout>
+    <Callout icon="code">Reference: [`GetMCPServerConnection`](/docs/api/tag/tools/get-mcp-server-connection)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -480,7 +480,7 @@ Retrieve the tools in a workspace with their protocols and authentication method
     dome tools list
     ```
 
-    <Callout icon="terminal">Reference: [`dome tools list`](/cli/connect/tools#list-connections)</Callout>
+    <Callout icon="terminal">Reference: [`dome tools list`](/docs/cli/connect/tools#list-connections)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -490,7 +490,7 @@ Retrieve the tools in a workspace with their protocols and authentication method
     {}
     ```
 
-    <Callout icon="cpu">Reference: [`dome_tools_list`](/reference/mcp/tools#dome_tools_list)</Callout>
+    <Callout icon="cpu">Reference: [`dome_tools_list`](/docs/reference/mcp/tools#dome_tools_list)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -498,7 +498,7 @@ Retrieve the tools in a workspace with their protocols and authentication method
     GET /v1/tools?workspace_id={{WORKSPACE_ID}}
     ```
 
-    <Callout icon="code">Reference: [`ListMCPServerConnections`](/api/tag/tools/list-mcp-server-connections)</Callout>
+    <Callout icon="code">Reference: [`ListMCPServerConnections`](/docs/api/tag/tools/list-mcp-server-connections)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -524,7 +524,7 @@ Remove a tool to delete its upstream record from the workspace, along with the a
     dome tools remove notion
     ```
 
-    <Callout icon="terminal">Reference: [`dome tools remove`](/cli/connect/tools#remove-connection)</Callout>
+    <Callout icon="terminal">Reference: [`dome tools remove`](/docs/cli/connect/tools#remove-connection)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -536,7 +536,7 @@ Remove a tool to delete its upstream record from the workspace, along with the a
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_tools_remove`](/reference/mcp/tools#dome_tools_remove)</Callout>
+    <Callout icon="cpu">Reference: [`dome_tools_remove`](/docs/reference/mcp/tools#dome_tools_remove)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -544,7 +544,7 @@ Remove a tool to delete its upstream record from the workspace, along with the a
     DELETE /v1/tools/{{CONNECTION_ID}}?workspace_id={{WORKSPACE_ID}}
     ```
 
-    <Callout icon="code">Reference: [`DeleteMCPServerConnection`](/api/tag/tools/delete-mcp-server-connection)</Callout>
+    <Callout icon="code">Reference: [`DeleteMCPServerConnection`](/docs/api/tag/tools/delete-mcp-server-connection)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -574,7 +574,7 @@ Retrieve the operations Dome has recorded for a tool. Because Dome stores the ca
 
     Blocked entries are hidden unless you pass `--show-blocked`. Use `--with-schema` when you need input schemas.
 
-    <Callout icon="terminal">Reference: [`dome tools catalog list`](/cli/connect/tools#list-tools)</Callout>
+    <Callout icon="terminal">Reference: [`dome tools catalog list`](/docs/cli/connect/tools#list-tools)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -587,7 +587,7 @@ Retrieve the operations Dome has recorded for a tool. Because Dome stores the ca
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_tools_for_connection`](/reference/mcp/tools#dome_tools_for_connection)</Callout>
+    <Callout icon="cpu">Reference: [`dome_tools_for_connection`](/docs/reference/mcp/tools#dome_tools_for_connection)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -609,7 +609,7 @@ Sync the catalog to discover operations on a per-user tool before agent traffic 
     dome tools catalog sync notion
     ```
 
-    <Callout icon="terminal">Reference: [`dome tools catalog sync`](/cli/connect/tools#sync-tools)</Callout>
+    <Callout icon="terminal">Reference: [`dome tools catalog sync`](/docs/cli/connect/tools#sync-tools)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -624,7 +624,7 @@ Sync the catalog to discover operations on a per-user tool before agent traffic 
 
     Add `act_as_sub` when the administrator's act-as subject is not their email. Dome resolves the credential by that subject, and the call fails when no credential is stored for it.
 
-    <Callout icon="code">Reference: [`SyncMCPServerConnectionTools`](/api/tag/tools/sync-mcp-server-connection-tools)</Callout>
+    <Callout icon="code">Reference: [`SyncMCPServerConnectionTools`](/docs/api/tag/tools/sync-mcp-server-connection-tools)</Callout>
   </Tab>
 </Tabs>
 
@@ -641,7 +641,7 @@ Block a discovered operation to hide it from agents and deny calls to it. A bloc
       --message "Use archive_page instead"
     ```
 
-    <Callout icon="terminal">Reference: [`dome tools catalog block`](/cli/connect/tools#block-tool)</Callout>
+    <Callout icon="terminal">Reference: [`dome tools catalog block`](/docs/cli/connect/tools#block-tool)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -655,7 +655,7 @@ Block a discovered operation to hide it from agents and deny calls to it. A bloc
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_tools_block`](/reference/mcp/tools#dome_tools_block)</Callout>
+    <Callout icon="cpu">Reference: [`dome_tools_block`](/docs/reference/mcp/tools#dome_tools_block)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -678,7 +678,7 @@ Deprecate a discovered operation to keep it callable while directing users to a 
       --message "use create_page_v2"
     ```
 
-    <Callout icon="terminal">Reference: [`dome tools catalog deprecate`](/cli/connect/tools#deprecate-tool)</Callout>
+    <Callout icon="terminal">Reference: [`dome tools catalog deprecate`](/docs/cli/connect/tools#deprecate-tool)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -692,7 +692,7 @@ Deprecate a discovered operation to keep it callable while directing users to a 
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_tools_deprecate`](/reference/mcp/tools#dome_tools_deprecate)</Callout>
+    <Callout icon="cpu">Reference: [`dome_tools_deprecate`](/docs/reference/mcp/tools#dome_tools_deprecate)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -714,7 +714,7 @@ Restore a discovered operation to make it available again when rules permit. Res
     dome tools catalog restore notion delete_page
     ```
 
-    <Callout icon="terminal">Reference: [`dome tools catalog restore`](/cli/connect/tools#restore-tool)</Callout>
+    <Callout icon="terminal">Reference: [`dome tools catalog restore`](/docs/cli/connect/tools#restore-tool)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -727,7 +727,7 @@ Restore a discovered operation to make it available again when rules permit. Res
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_tools_restore`](/reference/mcp/tools#dome_tools_restore)</Callout>
+    <Callout icon="cpu">Reference: [`dome_tools_restore`](/docs/reference/mcp/tools#dome_tools_restore)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -753,7 +753,7 @@ You can attach a tool when you [add it](#add-tool) or later from either the tool
 
     The gateway side of the same membership is `dome gateways tool-sources add`.
 
-    <Callout icon="terminal">Reference: [`dome tools gateways`](/cli/connect/tools#gateway-membership)</Callout>
+    <Callout icon="terminal">Reference: [`dome tools gateways`](/docs/cli/connect/tools#gateway-membership)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -766,7 +766,7 @@ You can attach a tool when you [add it](#add-tool) or later from either the tool
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_gateways_tool_source_add`](/reference/mcp/gateway#dome_gateways_tool_source_add)</Callout>
+    <Callout icon="cpu">Reference: [`dome_gateways_tool_source_add`](/docs/reference/mcp/gateway#dome_gateways_tool_source_add)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -830,7 +830,7 @@ On a shared tool, those tokens serve every call. On a per-user tool, the flow at
 
     The CLI and the MCP tool accept shared tools only. To attach an administrator's per-user credential, call the API with that administrator's act-as subject.
 
-    <Callout icon="terminal">Reference: [`dome tools oauth-connect`](/cli/connect/tools#connect-oauth)</Callout>
+    <Callout icon="terminal">Reference: [`dome tools oauth-connect`](/docs/cli/connect/tools#connect-oauth)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -842,7 +842,7 @@ On a shared tool, those tokens serve every call. On a per-user tool, the flow at
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_tools_oauth_connect`](/reference/mcp/tools#dome_tools_oauth_connect)</Callout>
+    <Callout icon="cpu">Reference: [`dome_tools_oauth_connect`](/docs/reference/mcp/tools#dome_tools_oauth_connect)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -857,7 +857,7 @@ On a shared tool, those tokens serve every call. On a per-user tool, the flow at
 
     On a per-user tool, add `act_as_sub` to name the administrator whose credential this flow attaches. It defaults to the calling administrator's email, and it is required when the workspace's act-as verifier issues opaque subjects.
 
-    <Callout icon="code">Reference: [`BeginMCPServerOAuthConnect`](/api/tag/tools/begin-mcp-server-oauth-connect)</Callout>
+    <Callout icon="code">Reference: [`BeginMCPServerOAuthConnect`](/docs/api/tag/tools/begin-mcp-server-oauth-connect)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -879,7 +879,7 @@ Disconnect shared OAuth to revoke its stored tokens. The OAuth client configurat
     dome tools oauth-disconnect notion
     ```
 
-    <Callout icon="terminal">Reference: [`dome tools oauth-disconnect`](/cli/connect/tools#disconnect-oauth)</Callout>
+    <Callout icon="terminal">Reference: [`dome tools oauth-disconnect`](/docs/cli/connect/tools#disconnect-oauth)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -891,7 +891,7 @@ Disconnect shared OAuth to revoke its stored tokens. The OAuth client configurat
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_tools_oauth_disconnect`](/reference/mcp/tools#dome_tools_oauth_disconnect)</Callout>
+    <Callout icon="cpu">Reference: [`dome_tools_oauth_disconnect`](/docs/reference/mcp/tools#dome_tools_oauth_disconnect)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -904,7 +904,7 @@ Disconnect shared OAuth to revoke its stored tokens. The OAuth client configurat
     }
     ```
 
-    <Callout icon="code">Reference: [`DisconnectMCPServerOAuth`](/api/tag/tools/disconnect-mcp-server-oauth)</Callout>
+    <Callout icon="code">Reference: [`DisconnectMCPServerOAuth`](/docs/api/tag/tools/disconnect-mcp-server-oauth)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -930,7 +930,7 @@ Retrieve the outbound headers configured on a tool.
     dome tools header list notion
     ```
 
-    <Callout icon="terminal">Reference: [`dome tools header list`](/cli/connect/tools#list-headers)</Callout>
+    <Callout icon="terminal">Reference: [`dome tools header list`](/docs/cli/connect/tools#list-headers)</Callout>
   </Tab>
 </Tabs>
 
@@ -948,7 +948,7 @@ Add one or more outbound headers without replacing the headers already configure
 
     You can combine literal, secret, and act-as header flags in one call.
 
-    <Callout icon="terminal">Reference: [`dome tools header add`](/cli/connect/tools#add-header)</Callout>
+    <Callout icon="terminal">Reference: [`dome tools header add`](/docs/cli/connect/tools#add-header)</Callout>
   </Tab>
 </Tabs>
 
@@ -964,7 +964,7 @@ Remove outbound headers by name from a tool.
     dome tools header remove crm --name X-Verified-User
     ```
 
-    <Callout icon="terminal">Reference: [`dome tools header remove`](/cli/connect/tools#remove-header)</Callout>
+    <Callout icon="terminal">Reference: [`dome tools header remove`](/docs/cli/connect/tools#remove-header)</Callout>
   </Tab>
 </Tabs>
 

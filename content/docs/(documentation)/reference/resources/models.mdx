@@ -57,7 +57,7 @@ Provider cost is always an estimate of the organization's upstream bill, not a D
 ceil((request bytes + response bytes) / bytes per token)
 ```
 
-The active byte-per-token assumptions are shown by [`dome models rates`](/cli/connect/models#model-rates).
+The active byte-per-token assumptions are shown by [`dome models rates`](/docs/cli/connect/models#model-rates).
 
 ### Custom passthrough
 
@@ -69,7 +69,7 @@ The active byte-per-token assumptions are shown by [`dome models rates`](/cli/co
 | Caller headers | Forwarded only when the name matches `provider_config.header_passthrough_allow` (glob list on the connection) |
 | Dropped headers | `Authorization`, `Cookie`, and `Proxy-Authorization` are dropped unconditionally so a caller cannot smuggle credentials past the connection's configured auth |
 
-Configure `header_passthrough_allow` (and related `custom` keys such as `endpoint` and `request_shape_doc_url`) on the model connection. See [Create LLM model connection](/api/tag/models/create-llm-model-connection).
+Configure `header_passthrough_allow` (and related `custom` keys such as `endpoint` and `request_shape_doc_url`) on the model connection. See [Create LLM model connection](/docs/api/tag/models/create-llm-model-connection).
 
 ## Credentials
 

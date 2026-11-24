@@ -34,7 +34,7 @@ Provider IDs fall into three groups.
 
 Dome supplies a base URL for hosted providers that have a default. For Google, Azure OpenAI, Bedrock, Databricks, `openai_compatible`, and `custom`, you must provide an endpoint or the provider-specific details needed to locate the model. The full provider ID list is on the [Models](/reference/resources/models#providers) reference.
 
-Discover valid provider and model ids from the same catalog the dashboard picker uses: [`dome models providers`](/cli/connect/models#list-providers) or [`dome_models_providers`](/reference/mcp/models#dome_models_providers). Curated lists exist for providers with stable public ids (OpenAI, Anthropic, Google) and always include a default. Other providers return an empty model list and accept any model string the upstream accepts. A model your upstream supports but the catalog does not list is still valid — pass it as `--model <id>`.
+Discover valid provider and model ids from the same catalog the dashboard picker uses: [`dome models providers`](/docs/cli/connect/models#list-providers) or [`dome_models_providers`](/docs/reference/mcp/models#dome_models_providers). Curated lists exist for providers with stable public ids (OpenAI, Anthropic, Google) and always include a default. Other providers return an empty model list and accept any model string the upstream accepts. A model your upstream supports but the catalog does not list is still valid — pass it as `--model <id>`.
 
 ### Credentials
 
@@ -104,7 +104,7 @@ Add a model for one provider endpoint. You can attach the model directly to a ga
 
     Add `--endpoint` or `--provider-config` when the provider requires more configuration.
 
-    <Callout icon="terminal">Reference: [`dome models add`](/cli/connect/models#add-connection)</Callout>
+    <Callout icon="terminal">Reference: [`dome models add`](/docs/cli/connect/models#add-connection)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -122,7 +122,7 @@ Add a model for one provider endpoint. You can attach the model directly to a ga
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_models_add`](/reference/mcp/models#dome_models_add)</Callout>
+    <Callout icon="cpu">Reference: [`dome_models_add`](/docs/reference/mcp/models#dome_models_add)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -147,7 +147,7 @@ Add a model for one provider endpoint. You can attach the model directly to a ga
 
     The endpoint returns the model's UUID. The other management endpoints use this UUID to identify the model. Attach the model to a gateway in a separate operation.
 
-    <Callout icon="code">Reference: [`CreateLLMModelConnection`](/api/tag/models/create-llm-model-connection)</Callout>
+    <Callout icon="code">Reference: [`CreateLLMModelConnection`](/docs/api/tag/models/create-llm-model-connection)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -174,7 +174,7 @@ Update a model to change its name, model identifier, endpoint, authentication, a
 
     Only the flags you pass change. `--provider-config` replaces the full provider configuration instead of merging with it.
 
-    <Callout icon="terminal">Reference: [`dome models update`](/cli/connect/models#update-connection)</Callout>
+    <Callout icon="terminal">Reference: [`dome models update`](/docs/cli/connect/models#update-connection)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -191,7 +191,7 @@ Update a model to change its name, model identifier, endpoint, authentication, a
 
     Only the parameters you send change. `provider_config` and `attributes` each replace the existing object.
 
-    <Callout icon="cpu">Reference: [`dome_models_update`](/reference/mcp/models#dome_models_update)</Callout>
+    <Callout icon="cpu">Reference: [`dome_models_update`](/docs/reference/mcp/models#dome_models_update)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -209,7 +209,7 @@ Update a model to change its name, model identifier, endpoint, authentication, a
 
     Omitted fields keep their stored values. When present, `provider_config` replaces the full object. To replace or clear attributes, headers, credentials, or the filter window, send the new value and set its corresponding `*_provided` field to `true`.
 
-    <Callout icon="code">Reference: [`UpdateLLMModelConnection`](/api/tag/models/update-llm-model-connection)</Callout>
+    <Callout icon="code">Reference: [`UpdateLLMModelConnection`](/docs/api/tag/models/update-llm-model-connection)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -240,7 +240,7 @@ You can change the authentication method, credential type, or shared API key. Sw
 
     The new value replaces the shared key. Dome never returns the stored key, and other stored secrets keep their values.
 
-    <Callout icon="terminal">Reference: [`dome models update`](/cli/connect/models#update-connection)</Callout>
+    <Callout icon="terminal">Reference: [`dome models update`](/docs/cli/connect/models#update-connection)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -255,7 +255,7 @@ You can change the authentication method, credential type, or shared API key. Sw
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_models_update`](/reference/mcp/models#dome_models_update)</Callout>
+    <Callout icon="cpu">Reference: [`dome_models_update`](/docs/reference/mcp/models#dome_models_update)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -274,7 +274,7 @@ You can change the authentication method, credential type, or shared API key. Sw
     }
     ```
 
-    <Callout icon="code">Reference: [`UpdateLLMModelConnection`](/api/tag/models/update-llm-model-connection)</Callout>
+    <Callout icon="code">Reference: [`UpdateLLMModelConnection`](/docs/api/tag/models/update-llm-model-connection)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -314,7 +314,7 @@ You can replace the trusted attributes that rules evaluate for this model. Send 
       --attributes '{"region":"eu","data_class":"restricted"}'
     ```
 
-    <Callout icon="terminal">Reference: [`dome models update`](/cli/connect/models#update-connection)</Callout>
+    <Callout icon="terminal">Reference: [`dome models update`](/docs/cli/connect/models#update-connection)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -330,7 +330,7 @@ You can replace the trusted attributes that rules evaluate for this model. Send 
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_models_update`](/reference/mcp/models#dome_models_update)</Callout>
+    <Callout icon="cpu">Reference: [`dome_models_update`](/docs/reference/mcp/models#dome_models_update)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -348,7 +348,7 @@ You can replace the trusted attributes that rules evaluate for this model. Send 
     }
     ```
 
-    <Callout icon="code">Reference: [`UpdateLLMModelConnection`](/api/tag/models/update-llm-model-connection)</Callout>
+    <Callout icon="code">Reference: [`UpdateLLMModelConnection`](/docs/api/tag/models/update-llm-model-connection)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -370,7 +370,7 @@ You can change how much streamed output Dome buffers for outbound guard inspecti
       --filter-window-tokens 1024
     ```
 
-    <Callout icon="terminal">Reference: [`dome models update`](/cli/connect/models#update-connection)</Callout>
+    <Callout icon="terminal">Reference: [`dome models update`](/docs/cli/connect/models#update-connection)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -386,7 +386,7 @@ You can change how much streamed output Dome buffers for outbound guard inspecti
     }
     ```
 
-    <Callout icon="code">Reference: [`UpdateLLMModelConnection`](/api/tag/models/update-llm-model-connection)</Callout>
+    <Callout icon="code">Reference: [`UpdateLLMModelConnection`](/docs/api/tag/models/update-llm-model-connection)</Callout>
   </Tab>
 </Tabs>
 
@@ -402,7 +402,7 @@ Retrieve a model to inspect its provider configuration, authentication, attribut
     dome models get claude-prod
     ```
 
-    <Callout icon="terminal">Reference: [`dome models get`](/cli/connect/models#get-connection)</Callout>
+    <Callout icon="terminal">Reference: [`dome models get`](/docs/cli/connect/models#get-connection)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -414,7 +414,7 @@ Retrieve a model to inspect its provider configuration, authentication, attribut
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_models_get`](/reference/mcp/models#dome_models_get)</Callout>
+    <Callout icon="cpu">Reference: [`dome_models_get`](/docs/reference/mcp/models#dome_models_get)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -424,7 +424,7 @@ Retrieve a model to inspect its provider configuration, authentication, attribut
 
     The management API addresses a model by UUID. If you know only its name, call `ListLLMModelConnections` to find the corresponding ID.
 
-    <Callout icon="code">Reference: [`GetLLMModelConnection`](/api/tag/models/get-llm-model-connection)</Callout>
+    <Callout icon="code">Reference: [`GetLLMModelConnection`](/docs/api/tag/models/get-llm-model-connection)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -446,7 +446,7 @@ Retrieve the models in a workspace with their providers and configurations. Use 
     dome models list
     ```
 
-    <Callout icon="terminal">Reference: [`dome models list`](/cli/connect/models#list-connections)</Callout>
+    <Callout icon="terminal">Reference: [`dome models list`](/docs/cli/connect/models#list-connections)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -456,7 +456,7 @@ Retrieve the models in a workspace with their providers and configurations. Use 
     {}
     ```
 
-    <Callout icon="cpu">Reference: [`dome_models_list`](/reference/mcp/models#dome_models_list)</Callout>
+    <Callout icon="cpu">Reference: [`dome_models_list`](/docs/reference/mcp/models#dome_models_list)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -464,7 +464,7 @@ Retrieve the models in a workspace with their providers and configurations. Use 
     GET /v1/models?workspace_id={{WORKSPACE_ID}}
     ```
 
-    <Callout icon="code">Reference: [`ListLLMModelConnections`](/api/tag/models/list-llm-model-connections)</Callout>
+    <Callout icon="code">Reference: [`ListLLMModelConnections`](/docs/api/tag/models/list-llm-model-connections)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -498,7 +498,7 @@ The result identifies dependent managed agents, agents granted the model, gatewa
     dome models rm claude-prod --reassign-to gpt-prod
     ```
 
-    <Callout icon="terminal">Reference: [`dome models rm`](/cli/connect/models#remove-connection)</Callout>
+    <Callout icon="terminal">Reference: [`dome models rm`](/docs/cli/connect/models#remove-connection)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -511,7 +511,7 @@ The result identifies dependent managed agents, agents granted the model, gatewa
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_models_remove`](/reference/mcp/models#dome_models_remove)</Callout>
+    <Callout icon="cpu">Reference: [`dome_models_remove`](/docs/reference/mcp/models#dome_models_remove)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -519,7 +519,7 @@ The result identifies dependent managed agents, agents granted the model, gatewa
     DELETE /v1/models/{{CONNECTION_ID}}?workspace_id={{WORKSPACE_ID}}
     ```
 
-    <Callout icon="code">Reference: [`DeleteLLMModelConnection`](/api/tag/models/delete-llm-model-connection)</Callout>
+    <Callout icon="code">Reference: [`DeleteLLMModelConnection`](/docs/api/tag/models/delete-llm-model-connection)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -545,7 +545,7 @@ When a route needs failover or weighted distribution across multiple models, add
     dome gateways models add prod-llms claude-prod
     ```
 
-    <Callout icon="terminal">Reference: [`dome gateways models add`](/cli/build/gateway#add-model)</Callout>
+    <Callout icon="terminal">Reference: [`dome gateways models add`](/docs/cli/build/gateway#add-model)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -558,7 +558,7 @@ When a route needs failover or weighted distribution across multiple models, add
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_gateways_model_add`](/reference/mcp/gateway#dome_gateways_model_add)</Callout>
+    <Callout icon="cpu">Reference: [`dome_gateways_model_add`](/docs/reference/mcp/gateway#dome_gateways_model_add)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -616,7 +616,7 @@ Connect OAuth after adding a model configured to use shared OAuth. Dome returns 
     dome models oauth-connect claude-prod
     ```
 
-    <Callout icon="terminal">Reference: [`dome models oauth-connect`](/cli/connect/models#connect-oauth)</Callout>
+    <Callout icon="terminal">Reference: [`dome models oauth-connect`](/docs/cli/connect/models#connect-oauth)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -628,7 +628,7 @@ Connect OAuth after adding a model configured to use shared OAuth. Dome returns 
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_models_oauth_connect`](/reference/mcp/models#dome_models_oauth_connect)</Callout>
+    <Callout icon="cpu">Reference: [`dome_models_oauth_connect`](/docs/reference/mcp/models#dome_models_oauth_connect)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -641,7 +641,7 @@ Connect OAuth after adding a model configured to use shared OAuth. Dome returns 
     }
     ```
 
-    <Callout icon="code">Reference: [`BeginLLMOAuthConnect`](/api/tag/models/begin-llm-oauth-connect)</Callout>
+    <Callout icon="code">Reference: [`BeginLLMOAuthConnect`](/docs/api/tag/models/begin-llm-oauth-connect)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -663,7 +663,7 @@ Disconnect shared OAuth to revoke the stored provider tokens. The OAuth client c
     dome models oauth-disconnect claude-prod
     ```
 
-    <Callout icon="terminal">Reference: [`dome models oauth-disconnect`](/cli/connect/models#disconnect-oauth)</Callout>
+    <Callout icon="terminal">Reference: [`dome models oauth-disconnect`](/docs/cli/connect/models#disconnect-oauth)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -675,7 +675,7 @@ Disconnect shared OAuth to revoke the stored provider tokens. The OAuth client c
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_models_oauth_disconnect`](/reference/mcp/models#dome_models_oauth_disconnect)</Callout>
+    <Callout icon="cpu">Reference: [`dome_models_oauth_disconnect`](/docs/reference/mcp/models#dome_models_oauth_disconnect)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -688,7 +688,7 @@ Disconnect shared OAuth to revoke the stored provider tokens. The OAuth client c
     }
     ```
 
-    <Callout icon="code">Reference: [`DisconnectLLMOAuth`](/api/tag/models/disconnect-llm-oauth)</Callout>
+    <Callout icon="code">Reference: [`DisconnectLLMOAuth`](/docs/api/tag/models/disconnect-llm-oauth)</Callout>
   </Tab>
 
   <Tab value="Agent">

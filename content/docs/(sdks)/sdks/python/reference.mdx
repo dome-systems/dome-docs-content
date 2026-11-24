@@ -270,7 +270,7 @@ for event in page.events:
 `AuditQuery` enum fields use the proto JSON enum names (for example `RESULT_ALLOWED`, `ACTOR_KIND_AGENT`, `INITIATOR_SURFACE_GATEWAY_MCP`). `stream` rejects query-only filters (`agent_ids`, `primary_resource_id`, `primary_resource_kind`, `trace_id`, `activity_id`, `workspace_id`, `start_time`, `end_time`, `page_size`) at call time instead of silently dropping them.
 
 <Callout type="warning">
-The current Python SDK does not expose the Audit schema-v4 `stages`, `deny_reasons`, or `has_error` query filters. Use the [CLI](/cli/operate/audit), [MCP tools](/reference/mcp/audit), or Audit API when a query depends on those filters. They will be documented here after the SDK adds them.
+The current Python SDK does not expose the Audit schema-v4 `stages`, `deny_reasons`, or `has_error` query filters. Use the [CLI](/docs/cli/operate/audit), [MCP tools](/docs/reference/mcp/audit), or Audit API when a query depends on those filters. They will be documented here after the SDK adds them.
 </Callout>
 
 ### Waiting on activity events
@@ -451,7 +451,7 @@ with DomeAdminClient(
 
 Create a gateway, add tool sources, grant admission, and hand the resulting `/gateways/{id}` URL to agents.
 
-The admin client covers gateway CRUD, state/default selection, resource membership, per-agent access, and the all-agents grant. Gateway cost quotas live in the [CLI](/cli/build/gateway), dashboard, and [MCP tools](/reference/mcp/gateway).
+The admin client covers gateway CRUD, state/default selection, resource membership, per-agent access, and the all-agents grant. Gateway cost quotas live in the [CLI](/docs/cli/build/gateway), dashboard, and [MCP tools](/docs/reference/mcp/gateway).
 
 ```python
 from dome import DomeAdminClient
@@ -603,13 +603,13 @@ asyncio.run(main())
 
 ## Framework adapters
 
-Adapters are separate PyPI packages that wrap `Client` for a specific framework. Refer to [Adapters](/sdks/python/adapters) for the catalog and integration details.
+Adapters are separate PyPI packages that wrap `Client` for a specific framework. Refer to [Adapters](/docs/sdks/python/adapters) for the catalog and integration details.
 
 ## Next steps
 
 Wrap the client for a framework, or wire credentials and Act-As from Develop:
 
-- [Adapters](/sdks/python/adapters) for framework wrappers
+- [Adapters](/docs/sdks/python/adapters) for framework wrappers
 - [Develop](/develop) for credentials, endpoints, and Act-As envelopes
 - [Delegated agents](/build/agents/delegated) when access depends on the person
 - [Examples](/tutorials/examples) for a governed agent pattern

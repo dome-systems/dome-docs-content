@@ -3,7 +3,7 @@ title: dome tenant
 description: Manage tenant-level Act-As provider selection
 ---
 
-`dome tenant` manages governance settings for one tenant. The current command surface selects the default and required Act-As verification providers inherited by its workspaces. To list, inspect, or create tenants, use [`dome tenants`](/cli/settings/tenants).
+`dome tenant` manages governance settings for one tenant. The current command surface selects the default and required Act-As verification providers inherited by its workspaces. To list, inspect, or create tenants, use [`dome tenants`](/docs/cli/settings/tenants).
 
 | Command | |
 |---------|---|
@@ -40,4 +40,4 @@ Set the tenant's default or required provider. The provider must be tenant- or o
 
 This is a full replace: omitted provider flags clear their fields. A required provider forces Act-As and pins every non-bound agent beneath the tenant to that provider.
 
-Refer to [Act-As provider selection](/cli/connect/verification-providers#act-as-provider-selection) for inheritance and precedence.
+Refer to [Act-As provider selection](/docs/cli/connect/verification-providers#act-as-provider-selection) for inheritance and precedence.

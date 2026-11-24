@@ -56,7 +56,7 @@ Before you begin, authenticate the Dome CLI.
 
 Tenant and workspace creation use org- and tenant-scoped roles. Each operation states the permission it requires.
 
-For exhaustive flags, tool parameters, and endpoint contracts, refer to the [CLI](/cli/settings/tenants), [MCP](/reference/mcp/platform), and [API](/api/tag/tenants/create-tenant) references.
+For exhaustive flags, tool parameters, and endpoint contracts, refer to the [CLI](/docs/cli/settings/tenants), [MCP](/docs/reference/mcp/platform), and [API](/docs/api/tag/tenants/create-tenant) references.
 
 | Default roles | Permission | Grants |
 |---------------|------------|--------|
@@ -83,14 +83,14 @@ Create a tenant under your organization when you need a hard isolation boundary.
     | `--join-policy` | `open`, `request`, or `invite_only` (default when omitted). |
     | `--org-id` | Target org. Defaults to the active context's org. |
 
-    <Callout icon="terminal">Reference: [`dome tenants create`](/cli/settings/tenants#create-tenant)</Callout>
+    <Callout icon="terminal">Reference: [`dome tenants create`](/docs/cli/settings/tenants#create-tenant)</Callout>
   </Tab>
   <Tab value="MCP">
     Tools: `dome_tenants_create`, `dome_tenants_list`, `dome_tenants_get`
 
     Pass `join_policy` on create (`open`, `request`, or `invite_only`). Omit it to take the server default.
 
-    <Callout icon="cpu">Reference: [`dome_tenants_create`](/reference/mcp/platform#tenants-create)</Callout>
+    <Callout icon="cpu">Reference: [`dome_tenants_create`](/docs/reference/mcp/platform#tenants-create)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -102,7 +102,7 @@ Create a tenant under your organization when you need a hard isolation boundary.
     }
     ```
 
-    <Callout icon="code">Reference: [`CreateTenant`](/api/tag/tenants/create-tenant)</Callout>
+    <Callout icon="code">Reference: [`CreateTenant`](/docs/api/tag/tenants/create-tenant)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Create a tenant"
@@ -125,14 +125,14 @@ Create a workspace for a team or environment inside a tenant. You can set [join 
     dome workspaces delete <workspace-id>
     ```
 
-    <Callout icon="terminal">Reference: [`dome workspaces`](/cli/settings/workspace)</Callout>
+    <Callout icon="terminal">Reference: [`dome workspaces`](/docs/cli/settings/workspace)</Callout>
   </Tab>
   <Tab value="MCP">
     Tools: `dome_workspaces_create`, `dome_workspaces_list`, `dome_workspaces_get`, `dome_workspaces_delete`
 
     Pass `join_policy` on create (`open`, `request`, or `invite_only`). Omit it to take the server default.
 
-    <Callout icon="cpu">Reference: [`dome_workspaces_create`](/reference/mcp/workspaces)</Callout>
+    <Callout icon="cpu">Reference: [`dome_workspaces_create`](/docs/reference/mcp/workspaces)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -145,7 +145,7 @@ Create a workspace for a team or environment inside a tenant. You can set [join 
     }
     ```
 
-    <Callout icon="code">Reference: [`CreateWorkspace`](/api/tag/workspaces/create-workspace)</Callout>
+    <Callout icon="code">Reference: [`CreateWorkspace`](/docs/api/tag/workspaces/create-workspace)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Create a workspace"

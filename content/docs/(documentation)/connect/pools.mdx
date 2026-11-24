@@ -117,7 +117,7 @@ Create a pool with a name that clients can put in the request's `model` field. A
 
     By default, the CLI uses priority-weighted routing and shares routing state across the workspace. It sets the cache TTL to `0` and allows Dome to try every eligible member after a failure.
 
-    <Callout icon="terminal">Reference: [`dome models pool create`](/cli/connect/models#create-pool)</Callout>
+    <Callout icon="terminal">Reference: [`dome models pool create`](/docs/cli/connect/models#create-pool)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -132,7 +132,7 @@ Create a pool with a name that clients can put in the request's `model` field. A
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_models_pool_create`](/reference/mcp/pools#dome_models_pool_create)</Callout>
+    <Callout icon="cpu">Reference: [`dome_models_pool_create`](/docs/reference/mcp/pools#dome_models_pool_create)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -150,7 +150,7 @@ Create a pool with a name that clients can put in the request's `model` field. A
 
     Omit `failover_max` to let Dome try every eligible member after a failure. The endpoint returns the pool's UUID. The other management endpoints use this UUID to identify the pool. Attach the pool to a gateway in a separate operation.
 
-    <Callout icon="code">Reference: [`CreateLLMPool`](/api/tag/model-pools/create-llm-pool)</Callout>
+    <Callout icon="code">Reference: [`CreateLLMPool`](/docs/api/tag/model-pools/create-llm-pool)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -177,7 +177,7 @@ Update a pool to change its name, description, routing strategy, conditional rou
 
     Only the flags you pass change.
 
-    <Callout icon="terminal">Reference: [`dome models pool update`](/cli/connect/models#update-pool)</Callout>
+    <Callout icon="terminal">Reference: [`dome models pool update`](/docs/cli/connect/models#update-pool)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -192,7 +192,7 @@ Update a pool to change its name, description, routing strategy, conditional rou
 
     Only the parameters you send change.
 
-    <Callout icon="cpu">Reference: [`dome_models_pool_update`](/reference/mcp/pools#dome_models_pool_update)</Callout>
+    <Callout icon="cpu">Reference: [`dome_models_pool_update`](/docs/reference/mcp/pools#dome_models_pool_update)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -208,7 +208,7 @@ Update a pool to change its name, description, routing strategy, conditional rou
 
     Omitted fields keep their stored values. An empty description does not clear the existing description. To clear `match_when`, set `match_when_provided` to `true`. To set the cache TTL to `0`, set `cache_ttl_secs_provided` to `true`. To let Dome retry every eligible member, set `failover_max_clear` to `true`.
 
-    <Callout icon="code">Reference: [`UpdateLLMPool`](/api/tag/model-pools/update-llm-pool)</Callout>
+    <Callout icon="code">Reference: [`UpdateLLMPool`](/docs/api/tag/model-pools/update-llm-pool)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -230,7 +230,7 @@ You can change how the pool selects its primary member. Refer to [Routing strate
       --strategy-scope workspace
     ```
 
-    <Callout icon="terminal">Reference: [`dome models pool update`](/cli/connect/models#update-pool)</Callout>
+    <Callout icon="terminal">Reference: [`dome models pool update`](/docs/cli/connect/models#update-pool)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -244,7 +244,7 @@ You can change how the pool selects its primary member. Refer to [Routing strate
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_models_pool_update`](/reference/mcp/pools#dome_models_pool_update)</Callout>
+    <Callout icon="cpu">Reference: [`dome_models_pool_update`](/docs/reference/mcp/pools#dome_models_pool_update)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -259,7 +259,7 @@ You can change how the pool selects its primary member. Refer to [Routing strate
     }
     ```
 
-    <Callout icon="code">Reference: [`UpdateLLMPool`](/api/tag/model-pools/update-llm-pool)</Callout>
+    <Callout icon="code">Reference: [`UpdateLLMPool`](/docs/api/tag/model-pools/update-llm-pool)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -280,7 +280,7 @@ You can replace the conditions that select this pool during conditional routing.
       --match-when '{"prompt_tokens":{"gt":50000}}'
     ```
 
-    <Callout icon="terminal">Reference: [`dome models pool update`](/cli/connect/models#update-pool)</Callout>
+    <Callout icon="terminal">Reference: [`dome models pool update`](/docs/cli/connect/models#update-pool)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -297,7 +297,7 @@ You can replace the conditions that select this pool during conditional routing.
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_models_pool_update`](/reference/mcp/pools#dome_models_pool_update)</Callout>
+    <Callout icon="cpu">Reference: [`dome_models_pool_update`](/docs/reference/mcp/pools#dome_models_pool_update)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -316,7 +316,7 @@ You can replace the conditions that select this pool during conditional routing.
     }
     ```
 
-    <Callout icon="code">Reference: [`UpdateLLMPool`](/api/tag/model-pools/update-llm-pool)</Callout>
+    <Callout icon="code">Reference: [`UpdateLLMPool`](/docs/api/tag/model-pools/update-llm-pool)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -337,7 +337,7 @@ You can change how many additional members Dome may try after the primary fails.
       --failover-max 2
     ```
 
-    <Callout icon="terminal">Reference: [`dome models pool update`](/cli/connect/models#update-pool)</Callout>
+    <Callout icon="terminal">Reference: [`dome models pool update`](/docs/cli/connect/models#update-pool)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -350,7 +350,7 @@ You can change how many additional members Dome may try after the primary fails.
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_models_pool_update`](/reference/mcp/pools#dome_models_pool_update)</Callout>
+    <Callout icon="cpu">Reference: [`dome_models_pool_update`](/docs/reference/mcp/pools#dome_models_pool_update)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -376,7 +376,7 @@ You can change how many additional members Dome may try after the primary fails.
     }
     ```
 
-    <Callout icon="code">Reference: [`UpdateLLMPool`](/api/tag/model-pools/update-llm-pool)</Callout>
+    <Callout icon="code">Reference: [`UpdateLLMPool`](/docs/api/tag/model-pools/update-llm-pool)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -398,7 +398,7 @@ Retrieve a pool with its routing configuration and members. Check this informati
     dome models pool get production
     ```
 
-    <Callout icon="terminal">Reference: [`dome models pool get`](/cli/connect/models#get-pool)</Callout>
+    <Callout icon="terminal">Reference: [`dome models pool get`](/docs/cli/connect/models#get-pool)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -410,7 +410,7 @@ Retrieve a pool with its routing configuration and members. Check this informati
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_models_pool_get`](/reference/mcp/pools#dome_models_pool_get)</Callout>
+    <Callout icon="cpu">Reference: [`dome_models_pool_get`](/docs/reference/mcp/pools#dome_models_pool_get)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -420,7 +420,7 @@ Retrieve a pool with its routing configuration and members. Check this informati
 
     The API returns the pool and its members.
 
-    <Callout icon="code">Reference: [`GetLLMPool`](/api/tag/model-pools/get-llm-pool)</Callout>
+    <Callout icon="code">Reference: [`GetLLMPool`](/docs/api/tag/model-pools/get-llm-pool)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -442,7 +442,7 @@ Retrieve the pools in a workspace with their routing strategies, conditional rou
     dome models pool list
     ```
 
-    <Callout icon="terminal">Reference: [`dome models pool list`](/cli/connect/models#list-pools)</Callout>
+    <Callout icon="terminal">Reference: [`dome models pool list`](/docs/cli/connect/models#list-pools)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -452,7 +452,7 @@ Retrieve the pools in a workspace with their routing strategies, conditional rou
     {}
     ```
 
-    <Callout icon="cpu">Reference: [`dome_models_pool_list`](/reference/mcp/pools#dome_models_pool_list)</Callout>
+    <Callout icon="cpu">Reference: [`dome_models_pool_list`](/docs/reference/mcp/pools#dome_models_pool_list)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -460,7 +460,7 @@ Retrieve the pools in a workspace with their routing strategies, conditional rou
     GET /v1/models/pools?workspace_id={{WORKSPACE_ID}}
     ```
 
-    <Callout icon="code">Reference: [`ListLLMPools`](/api/tag/model-pools/list-llm-pools)</Callout>
+    <Callout icon="code">Reference: [`ListLLMPools`](/docs/api/tag/model-pools/list-llm-pools)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -482,7 +482,7 @@ Set a pool as the workspace default. Dome uses the default only when a request d
     dome models pool set-default production
     ```
 
-    <Callout icon="terminal">Reference: [`dome models pool set-default`](/cli/connect/models#set-default-pool)</Callout>
+    <Callout icon="terminal">Reference: [`dome models pool set-default`](/docs/cli/connect/models#set-default-pool)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -494,7 +494,7 @@ Set a pool as the workspace default. Dome uses the default only when a request d
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_models_pool_set_default`](/reference/mcp/pools#dome_models_pool_set_default)</Callout>
+    <Callout icon="cpu">Reference: [`dome_models_pool_set_default`](/docs/reference/mcp/pools#dome_models_pool_set_default)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -509,7 +509,7 @@ Set a pool as the workspace default. Dome uses the default only when a request d
 
     Send an empty `pool_id` to clear the default without setting another pool.
 
-    <Callout icon="code">Reference: [`SetDefaultLLMPool`](/api/tag/model-pools/set-default-llm-pool)</Callout>
+    <Callout icon="code">Reference: [`SetDefaultLLMPool`](/docs/api/tag/model-pools/set-default-llm-pool)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -534,7 +534,7 @@ Move a conditional pool earlier or later in the order Dome checks `match_when` p
 
     Pass exactly one of `--before` or `--after`.
 
-    <Callout icon="terminal">Reference: [`dome models pool move`](/cli/connect/models#move-pool)</Callout>
+    <Callout icon="terminal">Reference: [`dome models pool move`](/docs/cli/connect/models#move-pool)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -547,7 +547,7 @@ Move a conditional pool earlier or later in the order Dome checks `match_when` p
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_models_pool_move`](/reference/mcp/pools#dome_models_pool_move)</Callout>
+    <Callout icon="cpu">Reference: [`dome_models_pool_move`](/docs/reference/mcp/pools#dome_models_pool_move)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -577,7 +577,7 @@ Add a model to a pool. For a priority-weighted pool, priority defaults to `0` an
 
     Run a separate command for each model because each member can have a different priority and weight.
 
-    <Callout icon="terminal">Reference: [`dome models pool member add`](/cli/connect/models#add-member)</Callout>
+    <Callout icon="terminal">Reference: [`dome models pool member add`](/docs/cli/connect/models#add-member)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -592,7 +592,7 @@ Add a model to a pool. For a priority-weighted pool, priority defaults to `0` an
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_models_pool_member_add`](/reference/mcp/pools#dome_models_pool_member_add)</Callout>
+    <Callout icon="cpu">Reference: [`dome_models_pool_member_add`](/docs/reference/mcp/pools#dome_models_pool_member_add)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -609,7 +609,7 @@ Add a model to a pool. For a priority-weighted pool, priority defaults to `0` an
     }
     ```
 
-    <Callout icon="code">Reference: [`CreateLLMPoolMember`](/api/tag/model-pools/create-llm-pool-member)</Callout>
+    <Callout icon="code">Reference: [`CreateLLMPoolMember`](/docs/api/tag/model-pools/create-llm-pool-member)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -631,7 +631,7 @@ Retrieve the models in a pool with each member's priority, weight, and stored `e
     dome models pool member list production
     ```
 
-    <Callout icon="terminal">Reference: [`dome models pool member list`](/cli/connect/models#list-members)</Callout>
+    <Callout icon="terminal">Reference: [`dome models pool member list`](/docs/cli/connect/models#list-members)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -643,7 +643,7 @@ Retrieve the models in a pool with each member's priority, weight, and stored `e
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_models_pool_member_list`](/reference/mcp/pools#dome_models_pool_member_list)</Callout>
+    <Callout icon="cpu">Reference: [`dome_models_pool_member_list`](/docs/reference/mcp/pools#dome_models_pool_member_list)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -651,7 +651,7 @@ Retrieve the models in a pool with each member's priority, weight, and stored `e
     GET /v1/models/pools/{{POOL_ID}}/members?workspace_id={{WORKSPACE_ID}}
     ```
 
-    <Callout icon="code">Reference: [`ListLLMPoolMembers`](/api/tag/model-pools/list-llm-pool-members)</Callout>
+    <Callout icon="code">Reference: [`ListLLMPoolMembers`](/docs/api/tag/model-pools/list-llm-pool-members)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -675,7 +675,7 @@ Update the priority or weight of a member in a priority-weighted pool. To move a
       --weight 1
     ```
 
-    <Callout icon="terminal">Reference: [`dome models pool member update`](/cli/connect/models#update-member)</Callout>
+    <Callout icon="terminal">Reference: [`dome models pool member update`](/docs/cli/connect/models#update-member)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -690,7 +690,7 @@ Update the priority or weight of a member in a priority-weighted pool. To move a
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_models_pool_member_update`](/reference/mcp/pools#dome_models_pool_member_update)</Callout>
+    <Callout icon="cpu">Reference: [`dome_models_pool_member_update`](/docs/reference/mcp/pools#dome_models_pool_member_update)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -705,7 +705,7 @@ Update the priority or weight of a member in a priority-weighted pool. To move a
     }
     ```
 
-    <Callout icon="code">Reference: [`UpdateLLMPoolMember`](/api/tag/model-pools/update-llm-pool-member)</Callout>
+    <Callout icon="code">Reference: [`UpdateLLMPoolMember`](/docs/api/tag/model-pools/update-llm-pool-member)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -727,7 +727,7 @@ Remove a model from a pool to stop the pool from sending requests to that model.
     dome models pool member rm production claude-prod
     ```
 
-    <Callout icon="terminal">Reference: [`dome models pool member rm`](/cli/connect/models#remove-member)</Callout>
+    <Callout icon="terminal">Reference: [`dome models pool member rm`](/docs/cli/connect/models#remove-member)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -740,7 +740,7 @@ Remove a model from a pool to stop the pool from sending requests to that model.
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_models_pool_member_remove`](/reference/mcp/pools#dome_models_pool_member_remove)</Callout>
+    <Callout icon="cpu">Reference: [`dome_models_pool_member_remove`](/docs/reference/mcp/pools#dome_models_pool_member_remove)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -748,7 +748,7 @@ Remove a model from a pool to stop the pool from sending requests to that model.
     DELETE /v1/models/pools/{{POOL_ID}}/members/{{MEMBER_ID}}?workspace_id={{WORKSPACE_ID}}
     ```
 
-    <Callout icon="code">Reference: [`DeleteLLMPoolMember`](/api/tag/model-pools/delete-llm-pool-member)</Callout>
+    <Callout icon="code">Reference: [`DeleteLLMPoolMember`](/docs/api/tag/model-pools/delete-llm-pool-member)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -782,7 +782,7 @@ The result identifies dependent managed agents, agents granted the pool, and gat
     dome models pool rm production --reassign-to fallback
     ```
 
-    <Callout icon="terminal">Reference: [`dome models pool rm`](/cli/connect/models#remove-pool)</Callout>
+    <Callout icon="terminal">Reference: [`dome models pool rm`](/docs/cli/connect/models#remove-pool)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -795,7 +795,7 @@ The result identifies dependent managed agents, agents granted the pool, and gat
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_models_pool_remove`](/reference/mcp/pools#dome_models_pool_remove)</Callout>
+    <Callout icon="cpu">Reference: [`dome_models_pool_remove`](/docs/reference/mcp/pools#dome_models_pool_remove)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -803,7 +803,7 @@ The result identifies dependent managed agents, agents granted the pool, and gat
     DELETE /v1/models/pools/{{POOL_ID}}?workspace_id={{WORKSPACE_ID}}
     ```
 
-    <Callout icon="code">Reference: [`DeleteLLMPool`](/api/tag/model-pools/delete-llm-pool)</Callout>
+    <Callout icon="code">Reference: [`DeleteLLMPool`](/docs/api/tag/model-pools/delete-llm-pool)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -833,7 +833,7 @@ Attach a pool to a gateway so agents can request the pool by name at that gatewa
     dome models pool gateways add production prod-llms
     ```
 
-    <Callout icon="terminal">Reference: [`dome models pool gateways add`](/cli/connect/models#gateway-membership)</Callout>
+    <Callout icon="terminal">Reference: [`dome models pool gateways add`](/docs/cli/connect/models#gateway-membership)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -846,7 +846,7 @@ Attach a pool to a gateway so agents can request the pool by name at that gatewa
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_gateways_model_pool_add`](/reference/mcp/gateway#dome_gateways_model_pool_add)</Callout>
+    <Callout icon="cpu">Reference: [`dome_gateways_model_pool_add`](/docs/reference/mcp/gateway#dome_gateways_model_pool_add)</Callout>
   </Tab>
 
   <Tab value="Agent">

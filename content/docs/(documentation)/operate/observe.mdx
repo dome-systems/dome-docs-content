@@ -95,14 +95,14 @@ Stream audit events in real time with server-sent events (SSE). The stream deliv
     dome audit stream --classes governing --results denied --agent-id <uuid>
     ```
 
-    For the complete stream flag reference, refer to [`dome audit stream`](/cli/operate/audit#stream-events). Find valid event types in the [Event catalog](/reference/events/catalog) reference.
+    For the complete stream flag reference, refer to [`dome audit stream`](/docs/cli/operate/audit#stream-events). Find valid event types in the [Event catalog](/reference/events/catalog) reference.
 
-    <Callout icon="terminal">Reference: [`dome audit stream`](/cli/operate/audit#stream-events)</Callout>
+    <Callout icon="terminal">Reference: [`dome audit stream`](/docs/cli/operate/audit#stream-events)</Callout>
   </Tab>
   <Tab value="MCP">
     Real-time streaming is not available via MCP tools. Poll recent events with `dome_audit_query` instead.
 
-    <Callout icon="cpu">Reference: [`dome_audit_query`](/reference/mcp/audit#audit-query)</Callout>
+    <Callout icon="cpu">Reference: [`dome_audit_query`](/docs/reference/mcp/audit#audit-query)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -111,7 +111,7 @@ Stream audit events in real time with server-sent events (SSE). The stream deliv
 
     Server-sent events. Returns a stream of `AuditEventV1` envelopes as they occur. Accepts the same filter set as `QueryEvents` except time-range and pagination fields.
 
-    <Callout icon="code">Reference: [`StreamEvents`](/api/tag/audit/stream-events)</Callout>
+    <Callout icon="code">Reference: [`StreamEvents`](/docs/api/tag/audit/stream-events)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Query recent audit events"
@@ -154,19 +154,19 @@ Narrow the stream further by combining multiple type filters.
     dome audit stream --types tool.call
     ```
 
-    <Callout icon="terminal">Reference: [`dome audit stream`](/cli/operate/audit#stream-events)</Callout>
+    <Callout icon="terminal">Reference: [`dome audit stream`](/docs/cli/operate/audit#stream-events)</Callout>
   </Tab>
   <Tab value="MCP">
     Real-time streaming is not available via MCP tools. Poll with `dome_audit_query` and `since` / `until` instead.
 
-    <Callout icon="cpu">Reference: [`dome_audit_query`](/reference/mcp/audit#audit-query)</Callout>
+    <Callout icon="cpu">Reference: [`dome_audit_query`](/docs/reference/mcp/audit#audit-query)</Callout>
   </Tab>
   <Tab value="API">
     ```http
     GET /v1/audit/events/stream?event_types=tool.call
     ```
 
-    <Callout icon="code">Reference: [`StreamEvents`](/api/tag/audit/stream-events)</Callout>
+    <Callout icon="code">Reference: [`StreamEvents`](/docs/api/tag/audit/stream-events)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Query filtered audit events"
@@ -197,12 +197,12 @@ Estimated cost is derived from token usage at read time and is not a bill. Model
 
     The output mirrors the dashboard token panel. Add `--json` for machine-readable output and pipe into `jq` for scripted budgets.
 
-    <Callout icon="terminal">Reference: [`dome usage`](/cli/operate/usage)</Callout>
+    <Callout icon="terminal">Reference: [`dome usage`](/docs/cli/operate/usage)</Callout>
   </Tab>
   <Tab value="MCP">
     Agents and assistants read the same numbers through `dome_usage`.
 
-    <Callout icon="cpu">Reference: [`dome_usage`](/reference/mcp/audit#audit-usage)</Callout>
+    <Callout icon="cpu">Reference: [`dome_usage`](/docs/reference/mcp/audit#audit-usage)</Callout>
   </Tab>
   <Tab value="API">
 

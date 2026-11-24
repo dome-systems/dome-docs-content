@@ -51,7 +51,7 @@ Dome estimates the upstream provider cost of model traffic from token counts and
 
 Each rate has an effective window. Historical usage is priced using the rate in effect during that usage, so a rate change today does not rewrite an earlier period. If a provider reports no token counts, Dome estimates tokens from observed request and response bytes before applying the rate, making that cost estimate less precise.
 
-Use [`dome models rates`](/cli/connect/models#model-rates) to inspect the default book and conversion assumptions. `dome models rates --effective` resolves the organization's own rates over the default book.
+Use [`dome models rates`](/docs/cli/connect/models#model-rates) to inspect the default book and conversion assumptions. `dome models rates --effective` resolves the organization's own rates over the default book.
 
 ### When configuration changes take effect
 

@@ -10,7 +10,7 @@ Call MCP tools and LLM models through the Dome gateway from a Python application
 **Prerequisites:**
 - Python 3.12+
 - A registered agent and an agent API key (`dome_...`) — refer to [Developer Quickstart](/tutorials/role/developer)
-- The gateway URL for the [Gateway](/sdks/python/reference#gateways) the agent is granted (`https://gateway.../gateways/{id}`)
+- The gateway URL for the [Gateway](/docs/sdks/python/reference#gateways) the agent is granted (`https://gateway.../gateways/{id}`)
 </Callout>
 
 ## Install
@@ -67,7 +67,7 @@ response = client.gateway.llm.chat(
 )
 ```
 
-For Anthropic shapes, use `client.gateway.llm.messages(model=..., messages=..., max_tokens=...)`. For provider-native clients, refer to [Reference](/sdks/python/reference#provider-native-clients).
+For Anthropic shapes, use `client.gateway.llm.messages(model=..., messages=..., max_tokens=...)`. For provider-native clients, refer to [Reference](/docs/sdks/python/reference#provider-native-clients).
 
 ## Correlate work with an activity
 
@@ -99,13 +99,13 @@ with dome.Client(token=..., gateway_url=...) as client:
 ## Next steps
 
 <Cards>
-  <Card title="Reference" href="/sdks/python/reference">
+  <Card title="Reference" href="/docs/sdks/python/reference">
     Full client configuration, act-as methods, errors, and audit reads.
   </Card>
-  <Card title="Tutorial" href="/sdks/python/tutorial">
+  <Card title="Tutorial" href="/docs/sdks/python/tutorial">
     Wire the SDK into a service and verify in audit.
   </Card>
-  <Card title="LangChain adapter" href="/sdks/python/adapters">
+  <Card title="LangChain adapter" href="/docs/sdks/python/adapters">
     Use gateway tools and governed chat models inside LangChain agents.
   </Card>
   <Card title="Data plane concepts" href="/concepts/architecture/dataplane">

@@ -43,7 +43,7 @@ LLM token usage (last 24h)
   Estimated cost       $3.4521 (per-model estimate of your provider bill, not a Dome charge)
 ```
 
-Calls for which the provider reported no usage add no tokens to this view. Dome derives tokens from wire bytes separately for billing; run [`dome models rates`](/cli/connect/models#model-rates) for that conversion table.
+Calls for which the provider reported no usage add no tokens to this view. Dome derives tokens from wire bytes separately for billing; run [`dome models rates`](/docs/cli/connect/models#model-rates) for that conversion table.
 
 Output (`--json`):
 
@@ -67,4 +67,4 @@ cost=$(dome usage --json | jq '.estimated_cost_usd')
 awk "BEGIN { exit !($cost > 10) }" && echo "over budget" >&2
 ```
 
-For per-agent, per-key, per-identity, or per-model attribution, see the [REST query surface](/operate/observe#token-usage-and-cost) — the dashboard and the [`dome_usage`](/reference/mcp/audit#audit-usage) MCP tool consume the same endpoints.
+For per-agent, per-key, per-identity, or per-model attribution, see the [REST query surface](/operate/observe#token-usage-and-cost) — the dashboard and the [`dome_usage`](/docs/reference/mcp/audit#audit-usage) MCP tool consume the same endpoints.

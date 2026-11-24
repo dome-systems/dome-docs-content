@@ -3,7 +3,7 @@ title: dome managed-agents
 description: Create, configure, and run managed agents
 ---
 
-`dome managed-agents` manages managed agents, whose execution worker Dome runs. For agents whose worker you run in your own runtime, use [`dome agents`](/cli/build/agents). Refer to [Managed agents](/build/agents/managed) for the operating model and trigger configuration.
+`dome managed-agents` manages managed agents, whose execution worker Dome runs. For agents whose worker you run in your own runtime, use [`dome agents`](/docs/cli/build/agents). Refer to [Managed agents](/build/agents/managed) for the operating model and trigger configuration.
 
 | Command | |
 | --- | --- |
@@ -30,7 +30,7 @@ dome managed-agents create \
   --gateway production
 ```
 
-Create a managed agent in the active workspace. Supply fields directly or load a JSON or YAML definition with the same fields as the [Create managed agent API request](/api/tag/managed-agents/create-managed-agent).
+Create a managed agent in the active workspace. Supply fields directly or load a JSON or YAML definition with the same fields as the [Create managed agent API request](/docs/api/tag/managed-agents/create-managed-agent).
 
 | Flag | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -60,7 +60,7 @@ default_model: openai-prod
 dome managed-agents create --file managed-agent.yaml
 ```
 
-For every available field, refer to [Create managed agent](/api/tag/managed-agents/create-managed-agent).
+For every available field, refer to [Create managed agent](/docs/api/tag/managed-agents/create-managed-agent).
 
 ## List managed agents
 
@@ -92,7 +92,7 @@ Update one or more managed-agent fields. Fields you omit retain their current va
 | `--model` | string | Replace the model or pool |
 | `--gateway` | string | Replace the one gateway the agent runs through |
 
-Use [`dome agents update`](/cli/build/agents#update-agent) for the agent's name, metadata, or act-as settings. Use [`dome triggers update`](/cli/build/triggers#update-trigger) to change a schedule or webhook.
+Use [`dome agents update`](/docs/cli/build/agents#update-agent) for the agent's name, metadata, or act-as settings. Use [`dome triggers update`](/docs/cli/build/triggers#update-trigger) to change a schedule or webhook.
 
 ## Rotate runner key
 
@@ -138,7 +138,7 @@ Create an inbound webhook trigger for a managed agent. The response returns the 
 | --- | --- | --- |
 | `--description` | string | Optional operator label for the webhook |
 
-For a trigger that can target more than one managed agent, use [`dome triggers create`](/cli/build/triggers#create-trigger) instead.
+For a trigger that can target more than one managed agent, use [`dome triggers create`](/docs/cli/build/triggers#create-trigger) instead.
 
 ## List webhooks
 

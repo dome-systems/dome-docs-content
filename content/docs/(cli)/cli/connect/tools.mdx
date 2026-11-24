@@ -3,7 +3,7 @@ title: dome tools
 description: Manage MCP server connections the gateway proxies for agents
 ---
 
-`dome tools` registers upstream MCP servers (the "tools" an agent reaches through Dome) and manages their auth, outbound headers, and field classifications. To list which tools each agent may call, use [`dome agents list`](/cli/build/agents#list-agents) instead.
+`dome tools` registers upstream MCP servers (the "tools" an agent reaches through Dome) and manages their auth, outbound headers, and field classifications. To list which tools each agent may call, use [`dome agents list`](/docs/cli/build/agents#list-agents) instead.
 
 | Command | |
 |---------|---|
@@ -146,7 +146,7 @@ Remove an MCP server connection.
 dome tools gateways <list|add|remove> <connection-name-or-id> [gateway-name-or-id]
 ```
 
-Manage the connection's tool-source membership in [Gateways](/build/gateways) from the connection side. Mirrors [`dome gateways tool-sources`](/cli/build/gateway#add-tool-source).
+Manage the connection's tool-source membership in [Gateways](/build/gateways) from the connection side. Mirrors [`dome gateways tool-sources`](/docs/cli/build/gateway#add-tool-source).
 
 - `list <connection>` — gateways this connection is a tool source of. Alias: `ls`.
 - `add <connection> <gateway>` — attach as a tool source; every observed tool joins, and newly discovered tools propagate automatically.
@@ -304,4 +304,4 @@ dome tools catalog restore notion delete_page
 `dome tools catalog list <connection>` shows the current `STATUS` column for every observed tool. Blocked tools are hidden by default — pass `--show-blocked` to include them.
 </Callout>
 
-Cap tool spend or call volume with [`dome quotas`](/cli/govern/quota) (`--subject tool`, `--subject agent`, or `--subject workspace`).
+Cap tool spend or call volume with [`dome quotas`](/docs/cli/govern/quota) (`--subject tool`, `--subject agent`, or `--subject workspace`).

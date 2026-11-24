@@ -109,7 +109,7 @@ Create a separate gateway when callers need a resource set or endpoint boundary 
     dome gateways create prod-resources --description "Production tools and models"
     ```
 
-    <Callout icon="terminal">Reference: [`dome gateways create`](/cli/build/gateway#create-gateway)</Callout>
+    <Callout icon="terminal">Reference: [`dome gateways create`](/docs/cli/build/gateway#create-gateway)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_gateways_create`
@@ -121,7 +121,7 @@ Create a separate gateway when callers need a resource set or endpoint boundary 
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_gateways_create`](/reference/mcp/gateway#dome_gateways_create)</Callout>
+    <Callout icon="cpu">Reference: [`dome_gateways_create`](/docs/reference/mcp/gateway#dome_gateways_create)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -135,7 +135,7 @@ Create a separate gateway when callers need a resource set or endpoint boundary 
     }
     ```
 
-    <Callout icon="code">Reference: [`CreateGateway`](/api/tag/gateways/create-gateway)</Callout>
+    <Callout icon="code">Reference: [`CreateGateway`](/docs/api/tag/gateways/create-gateway)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Create a Gateway"
@@ -164,7 +164,7 @@ Update a gateway to change its name or description.
 
     Omitted values remain unchanged.
 
-    <Callout icon="terminal">Reference: [`dome gateways update`](/cli/build/gateway#update-gateway)</Callout>
+    <Callout icon="terminal">Reference: [`dome gateways update`](/docs/cli/build/gateway#update-gateway)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_gateways_update`
@@ -179,7 +179,7 @@ Update a gateway to change its name or description.
 
     Omitted values remain unchanged.
 
-    <Callout icon="cpu">Reference: [`dome_gateways_update`](/reference/mcp/gateway#dome_gateways_update)</Callout>
+    <Callout icon="cpu">Reference: [`dome_gateways_update`](/docs/reference/mcp/gateway#dome_gateways_update)</Callout>
   </Tab>
   <Tab value="API">
     An empty `name` keeps the current name. The API always writes `description`, so include the current description when it must remain unchanged.
@@ -196,7 +196,7 @@ Update a gateway to change its name or description.
     }
     ```
 
-    <Callout icon="code">Reference: [`UpdateGateway`](/api/tag/gateways/update-gateway)</Callout>
+    <Callout icon="code">Reference: [`UpdateGateway`](/docs/api/tag/gateways/update-gateway)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Update a Gateway"
@@ -219,7 +219,7 @@ Retrieve one gateway to inspect its state, default marker, workspace-wide grant,
     dome gateways get prod-resources
     ```
 
-    <Callout icon="terminal">Reference: [`dome gateways get`](/cli/build/gateway#get-gateway)</Callout>
+    <Callout icon="terminal">Reference: [`dome gateways get`](/docs/cli/build/gateway#get-gateway)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_gateways_get`
@@ -230,7 +230,7 @@ Retrieve one gateway to inspect its state, default marker, workspace-wide grant,
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_gateways_get`](/reference/mcp/gateway#dome_gateways_get)</Callout>
+    <Callout icon="cpu">Reference: [`dome_gateways_get`](/docs/reference/mcp/gateway#dome_gateways_get)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -243,7 +243,7 @@ Retrieve one gateway to inspect its state, default marker, workspace-wide grant,
     }
     ```
 
-    <Callout icon="code">Reference: [`GetGateway`](/api/tag/gateways/get-gateway)</Callout>
+    <Callout icon="code">Reference: [`GetGateway`](/docs/api/tag/gateways/get-gateway)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Get a Gateway"
@@ -264,7 +264,7 @@ List gateways to retrieve their names, IDs, states, default markers, and canonic
     dome gateways list
     ```
 
-    <Callout icon="terminal">Reference: [`dome gateways list`](/cli/build/gateway#list-gateways)</Callout>
+    <Callout icon="terminal">Reference: [`dome gateways list`](/docs/cli/build/gateway#list-gateways)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_gateways_list`
@@ -273,7 +273,7 @@ List gateways to retrieve their names, IDs, states, default markers, and canonic
     {}
     ```
 
-    <Callout icon="cpu">Reference: [`dome_gateways_list`](/reference/mcp/gateway#dome_gateways_list)</Callout>
+    <Callout icon="cpu">Reference: [`dome_gateways_list`](/docs/reference/mcp/gateway#dome_gateways_list)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -285,7 +285,7 @@ List gateways to retrieve their names, IDs, states, default markers, and canonic
     }
     ```
 
-    <Callout icon="code">Reference: [`ListGateways`](/api/tag/gateways/list-gateways)</Callout>
+    <Callout icon="code">Reference: [`ListGateways`](/docs/api/tag/gateways/list-gateways)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="List Gateways"
@@ -306,7 +306,7 @@ Set a gateway as the workspace default to pre-select it in dashboard dialogs tha
     dome gateways set-default prod-resources
     ```
 
-    <Callout icon="terminal">Reference: [`dome gateways set-default`](/cli/build/gateway#set-default-gateway)</Callout>
+    <Callout icon="terminal">Reference: [`dome gateways set-default`](/docs/cli/build/gateway#set-default-gateway)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_gateways_set_default`
@@ -317,7 +317,7 @@ Set a gateway as the workspace default to pre-select it in dashboard dialogs tha
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_gateways_set_default`](/reference/mcp/gateway#dome_gateways_set_default)</Callout>
+    <Callout icon="cpu">Reference: [`dome_gateways_set_default`](/docs/reference/mcp/gateway#dome_gateways_set_default)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -330,7 +330,7 @@ Set a gateway as the workspace default to pre-select it in dashboard dialogs tha
     }
     ```
 
-    <Callout icon="code">Reference: [`SetGatewayDefault`](/api/tag/gateways/set-gateway-default)</Callout>
+    <Callout icon="code">Reference: [`SetGatewayDefault`](/docs/api/tag/gateways/set-gateway-default)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Set the default Gateway"
@@ -357,7 +357,7 @@ Enable a disabled gateway to restore its endpoint. Disabling a gateway preserves
     dome gateways enable prod-resources
     ```
 
-    <Callout icon="terminal">Reference: [`dome gateways enable`](/cli/build/gateway#enable-gateway)</Callout>
+    <Callout icon="terminal">Reference: [`dome gateways enable`](/docs/cli/build/gateway#enable-gateway)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_gateways_set_state`
@@ -369,7 +369,7 @@ Enable a disabled gateway to restore its endpoint. Disabling a gateway preserves
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_gateways_set_state`](/reference/mcp/gateway#dome_gateways_set_state)</Callout>
+    <Callout icon="cpu">Reference: [`dome_gateways_set_state`](/docs/reference/mcp/gateway#dome_gateways_set_state)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -383,7 +383,7 @@ Enable a disabled gateway to restore its endpoint. Disabling a gateway preserves
     }
     ```
 
-    <Callout icon="code">Reference: [`SetGatewayState`](/api/tag/gateways/set-gateway-state)</Callout>
+    <Callout icon="code">Reference: [`SetGatewayState`](/docs/api/tag/gateways/set-gateway-state)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Enable a Gateway"
@@ -404,7 +404,7 @@ Disable a gateway to block its endpoint without removing memberships or grants. 
     dome gateways disable prod-resources
     ```
 
-    <Callout icon="terminal">Reference: [`dome gateways disable`](/cli/build/gateway#disable-gateway)</Callout>
+    <Callout icon="terminal">Reference: [`dome gateways disable`](/docs/cli/build/gateway#disable-gateway)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_gateways_set_state`
@@ -416,7 +416,7 @@ Disable a gateway to block its endpoint without removing memberships or grants. 
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_gateways_set_state`](/reference/mcp/gateway#dome_gateways_set_state)</Callout>
+    <Callout icon="cpu">Reference: [`dome_gateways_set_state`](/docs/reference/mcp/gateway#dome_gateways_set_state)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -430,7 +430,7 @@ Disable a gateway to block its endpoint without removing memberships or grants. 
     }
     ```
 
-    <Callout icon="code">Reference: [`SetGatewayState`](/api/tag/gateways/set-gateway-state)</Callout>
+    <Callout icon="code">Reference: [`SetGatewayState`](/docs/api/tag/gateways/set-gateway-state)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Disable a Gateway"
@@ -457,7 +457,7 @@ Deletion is permanent. Per-agent grants for the deleted ID no longer admit calle
     dome gateways delete prod-resources
     ```
 
-    <Callout icon="terminal">Reference: [`dome gateways delete`](/cli/build/gateway#delete-gateway)</Callout>
+    <Callout icon="terminal">Reference: [`dome gateways delete`](/docs/cli/build/gateway#delete-gateway)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_gateways_delete`
@@ -468,7 +468,7 @@ Deletion is permanent. Per-agent grants for the deleted ID no longer admit calle
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_gateways_delete`](/reference/mcp/gateway#dome_gateways_delete)</Callout>
+    <Callout icon="cpu">Reference: [`dome_gateways_delete`](/docs/reference/mcp/gateway#dome_gateways_delete)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -481,7 +481,7 @@ Deletion is permanent. Per-agent grants for the deleted ID no longer admit calle
     }
     ```
 
-    <Callout icon="code">Reference: [`DeleteGateway`](/api/tag/gateways/delete-gateway)</Callout>
+    <Callout icon="code">Reference: [`DeleteGateway`](/docs/api/tag/gateways/delete-gateway)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Delete a Gateway"
@@ -512,7 +512,7 @@ Add one tool without exposing the other tools from its connection.
     dome gateways tools add prod-resources {{TOOL_ID}}
     ```
 
-    <Callout icon="terminal">Reference: [`dome gateways tools add`](/cli/build/gateway#add-tool)</Callout>
+    <Callout icon="terminal">Reference: [`dome gateways tools add`](/docs/cli/build/gateway#add-tool)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_gateways_tool_add`
@@ -525,7 +525,7 @@ Add one tool without exposing the other tools from its connection.
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_gateways_tool_add`](/reference/mcp/gateway#dome_gateways_tool_add)</Callout>
+    <Callout icon="cpu">Reference: [`dome_gateways_tool_add`](/docs/reference/mcp/gateway#dome_gateways_tool_add)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -539,7 +539,7 @@ Add one tool without exposing the other tools from its connection.
     }
     ```
 
-    <Callout icon="code">Reference: [`AddGatewayTool`](/api/tag/gateways/add-gateway-tool)</Callout>
+    <Callout icon="code">Reference: [`AddGatewayTool`](/docs/api/tag/gateways/add-gateway-tool)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Add an individual tool"
@@ -560,7 +560,7 @@ Remove an individual membership to stop exposing the tool on its own. The tool s
     dome gateways tools remove prod-resources {{TOOL_ID}}
     ```
 
-    <Callout icon="terminal">Reference: [`dome gateways tools remove`](/cli/build/gateway#remove-tool)</Callout>
+    <Callout icon="terminal">Reference: [`dome gateways tools remove`](/docs/cli/build/gateway#remove-tool)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_gateways_tool_remove`
@@ -573,7 +573,7 @@ Remove an individual membership to stop exposing the tool on its own. The tool s
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_gateways_tool_remove`](/reference/mcp/gateway#dome_gateways_tool_remove)</Callout>
+    <Callout icon="cpu">Reference: [`dome_gateways_tool_remove`](/docs/reference/mcp/gateway#dome_gateways_tool_remove)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -587,7 +587,7 @@ Remove an individual membership to stop exposing the tool on its own. The tool s
     }
     ```
 
-    <Callout icon="code">Reference: [`RemoveGatewayTool`](/api/tag/gateways/remove-gateway-tool)</Callout>
+    <Callout icon="code">Reference: [`RemoveGatewayTool`](/docs/api/tag/gateways/remove-gateway-tool)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Remove an individual tool"
@@ -612,7 +612,7 @@ Add a tool source to include every tool currently on that connection.
     dome gateways tool-sources add prod-resources notion
     ```
 
-    <Callout icon="terminal">Reference: [`dome gateways tool-sources add`](/cli/build/gateway#add-tool-source)</Callout>
+    <Callout icon="terminal">Reference: [`dome gateways tool-sources add`](/docs/cli/build/gateway#add-tool-source)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_gateways_tool_source_add`
@@ -624,7 +624,7 @@ Add a tool source to include every tool currently on that connection.
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_gateways_tool_source_add`](/reference/mcp/gateway#dome_gateways_tool_source_add)</Callout>
+    <Callout icon="cpu">Reference: [`dome_gateways_tool_source_add`](/docs/reference/mcp/gateway#dome_gateways_tool_source_add)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -638,7 +638,7 @@ Add a tool source to include every tool currently on that connection.
     }
     ```
 
-    <Callout icon="code">Reference: [`AddGatewayToolSource`](/api/tag/gateways/add-gateway-tool-source)</Callout>
+    <Callout icon="code">Reference: [`AddGatewayToolSource`](/docs/api/tag/gateways/add-gateway-tool-source)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Add a tool source"
@@ -659,7 +659,7 @@ Remove a tool-source membership to stop automatically including tools from that 
     dome gateways tool-sources remove prod-resources notion
     ```
 
-    <Callout icon="terminal">Reference: [`dome gateways tool-sources remove`](/cli/build/gateway#remove-tool-source)</Callout>
+    <Callout icon="terminal">Reference: [`dome gateways tool-sources remove`](/docs/cli/build/gateway#remove-tool-source)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_gateways_tool_source_remove`
@@ -671,7 +671,7 @@ Remove a tool-source membership to stop automatically including tools from that 
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_gateways_tool_source_remove`](/reference/mcp/gateway#dome_gateways_tool_source_remove)</Callout>
+    <Callout icon="cpu">Reference: [`dome_gateways_tool_source_remove`](/docs/reference/mcp/gateway#dome_gateways_tool_source_remove)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -685,7 +685,7 @@ Remove a tool-source membership to stop automatically including tools from that 
     }
     ```
 
-    <Callout icon="code">Reference: [`RemoveGatewayToolSource`](/api/tag/gateways/remove-gateway-tool-source)</Callout>
+    <Callout icon="code">Reference: [`RemoveGatewayToolSource`](/docs/api/tag/gateways/remove-gateway-tool-source)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Remove a tool source"
@@ -710,7 +710,7 @@ Add a pool to expose its routed models through the gateway.
     dome gateways model-pools add prod-resources production
     ```
 
-    <Callout icon="terminal">Reference: [`dome gateways model-pools add`](/cli/build/gateway#add-model-pool)</Callout>
+    <Callout icon="terminal">Reference: [`dome gateways model-pools add`](/docs/cli/build/gateway#add-model-pool)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_gateways_model_pool_add`
@@ -722,7 +722,7 @@ Add a pool to expose its routed models through the gateway.
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_gateways_model_pool_add`](/reference/mcp/gateway#dome_gateways_model_pool_add)</Callout>
+    <Callout icon="cpu">Reference: [`dome_gateways_model_pool_add`](/docs/reference/mcp/gateway#dome_gateways_model_pool_add)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -736,7 +736,7 @@ Add a pool to expose its routed models through the gateway.
     }
     ```
 
-    <Callout icon="code">Reference: [`AddGatewayLLMPool`](/api/tag/gateways/add-gateway-llm-pool)</Callout>
+    <Callout icon="code">Reference: [`AddGatewayLLMPool`](/docs/api/tag/gateways/add-gateway-llm-pool)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Add a model pool"
@@ -757,7 +757,7 @@ Remove a pool to stop exposing that pool through the gateway. The pool and its m
     dome gateways model-pools remove prod-resources production
     ```
 
-    <Callout icon="terminal">Reference: [`dome gateways model-pools remove`](/cli/build/gateway#remove-model-pool)</Callout>
+    <Callout icon="terminal">Reference: [`dome gateways model-pools remove`](/docs/cli/build/gateway#remove-model-pool)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_gateways_model_pool_remove`
@@ -769,7 +769,7 @@ Remove a pool to stop exposing that pool through the gateway. The pool and its m
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_gateways_model_pool_remove`](/reference/mcp/gateway#dome_gateways_model_pool_remove)</Callout>
+    <Callout icon="cpu">Reference: [`dome_gateways_model_pool_remove`](/docs/reference/mcp/gateway#dome_gateways_model_pool_remove)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -783,7 +783,7 @@ Remove a pool to stop exposing that pool through the gateway. The pool and its m
     }
     ```
 
-    <Callout icon="code">Reference: [`RemoveGatewayLLMPool`](/api/tag/gateways/remove-gateway-llm-pool)</Callout>
+    <Callout icon="code">Reference: [`RemoveGatewayLLMPool`](/docs/api/tag/gateways/remove-gateway-llm-pool)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Remove a model pool"
@@ -808,7 +808,7 @@ Add a direct model connection to make that model name addressable through the ga
     dome gateways models add prod-resources claude-prod
     ```
 
-    <Callout icon="terminal">Reference: [`dome gateways models add`](/cli/build/gateway#add-model)</Callout>
+    <Callout icon="terminal">Reference: [`dome gateways models add`](/docs/cli/build/gateway#add-model)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_gateways_model_add`
@@ -820,7 +820,7 @@ Add a direct model connection to make that model name addressable through the ga
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_gateways_model_add`](/reference/mcp/gateway#dome_gateways_model_add)</Callout>
+    <Callout icon="cpu">Reference: [`dome_gateways_model_add`](/docs/reference/mcp/gateway#dome_gateways_model_add)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -834,7 +834,7 @@ Add a direct model connection to make that model name addressable through the ga
     }
     ```
 
-    <Callout icon="code">Reference: [`AddGatewayLLMModel`](/api/tag/gateways/add-gateway-llm-model)</Callout>
+    <Callout icon="code">Reference: [`AddGatewayLLMModel`](/docs/api/tag/gateways/add-gateway-llm-model)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Add a direct model"
@@ -855,7 +855,7 @@ Remove a direct model connection to stop exposing it through the gateway without
     dome gateways models remove prod-resources claude-prod
     ```
 
-    <Callout icon="terminal">Reference: [`dome gateways models remove`](/cli/build/gateway#remove-model)</Callout>
+    <Callout icon="terminal">Reference: [`dome gateways models remove`](/docs/cli/build/gateway#remove-model)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_gateways_model_remove`
@@ -867,7 +867,7 @@ Remove a direct model connection to stop exposing it through the gateway without
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_gateways_model_remove`](/reference/mcp/gateway#dome_gateways_model_remove)</Callout>
+    <Callout icon="cpu">Reference: [`dome_gateways_model_remove`](/docs/reference/mcp/gateway#dome_gateways_model_remove)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -881,7 +881,7 @@ Remove a direct model connection to stop exposing it through the gateway without
     }
     ```
 
-    <Callout icon="code">Reference: [`RemoveGatewayLLMModel`](/api/tag/gateways/remove-gateway-llm-model)</Callout>
+    <Callout icon="code">Reference: [`RemoveGatewayLLMModel`](/docs/api/tag/gateways/remove-gateway-llm-model)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Remove a direct model"
@@ -908,7 +908,7 @@ List agents and show whether each agent has a per-agent grant to the gateway. Re
     dome gateways access list prod-resources
     ```
 
-    <Callout icon="terminal">Reference: [`dome gateways access list`](/cli/build/gateway#list-access)</Callout>
+    <Callout icon="terminal">Reference: [`dome gateways access list`](/docs/cli/build/gateway#list-access)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_gateways_access_list`
@@ -919,7 +919,7 @@ List agents and show whether each agent has a per-agent grant to the gateway. Re
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_gateways_access_list`](/reference/mcp/gateway#dome_gateways_access_list)</Callout>
+    <Callout icon="cpu">Reference: [`dome_gateways_access_list`](/docs/reference/mcp/gateway#dome_gateways_access_list)</Callout>
   </Tab>
   <Tab value="API">
     The API returns every agent in the workspace. Exclude revoked agents, then check whether each remaining agent's `allowed_gateway_ids` contains the target gateway ID.
@@ -928,7 +928,7 @@ List agents and show whether each agent has a per-agent grant to the gateway. Re
     GET /v1/agents?workspace_id={{WORKSPACE_ID}}
     ```
 
-    <Callout icon="code">Reference: [`ListAgents`](/api/tag/agents/list-agents)</Callout>
+    <Callout icon="code">Reference: [`ListAgents`](/docs/api/tag/agents/list-agents)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="List agent access"
@@ -949,7 +949,7 @@ Grant one agent access while preserving its existing gateway grants. Dome genera
     dome gateways access grant prod-resources data-pipeline-agent
     ```
 
-    <Callout icon="terminal">Reference: [`dome gateways access grant`](/cli/build/gateway#grant-access)</Callout>
+    <Callout icon="terminal">Reference: [`dome gateways access grant`](/docs/cli/build/gateway#grant-access)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_gateways_agent_grant`
@@ -961,7 +961,7 @@ Grant one agent access while preserving its existing gateway grants. Dome genera
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_gateways_agent_grant`](/reference/mcp/gateway#dome_gateways_agent_grant)</Callout>
+    <Callout icon="cpu">Reference: [`dome_gateways_agent_grant`](/docs/reference/mcp/gateway#dome_gateways_agent_grant)</Callout>
   </Tab>
   <Tab value="API">
     The `allowed_gateway_ids` field replaces the agent's full list. Include every existing gateway ID that the agent should keep, plus the new ID.
@@ -980,7 +980,7 @@ Grant one agent access while preserving its existing gateway grants. Dome genera
     }
     ```
 
-    <Callout icon="code">Reference: [`UpdateAgent`](/api/tag/agents/update-agent)</Callout>
+    <Callout icon="code">Reference: [`UpdateAgent`](/docs/api/tag/agents/update-agent)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Grant one agent"
@@ -1001,7 +1001,7 @@ Revoke one agent's access to the gateway while preserving its other gateway gran
     dome gateways access revoke prod-resources data-pipeline-agent
     ```
 
-    <Callout icon="terminal">Reference: [`dome gateways access revoke`](/cli/build/gateway#revoke-access)</Callout>
+    <Callout icon="terminal">Reference: [`dome gateways access revoke`](/docs/cli/build/gateway#revoke-access)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_gateways_agent_revoke`
@@ -1013,7 +1013,7 @@ Revoke one agent's access to the gateway while preserving its other gateway gran
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_gateways_agent_revoke`](/reference/mcp/gateway#dome_gateways_agent_revoke)</Callout>
+    <Callout icon="cpu">Reference: [`dome_gateways_agent_revoke`](/docs/reference/mcp/gateway#dome_gateways_agent_revoke)</Callout>
   </Tab>
   <Tab value="API">
     The `allowed_gateway_ids` field replaces the agent's full list. Omit the revoked ID and preserve every other ID the agent should keep.
@@ -1031,7 +1031,7 @@ Revoke one agent's access to the gateway while preserving its other gateway gran
     }
     ```
 
-    <Callout icon="code">Reference: [`UpdateAgent`](/api/tag/agents/update-agent)</Callout>
+    <Callout icon="code">Reference: [`UpdateAgent`](/docs/api/tag/agents/update-agent)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Revoke one agent"
@@ -1052,7 +1052,7 @@ Grant every current and future workspace agent access when all agents need the s
     dome gateways access grant-all prod-resources
     ```
 
-    <Callout icon="terminal">Reference: [`dome gateways access grant-all`](/cli/build/gateway#grant-access-to-all-agents)</Callout>
+    <Callout icon="terminal">Reference: [`dome gateways access grant-all`](/docs/cli/build/gateway#grant-access-to-all-agents)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_gateways_all_agents_grant`
@@ -1063,7 +1063,7 @@ Grant every current and future workspace agent access when all agents need the s
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_gateways_all_agents_grant`](/reference/mcp/gateway#dome_gateways_all_agents_grant)</Callout>
+    <Callout icon="cpu">Reference: [`dome_gateways_all_agents_grant`](/docs/reference/mcp/gateway#dome_gateways_all_agents_grant)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -1077,7 +1077,7 @@ Grant every current and future workspace agent access when all agents need the s
     }
     ```
 
-    <Callout icon="code">Reference: [`SetGatewayAllAgentsGrant`](/api/tag/gateways/set-gateway-all-agents-grant)</Callout>
+    <Callout icon="code">Reference: [`SetGatewayAllAgentsGrant`](/docs/api/tag/gateways/set-gateway-all-agents-grant)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Grant every workspace agent"
@@ -1098,7 +1098,7 @@ Revoke the workspace-wide grant to stop automatically admitting every agent. Exi
     dome gateways access revoke-all prod-resources
     ```
 
-    <Callout icon="terminal">Reference: [`dome gateways access revoke-all`](/cli/build/gateway#revoke-access-from-all-agents)</Callout>
+    <Callout icon="terminal">Reference: [`dome gateways access revoke-all`](/docs/cli/build/gateway#revoke-access-from-all-agents)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_gateways_all_agents_revoke`
@@ -1109,7 +1109,7 @@ Revoke the workspace-wide grant to stop automatically admitting every agent. Exi
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_gateways_all_agents_revoke`](/reference/mcp/gateway#dome_gateways_all_agents_revoke)</Callout>
+    <Callout icon="cpu">Reference: [`dome_gateways_all_agents_revoke`](/docs/reference/mcp/gateway#dome_gateways_all_agents_revoke)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -1123,7 +1123,7 @@ Revoke the workspace-wide grant to stop automatically admitting every agent. Exi
     }
     ```
 
-    <Callout icon="code">Reference: [`SetGatewayAllAgentsGrant`](/api/tag/gateways/set-gateway-all-agents-grant)</Callout>
+    <Callout icon="code">Reference: [`SetGatewayAllAgentsGrant`](/docs/api/tag/gateways/set-gateway-all-agents-grant)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Revoke every workspace agent"
@@ -1150,7 +1150,7 @@ List gateway cost quotas in the workspace or filter the result to one gateway.
     dome quotas list --gateway prod-resources
     ```
 
-    <Callout icon="terminal">Reference: [`dome quotas list`](/cli/govern/quota#list-quotas)</Callout>
+    <Callout icon="terminal">Reference: [`dome quotas list`](/docs/cli/govern/quota#list-quotas)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_quotas_list`
@@ -1161,7 +1161,7 @@ List gateway cost quotas in the workspace or filter the result to one gateway.
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_quotas_list`](/reference/mcp/quotas#dome_quotas_list)</Callout>
+    <Callout icon="cpu">Reference: [`dome_quotas_list`](/docs/reference/mcp/quotas#dome_quotas_list)</Callout>
   </Tab>
   <Tab value="API">
     The API returns every LLM quota in the workspace. Filter the response to records with `subject_type` equal to `gateway` and the desired `subject_id`.
@@ -1170,7 +1170,7 @@ List gateway cost quotas in the workspace or filter the result to one gateway.
     GET /v1/quotas?workspace_id={{WORKSPACE_ID}}
     ```
 
-    <Callout icon="code">Reference: [`ListLLMQuotas`](/api/tag/quotas/list-llm-quotas)</Callout>
+    <Callout icon="code">Reference: [`ListLLMQuotas`](/docs/api/tag/quotas/list-llm-quotas)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="List cost quotas"
@@ -1191,7 +1191,7 @@ Set a daily or monthly USD spend cap for LLM calls through a gateway. Once spend
     dome quotas set --subject gateway --gateway prod-resources --limit 500 --window monthly --name "prod-monthly"
     ```
 
-    <Callout icon="terminal">Reference: [`dome quotas set`](/cli/govern/quota#set-quota)</Callout>
+    <Callout icon="terminal">Reference: [`dome quotas set`](/docs/cli/govern/quota#set-quota)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_quotas_set`
@@ -1206,7 +1206,7 @@ Set a daily or monthly USD spend cap for LLM calls through a gateway. Once spend
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_quotas_set`](/reference/mcp/quotas#dome_quotas_set)</Callout>
+    <Callout icon="cpu">Reference: [`dome_quotas_set`](/docs/reference/mcp/quotas#dome_quotas_set)</Callout>
   </Tab>
   <Tab value="API">
     The API expresses the limit in millionths of a US dollar. For example, `$500` is `500000000`.
@@ -1226,7 +1226,7 @@ Set a daily or monthly USD spend cap for LLM calls through a gateway. Once spend
     }
     ```
 
-    <Callout icon="code">Reference: [`CreateLLMQuota`](/api/tag/quotas/create-llm-quota)</Callout>
+    <Callout icon="code">Reference: [`CreateLLMQuota`](/docs/api/tag/quotas/create-llm-quota)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Set a cost quota"
@@ -1251,7 +1251,7 @@ Removing a quota takes away an active spending control. Confirm the quota ID wit
     dome quotas rm {{QUOTA_ID}}
     ```
 
-    <Callout icon="terminal">Reference: [`dome quotas rm`](/cli/govern/quota#remove-quota)</Callout>
+    <Callout icon="terminal">Reference: [`dome quotas rm`](/docs/cli/govern/quota#remove-quota)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_quotas_remove`
@@ -1262,7 +1262,7 @@ Removing a quota takes away an active spending control. Confirm the quota ID wit
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_quotas_remove`](/reference/mcp/quotas#dome_quotas_remove)</Callout>
+    <Callout icon="cpu">Reference: [`dome_quotas_remove`](/docs/reference/mcp/quotas#dome_quotas_remove)</Callout>
   </Tab>
   <Tab value="API">
     Confirm that the quota has `subject_type: gateway` before deleting it. The generic API endpoint does not add the CLI and MCP subject-type guard.
@@ -1271,7 +1271,7 @@ Removing a quota takes away an active spending control. Confirm the quota ID wit
     DELETE /v1/quotas/{{QUOTA_ID}}?workspace_id={{WORKSPACE_ID}}
     ```
 
-    <Callout icon="code">Reference: [`DeleteLLMQuota`](/api/tag/quotas/delete-llm-quota)</Callout>
+    <Callout icon="code">Reference: [`DeleteLLMQuota`](/docs/api/tag/quotas/delete-llm-quota)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Remove a cost quota"
@@ -1307,7 +1307,7 @@ Do not add `/v1` to the Anthropic base URL because the Anthropic SDK appends `/v
 
 The `/mcp` endpoint speaks Streamable HTTP only, not the legacy standalone SSE transport. Configure MCP clients for `http` (or `streamable-http`), not `sse`.
 
-Run `dome gateways get <name-or-id> --json` to retrieve the complete `gateway_url`, `mcp_url`, `openai_base_url`, and `anthropic_base_url`. SDK agent-key creation and token exchange return the same authoritative endpoint set. Refer to [Python SDK Gateways](/sdks/python/reference#gateways).
+Run `dome gateways get <name-or-id> --json` to retrieve the complete `gateway_url`, `mcp_url`, `openai_base_url`, and `anthropic_base_url`. SDK agent-key creation and token exchange return the same authoritative endpoint set. Refer to [Python SDK Gateways](/docs/sdks/python/reference#gateways).
 
 ## Verify reachability
 

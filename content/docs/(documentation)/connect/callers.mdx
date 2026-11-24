@@ -75,7 +75,7 @@ Use OIDC when end users sign in through an IdP and your application sends their 
       --oidc-expected-audience {{YOUR_APP_CLIENT_ID}}
     ```
 
-    <Callout icon="terminal">Reference: [`dome workspaces verification-providers create`](/cli/settings/workspace#create-provider)</Callout>
+    <Callout icon="terminal">Reference: [`dome workspaces verification-providers create`](/docs/cli/settings/workspace#create-provider)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_verification_providers_create`
@@ -88,7 +88,7 @@ Use OIDC when end users sign in through an IdP and your application sends their 
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_verification_providers_create`](/reference/mcp/verification#verification-providers-create)</Callout>
+    <Callout icon="cpu">Reference: [`dome_verification_providers_create`](/docs/reference/mcp/verification#verification-providers-create)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -102,7 +102,7 @@ Use OIDC when end users sign in through an IdP and your application sends their 
     }
     ```
 
-    <Callout icon="code">Reference: [`CreateVerificationProvider`](/api/tag/workspaces/create-verification-provider)</Callout>
+    <Callout icon="code">Reference: [`CreateVerificationProvider`](/docs/api/tag/workspaces/create-verification-provider)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Create an OIDC verification provider"
@@ -163,7 +163,7 @@ Use HMAC when a trusted service constructs and signs the Act-As envelope with a 
       --hmac-secret <shared-secret>
     ```
 
-    <Callout icon="terminal">Reference: [`dome workspaces verification-providers create`](/cli/settings/workspace#create-provider)</Callout>
+    <Callout icon="terminal">Reference: [`dome workspaces verification-providers create`](/docs/cli/settings/workspace#create-provider)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_verification_providers_create`
@@ -176,7 +176,7 @@ Use HMAC when a trusted service constructs and signs the Act-As envelope with a 
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_verification_providers_create`](/reference/mcp/verification#verification-providers-create)</Callout>
+    <Callout icon="cpu">Reference: [`dome_verification_providers_create`](/docs/reference/mcp/verification#verification-providers-create)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -190,7 +190,7 @@ Use HMAC when a trusted service constructs and signs the Act-As envelope with a 
     }
     ```
 
-    <Callout icon="code">Reference: [`CreateVerificationProvider`](/api/tag/workspaces/create-verification-provider)</Callout>
+    <Callout icon="code">Reference: [`CreateVerificationProvider`](/docs/api/tag/workspaces/create-verification-provider)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Create an HMAC verification provider"
@@ -212,7 +212,7 @@ List the verification providers in the workspace. Widen the result to the visibl
     dome verification-providers list --include-chain
     ```
 
-    <Callout icon="terminal">Reference: [`dome workspaces verification-providers list`](/cli/settings/workspace#list-providers)</Callout>
+    <Callout icon="terminal">Reference: [`dome workspaces verification-providers list`](/docs/cli/settings/workspace#list-providers)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_verification_providers_list`
@@ -224,14 +224,14 @@ List the verification providers in the workspace. Widen the result to the visibl
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_verification_providers_list`](/reference/mcp/verification#verification-providers-list)</Callout>
+    <Callout icon="cpu">Reference: [`dome_verification_providers_list`](/docs/reference/mcp/verification#verification-providers-list)</Callout>
   </Tab>
   <Tab value="API">
     ```http
     GET /v1/workspaces/<workspace-uuid>/verification-providers
     ```
 
-    <Callout icon="code">Reference: [`ListVerificationProviders`](/api/tag/workspaces/list-verification-providers)</Callout>
+    <Callout icon="code">Reference: [`ListVerificationProviders`](/docs/api/tag/workspaces/list-verification-providers)</Callout>
   </Tab>
 </Tabs>
 
@@ -251,7 +251,7 @@ Review the agents and workspace, tenant, and organization defaults that use the 
     dome workspaces verification-providers delete <provider-id>
     ```
 
-    <Callout icon="terminal">Reference: [`dome workspaces verification-providers delete`](/cli/settings/workspace#delete-provider)</Callout>
+    <Callout icon="terminal">Reference: [`dome workspaces verification-providers delete`](/docs/cli/settings/workspace#delete-provider)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_verification_providers_delete`
@@ -262,14 +262,14 @@ Review the agents and workspace, tenant, and organization defaults that use the 
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_verification_providers_delete`](/reference/mcp/verification#verification-providers-delete)</Callout>
+    <Callout icon="cpu">Reference: [`dome_verification_providers_delete`](/docs/reference/mcp/verification#verification-providers-delete)</Callout>
   </Tab>
   <Tab value="API">
     ```http
     DELETE /v1/workspaces/<workspace-uuid>/verification-providers/<provider-id>
     ```
 
-    <Callout icon="code">Reference: [`DeleteVerificationProvider`](/api/tag/workspaces/delete-verification-provider)</Callout>
+    <Callout icon="code">Reference: [`DeleteVerificationProvider`](/docs/api/tag/workspaces/delete-verification-provider)</Callout>
   </Tab>
 </Tabs>
 
@@ -298,7 +298,7 @@ Agent settings can be stricter than the workspace floor, but cannot weaken it. A
     dome workspaces actas update --allowed-methods oidc,hmac
     ```
 
-    <Callout icon="terminal">Reference: [`dome workspaces actas update`](/cli/settings/workspace#update-act-as-config)</Callout>
+    <Callout icon="terminal">Reference: [`dome workspaces actas update`](/docs/cli/settings/workspace#update-act-as-config)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_workspaces_actas_update`
@@ -310,7 +310,7 @@ Agent settings can be stricter than the workspace floor, but cannot weaken it. A
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_workspaces_actas_update`](/reference/mcp/workspaces#workspace-actas-update)</Callout>
+    <Callout icon="cpu">Reference: [`dome_workspaces_actas_update`](/docs/reference/mcp/workspaces#workspace-actas-update)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -323,7 +323,7 @@ Agent settings can be stricter than the workspace floor, but cannot weaken it. A
     }
     ```
 
-    <Callout icon="code">Reference: [`UpdateWorkspaceActAs`](/api/tag/workspaces/update-workspace-act-as)</Callout>
+    <Callout icon="code">Reference: [`UpdateWorkspaceActAs`](/docs/api/tag/workspaces/update-workspace-act-as)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Require verified identity"
@@ -332,7 +332,7 @@ Agent settings can be stricter than the workspace floor, but cannot weaken it. A
   </Tab>
 </Tabs>
 
-Read the current floor with `dome workspaces actas get`, `dome_workspaces_actas_get`, or [`GetWorkspaceActAs`](/api/tag/workspaces/get-workspace-act-as).
+Read the current floor with `dome workspaces actas get`, `dome_workspaces_actas_get`, or [`GetWorkspaceActAs`](/docs/api/tag/workspaces/get-workspace-act-as).
 
 Tightening allowed methods can strand agents that already use an excluded method. The dashboard's **Verification** tab previews which agents would start failing at the gateway before you save. Review the configured method with `dome agents get` first when you change the floor from the CLI, MCP, or API.
 
@@ -392,7 +392,7 @@ You can read the same projection from the CLI or MCP:
 
     Use a caller record UUID when the same subject appears under more than one verification provider.
 
-    <Callout icon="terminal">Reference: [`dome callers`](/cli/connect/callers)</Callout>
+    <Callout icon="terminal">Reference: [`dome callers`](/docs/cli/connect/callers)</Callout>
   </Tab>
   <Tab value="MCP">
     Use `dome_callers_list` to find caller records and `dome_callers_get` to inspect one record.
@@ -406,7 +406,7 @@ You can read the same projection from the CLI or MCP:
     }
     ```
 
-    <Callout icon="cpu">Reference: [Caller MCP tools](/reference/mcp/callers)</Callout>
+    <Callout icon="cpu">Reference: [Caller MCP tools](/docs/reference/mcp/callers)</Callout>
   </Tab>
 </Tabs>
 

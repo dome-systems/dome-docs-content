@@ -73,7 +73,7 @@ Before you begin:
 
 ### Permissions
 
-Agent registry, lifecycle, and key operations require platform permissions. Each operation states the permission it requires. For exhaustive flags, tool parameters, and endpoint contracts, refer to the [CLI](/cli/build/agents), [MCP](/reference/mcp/agents), and [API](/api/tag/agents/register-agent) references.
+Agent registry, lifecycle, and key operations require platform permissions. Each operation states the permission it requires. For exhaustive flags, tool parameters, and endpoint contracts, refer to the [CLI](/docs/cli/build/agents), [MCP](/docs/reference/mcp/agents), and [API](/docs/api/tag/agents/register-agent) references.
 
 | Default roles | Permission | Grants |
 |---------------|------------|--------|
@@ -101,7 +101,7 @@ Register an agent to create the record that credentials, allowed resources, and 
 
     Add `--parent-id` to place the agent in a hierarchy, `--metadata key=value` for your own labels, `--token-ttl 15m` to override the default token lifetime, and `--if-not-exists` to return the existing agent instead of failing when the name is taken.
 
-    <Callout icon="terminal">Reference: [`dome agents register`](/cli/build/agents#register-agent)</Callout>
+    <Callout icon="terminal">Reference: [`dome agents register`](/docs/cli/build/agents#register-agent)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -113,7 +113,7 @@ Register an agent to create the record that credentials, allowed resources, and 
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_agents_register`](/reference/mcp/agents#agents-register)</Callout>
+    <Callout icon="cpu">Reference: [`dome_agents_register`](/docs/reference/mcp/agents#agents-register)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -127,7 +127,7 @@ Register an agent to create the record that credentials, allowed resources, and 
     }
     ```
 
-    <Callout icon="code">Reference: [`RegisterAgent`](/api/tag/agents/register-agent)</Callout>
+    <Callout icon="code">Reference: [`RegisterAgent`](/docs/api/tag/agents/register-agent)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -161,7 +161,7 @@ allowed_tools: [github/list_repos]
 dome agents register --file agent.yaml
 ```
 
-<Callout icon="terminal">Reference: [`dome agents register --file`](/cli/build/agents#register-from-a-file)</Callout>
+<Callout icon="terminal">Reference: [`dome agents register --file`](/docs/cli/build/agents#register-from-a-file)</Callout>
 
 ## Update agent
 
@@ -179,7 +179,7 @@ Update an agent to change its metadata or [token lifetime](#token-lifetime). Onl
 
     Passing `--token-ttl ""` resets the agent to the `10m` default.
 
-    <Callout icon="terminal">Reference: [`dome agents update`](/cli/build/agents#update-agent)</Callout>
+    <Callout icon="terminal">Reference: [`dome agents update`](/docs/cli/build/agents#update-agent)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -193,7 +193,7 @@ Update an agent to change its metadata or [token lifetime](#token-lifetime). Onl
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_agents_update`](/reference/mcp/agents#agents-update)</Callout>
+    <Callout icon="cpu">Reference: [`dome_agents_update`](/docs/reference/mcp/agents#agents-update)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -207,7 +207,7 @@ Update an agent to change its metadata or [token lifetime](#token-lifetime). Onl
     }
     ```
 
-    <Callout icon="code">Reference: [`UpdateAgent`](/api/tag/agents/update-agent)</Callout>
+    <Callout icon="code">Reference: [`UpdateAgent`](/docs/api/tag/agents/update-agent)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -235,7 +235,7 @@ You can change which pools, models, tools, and gateways the agent may reach. Ref
 
     Tool names take the form `<connection-name>/<tool-name>`. When a pool is not appropriate, `--model` allows a specific model connection.
 
-    <Callout icon="terminal">Reference: [`dome agents update`](/cli/build/agents#update-agent)</Callout>
+    <Callout icon="terminal">Reference: [`dome agents update`](/docs/cli/build/agents#update-agent)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -249,7 +249,7 @@ You can change which pools, models, tools, and gateways the agent may reach. Ref
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_agents_update`](/reference/mcp/agents#agents-update)</Callout>
+    <Callout icon="cpu">Reference: [`dome_agents_update`](/docs/reference/mcp/agents#agents-update)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -265,7 +265,7 @@ You can change which pools, models, tools, and gateways the agent may reach. Ref
     }
     ```
 
-    <Callout icon="code">Reference: [`UpdateAgent`](/api/tag/agents/update-agent)</Callout>
+    <Callout icon="code">Reference: [`UpdateAgent`](/docs/api/tag/agents/update-agent)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -302,7 +302,7 @@ You can also change how Dome verifies the end user an agent acts for, and which 
       --actas-allowed-group "support-engineers"
     ```
 
-    <Callout icon="terminal">Reference: [`dome agents update`](/cli/build/agents#update-agent)</Callout>
+    <Callout icon="terminal">Reference: [`dome agents update`](/docs/cli/build/agents#update-agent)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -317,7 +317,7 @@ You can also change how Dome verifies the end user an agent acts for, and which 
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_agents_update`](/reference/mcp/agents#agents-update)</Callout>
+    <Callout icon="cpu">Reference: [`dome_agents_update`](/docs/reference/mcp/agents#agents-update)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -333,7 +333,7 @@ You can also change how Dome verifies the end user an agent acts for, and which 
     }
     ```
 
-    <Callout icon="code">Reference: [`UpdateAgent`](/api/tag/agents/update-agent)</Callout>
+    <Callout icon="code">Reference: [`UpdateAgent`](/docs/api/tag/agents/update-agent)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -361,7 +361,7 @@ read its own record by ID. Use a platform user or platform key with
     dome agents get data-pipeline-agent
     ```
 
-    <Callout icon="terminal">Reference: [`dome agents get`](/cli/build/agents#get-agent)</Callout>
+    <Callout icon="terminal">Reference: [`dome agents get`](/docs/cli/build/agents#get-agent)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -374,7 +374,7 @@ read its own record by ID. Use a platform user or platform key with
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_agents_get`](/reference/mcp/agents#agents-get)</Callout>
+    <Callout icon="cpu">Reference: [`dome_agents_get`](/docs/reference/mcp/agents#agents-get)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -382,7 +382,7 @@ read its own record by ID. Use a platform user or platform key with
     GET /v1/agents/{{AGENT_ID}}?workspace_id={{WORKSPACE_ID}}&gateway_id={{GATEWAY_ID}}
     ```
 
-    <Callout icon="code">Reference: [`GetAgent`](/api/tag/agents/get-agent)</Callout>
+    <Callout icon="code">Reference: [`GetAgent`](/docs/api/tag/agents/get-agent)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -428,7 +428,7 @@ Retrieve a list of agents in a workspace. You can narrow the results by filterin
 
     A list returns 100 agents unless `--limit` says otherwise.
 
-    <Callout icon="terminal">Reference: [`dome agents list`](/cli/build/agents#list-agents)</Callout>
+    <Callout icon="terminal">Reference: [`dome agents list`](/docs/cli/build/agents#list-agents)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -443,7 +443,7 @@ Retrieve a list of agents in a workspace. You can narrow the results by filterin
 
     `offset` pages through results beyond the limit.
 
-    <Callout icon="cpu">Reference: [`dome_agents_list`](/reference/mcp/agents#agents-list)</Callout>
+    <Callout icon="cpu">Reference: [`dome_agents_list`](/docs/reference/mcp/agents#agents-list)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -451,7 +451,7 @@ Retrieve a list of agents in a workspace. You can narrow the results by filterin
     GET /v1/agents?workspace_id={{WORKSPACE_ID}}&status=active
     ```
 
-    <Callout icon="code">Reference: [`ListAgents`](/api/tag/agents/list-agents)</Callout>
+    <Callout icon="code">Reference: [`ListAgents`](/docs/api/tag/agents/list-agents)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -495,7 +495,7 @@ Suspend an agent to deny its requests until you reactivate it. Suspension is rev
     dome agents suspend data-pipeline-agent --reason "maintenance window"
     ```
 
-    <Callout icon="terminal">Reference: [`dome agents suspend`](/cli/build/agents#suspend-agent)</Callout>
+    <Callout icon="terminal">Reference: [`dome agents suspend`](/docs/cli/build/agents#suspend-agent)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -509,7 +509,7 @@ Suspend an agent to deny its requests until you reactivate it. Suspension is rev
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_agents_suspend`](/reference/mcp/agents#agents-suspend)</Callout>
+    <Callout icon="cpu">Reference: [`dome_agents_suspend`](/docs/reference/mcp/agents#agents-suspend)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -523,7 +523,7 @@ Suspend an agent to deny its requests until you reactivate it. Suspension is rev
     }
     ```
 
-    <Callout icon="code">Reference: [`SuspendAgent`](/api/tag/agents/suspend-agent)</Callout>
+    <Callout icon="code">Reference: [`SuspendAgent`](/docs/api/tag/agents/suspend-agent)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -545,7 +545,7 @@ Reactivate a suspended agent to restore its traffic. Reactivation applies only t
     dome agents reactivate data-pipeline-agent
     ```
 
-    <Callout icon="terminal">Reference: [`dome agents reactivate`](/cli/build/agents#reactivate-agent)</Callout>
+    <Callout icon="terminal">Reference: [`dome agents reactivate`](/docs/cli/build/agents#reactivate-agent)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -557,7 +557,7 @@ Reactivate a suspended agent to restore its traffic. Reactivation applies only t
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_agents_reactivate`](/reference/mcp/agents#agents-reactivate)</Callout>
+    <Callout icon="cpu">Reference: [`dome_agents_reactivate`](/docs/reference/mcp/agents#agents-reactivate)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -570,7 +570,7 @@ Reactivate a suspended agent to restore its traffic. Reactivation applies only t
     }
     ```
 
-    <Callout icon="code">Reference: [`ReactivateAgent`](/api/tag/agents/reactivate-agent)</Callout>
+    <Callout icon="code">Reference: [`ReactivateAgent`](/docs/api/tag/agents/reactivate-agent)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -596,7 +596,7 @@ Revoke an agent to decommission it permanently. Its record and audit history rem
     dome agents revoke data-pipeline-agent --reason "decommissioned"
     ```
 
-    <Callout icon="terminal">Reference: [`dome agents revoke`](/cli/build/agents#revoke-agent)</Callout>
+    <Callout icon="terminal">Reference: [`dome agents revoke`](/docs/cli/build/agents#revoke-agent)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -609,7 +609,7 @@ Revoke an agent to decommission it permanently. Its record and audit history rem
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_agents_revoke`](/reference/mcp/agents#agents-revoke)</Callout>
+    <Callout icon="cpu">Reference: [`dome_agents_revoke`](/docs/reference/mcp/agents#agents-revoke)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -623,7 +623,7 @@ Revoke an agent to decommission it permanently. Its record and audit history rem
     }
     ```
 
-    <Callout icon="code">Reference: [`RevokeAgent`](/api/tag/agents/revoke-agent)</Callout>
+    <Callout icon="code">Reference: [`RevokeAgent`](/docs/api/tag/agents/revoke-agent)</Callout>
   </Tab>
 </Tabs>
 
@@ -649,7 +649,7 @@ Delete a revoked agent to remove it and all of its data. Deletion works only on 
     dome agents delete data-pipeline-agent --cascade
     ```
 
-    <Callout icon="terminal">Reference: [`dome agents delete`](/cli/build/agents#delete-agent)</Callout>
+    <Callout icon="terminal">Reference: [`dome agents delete`](/docs/cli/build/agents#delete-agent)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -663,7 +663,7 @@ Delete a revoked agent to remove it and all of its data. Deletion works only on 
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_agents_delete`](/reference/mcp/agents#agents-delete)</Callout>
+    <Callout icon="cpu">Reference: [`dome_agents_delete`](/docs/reference/mcp/agents#agents-delete)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -671,7 +671,7 @@ Delete a revoked agent to remove it and all of its data. Deletion works only on 
     DELETE /v1/agents/{{AGENT_ID}}?workspace_id={{WORKSPACE_ID}}&reason=offboarded
     ```
 
-    <Callout icon="code">Reference: [`DeleteAgent`](/api/tag/agents/delete-agent)</Callout>
+    <Callout icon="code">Reference: [`DeleteAgent`](/docs/api/tag/agents/delete-agent)</Callout>
   </Tab>
 </Tabs>
 
@@ -695,7 +695,7 @@ Create a key to receive the one-time `token`, selected `gateway_id`, and complet
     dome agents create-key data-pipeline-agent --name "default" --gateway "{{GATEWAY_ID}}"
     ```
 
-    <Callout icon="terminal">Reference: [`dome agents create-key`](/cli/build/agents#create-key)</Callout>
+    <Callout icon="terminal">Reference: [`dome agents create-key`](/docs/cli/build/agents#create-key)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -709,7 +709,7 @@ Create a key to receive the one-time `token`, selected `gateway_id`, and complet
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_agents_create_key`](/reference/mcp/agents#agents-create-key)</Callout>
+    <Callout icon="cpu">Reference: [`dome_agents_create_key`](/docs/reference/mcp/agents#agents-create-key)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -724,7 +724,7 @@ Create a key to receive the one-time `token`, selected `gateway_id`, and complet
     }
     ```
 
-    <Callout icon="code">Reference: [`CreateAgentKey`](/api/tag/agents/create-agent-key)</Callout>
+    <Callout icon="code">Reference: [`CreateAgentKey`](/docs/api/tag/agents/create-agent-key)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -761,7 +761,7 @@ Retrieve an agent's active keys with their names and creation times. A list neve
     dome agents list-keys data-pipeline-agent
     ```
 
-    <Callout icon="terminal">Reference: [`dome agents list-keys`](/cli/build/agents#list-keys)</Callout>
+    <Callout icon="terminal">Reference: [`dome agents list-keys`](/docs/cli/build/agents#list-keys)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -773,7 +773,7 @@ Retrieve an agent's active keys with their names and creation times. A list neve
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_agents_list_keys`](/reference/mcp/agents#agents-list-keys)</Callout>
+    <Callout icon="cpu">Reference: [`dome_agents_list_keys`](/docs/reference/mcp/agents#agents-list-keys)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -781,7 +781,7 @@ Retrieve an agent's active keys with their names and creation times. A list neve
     GET /v1/agents/{{AGENT_ID}}/keys?workspace_id={{WORKSPACE_ID}}
     ```
 
-    <Callout icon="code">Reference: [`ListAgentKeys`](/api/tag/agents/list-agent-keys)</Callout>
+    <Callout icon="code">Reference: [`ListAgentKeys`](/docs/api/tag/agents/list-agent-keys)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -801,7 +801,7 @@ Rotate a key to revoke the old secret and issue a new one under the same name. D
     dome agents rotate-key data-pipeline-agent production
     ```
 
-    <Callout icon="terminal">Reference: [`dome agents rotate-key`](/cli/build/agents#rotate-key)</Callout>
+    <Callout icon="terminal">Reference: [`dome agents rotate-key`](/docs/cli/build/agents#rotate-key)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -814,7 +814,7 @@ Rotate a key to revoke the old secret and issue a new one under the same name. D
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_agents_rotate_key`](/reference/mcp/agents#agents-rotate-key)</Callout>
+    <Callout icon="cpu">Reference: [`dome_agents_rotate_key`](/docs/reference/mcp/agents#agents-rotate-key)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -827,7 +827,7 @@ Rotate a key to revoke the old secret and issue a new one under the same name. D
     }
     ```
 
-    <Callout icon="code">Reference: [`RotateAgentKey`](/api/tag/agents/rotate-agent-key)</Callout>
+    <Callout icon="code">Reference: [`RotateAgentKey`](/docs/api/tag/agents/rotate-agent-key)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -847,7 +847,7 @@ Revoke a key to retire it without affecting the agent's other keys. A revoked ke
     dome agents revoke-key data-pipeline-agent production
     ```
 
-    <Callout icon="terminal">Reference: [`dome agents revoke-key`](/cli/build/agents#revoke-key)</Callout>
+    <Callout icon="terminal">Reference: [`dome agents revoke-key`](/docs/cli/build/agents#revoke-key)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -860,7 +860,7 @@ Revoke a key to retire it without affecting the agent's other keys. A revoked ke
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_agents_revoke_key`](/reference/mcp/agents#agents-revoke-key)</Callout>
+    <Callout icon="cpu">Reference: [`dome_agents_revoke_key`](/docs/reference/mcp/agents#agents-revoke-key)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -868,7 +868,7 @@ Revoke a key to retire it without affecting the agent's other keys. A revoked ke
     DELETE /v1/agents/{{AGENT_ID}}/keys/production?workspace_id={{WORKSPACE_ID}}
     ```
 
-    <Callout icon="code">Reference: [`RevokeAgentKey`](/api/tag/agents/revoke-agent-key)</Callout>
+    <Callout icon="code">Reference: [`RevokeAgentKey`](/docs/api/tag/agents/revoke-agent-key)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -894,7 +894,7 @@ Assign rule files to the agent scope, where the gateway evaluates them alongside
     dome agents assign-policy data-pipeline-agent agent-policy.cedar
     ```
 
-    <Callout icon="terminal">Reference: [`dome agents assign-policy`](/cli/build/agents#assign-policy)</Callout>
+    <Callout icon="terminal">Reference: [`dome agents assign-policy`](/docs/cli/build/agents#assign-policy)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -912,7 +912,7 @@ Assign rule files to the agent scope, where the gateway evaluates them alongside
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_agents_assign_policy`](/reference/mcp/rules#agents-assign-policy)</Callout>
+    <Callout icon="cpu">Reference: [`dome_agents_assign_policy`](/docs/reference/mcp/rules#agents-assign-policy)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -934,7 +934,7 @@ Retrieve the rules assigned at the agent scope. The result excludes the organiza
     dome agents get-policies data-pipeline-agent
     ```
 
-    <Callout icon="terminal">Reference: [`dome agents get-policies`](/cli/build/agents#get-policies)</Callout>
+    <Callout icon="terminal">Reference: [`dome agents get-policies`](/docs/cli/build/agents#get-policies)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -946,7 +946,7 @@ Retrieve the rules assigned at the agent scope. The result excludes the organiza
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_agents_get_policies`](/reference/mcp/rules#agents-get-policies)</Callout>
+    <Callout icon="cpu">Reference: [`dome_agents_get_policies`](/docs/reference/mcp/rules#agents-get-policies)</Callout>
   </Tab>
 
   <Tab value="Agent">

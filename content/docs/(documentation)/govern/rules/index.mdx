@@ -149,7 +149,7 @@ Validate one or more Cedar files without deploying them. Validation returns bloc
 
     Add `--agent data-pipeline` to check tool references against that agent's workspace catalog. Without `--agent`, the CLI checks Cedar syntax and semantics only.
 
-    <Callout icon="terminal">Reference: [`dome rules validate`](/cli/govern/rules#validate-rules)</Callout>
+    <Callout icon="terminal">Reference: [`dome rules validate`](/docs/cli/govern/rules#validate-rules)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_rules_validate`
@@ -165,7 +165,7 @@ Validate one or more Cedar files without deploying them. Validation returns bloc
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_rules_validate`](/reference/mcp/rules#rules-validate)</Callout>
+    <Callout icon="cpu">Reference: [`dome_rules_validate`](/docs/reference/mcp/rules#rules-validate)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -186,7 +186,7 @@ Validate one or more Cedar files without deploying them. Validation returns bloc
 
     Include a workspace or agent scope to check catalog references. Scope-less validation checks Cedar syntax and semantics.
 
-    <Callout icon="code">Reference: [`ValidateRules`](/api/tag/authorization/validate-rules)</Callout>
+    <Callout icon="code">Reference: [`ValidateRules`](/docs/api/tag/authorization/validate-rules)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Validate Rules"
@@ -211,7 +211,7 @@ Simulate an authorization decision against the rules currently in effect without
       --resource-type mcp_tool
     ```
 
-    <Callout icon="terminal">Reference: [`dome rules simulate`](/cli/govern/rules#simulate-rules)</Callout>
+    <Callout icon="terminal">Reference: [`dome rules simulate`](/docs/cli/govern/rules#simulate-rules)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_rules_simulate`
@@ -225,7 +225,7 @@ Simulate an authorization decision against the rules currently in effect without
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_rules_simulate`](/reference/mcp/rules#rules-simulate)</Callout>
+    <Callout icon="cpu">Reference: [`dome_rules_simulate`](/docs/reference/mcp/rules#rules-simulate)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -245,7 +245,7 @@ Simulate an authorization decision against the rules currently in effect without
 
     `workspace_id` selects simulation mode and loads that workspace's effective rules.
 
-    <Callout icon="code">Reference: [`Evaluate`](/api/tag/authorization/evaluate)</Callout>
+    <Callout icon="code">Reference: [`Evaluate`](/docs/api/tag/authorization/evaluate)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Simulate Rules"
@@ -276,7 +276,7 @@ Applying rules replaces the active user-authored bundle at the selected scope. I
 
     Advisory warnings identify MCP tool references that do not match the workspace catalog. Warnings do not block the apply.
 
-    <Callout icon="terminal">Reference: [`dome rules apply`](/cli/govern/rules#apply-rules)</Callout>
+    <Callout icon="terminal">Reference: [`dome rules apply`](/docs/cli/govern/rules#apply-rules)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_rules_deploy`
@@ -297,7 +297,7 @@ Applying rules replaces the active user-authored bundle at the selected scope. I
 
     The tool defaults to the active workspace when you omit the scope. The tool preserves managed `tool-*.cedar` files and returns advisory validation warnings without blocking the apply.
 
-    <Callout icon="cpu">Reference: [`dome_rules_deploy`](/reference/mcp/rules#rules-deploy)</Callout>
+    <Callout icon="cpu">Reference: [`dome_rules_deploy`](/docs/reference/mcp/rules#rules-deploy)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -319,7 +319,7 @@ Applying rules replaces the active user-authored bundle at the selected scope. I
 
     The API requires `scope_kind` and `scope_id`. Use `org`, `tenant`, `workspace`, or `agent`. An agent scope also requires `workspace_id`.
 
-    <Callout icon="code">Reference: [`DeployBundle`](/api/tag/authorization/deploy-bundle)</Callout>
+    <Callout icon="code">Reference: [`DeployBundle`](/docs/api/tag/authorization/deploy-bundle)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Apply Rules"
@@ -344,7 +344,7 @@ Show the rules that apply to an agent after Dome assembles organization, tenant,
 
     Omit `--agent` to show the effective rules for every agent in the active workspace.
 
-    <Callout icon="terminal">Reference: [`dome rules show`](/cli/govern/rules#show-rules)</Callout>
+    <Callout icon="terminal">Reference: [`dome rules show`](/docs/cli/govern/rules#show-rules)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -353,7 +353,7 @@ Show the rules that apply to an agent after Dome assembles organization, tenant,
 
     The API uses `policy` in this endpoint name and response schema. The returned `effective_policy` is the assembled effective rule set.
 
-    <Callout icon="code">Reference: [`GetAgentEffectivePolicy`](/api/tag/agents/get-agent-effective-policy)</Callout>
+    <Callout icon="code">Reference: [`GetAgentEffectivePolicy`](/docs/api/tag/agents/get-agent-effective-policy)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Show effective Rules"
@@ -379,14 +379,14 @@ Get the currently active user-authored rules at one scope when you need that sco
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_rules_get_active`](/reference/mcp/rules#rules-get-active)</Callout>
+    <Callout icon="cpu">Reference: [`dome_rules_get_active`](/docs/reference/mcp/rules#rules-get-active)</Callout>
   </Tab>
   <Tab value="API">
     ```http
     GET /v1/rules/active?scope_kind=workspace&scope_id={{WORKSPACE_ID}}
     ```
 
-    <Callout icon="code">Reference: [`GetBundle`](/api/tag/authorization/get-bundle)</Callout>
+    <Callout icon="code">Reference: [`GetBundle`](/docs/api/tag/authorization/get-bundle)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Get active Rules at a scope"
@@ -409,7 +409,7 @@ List deployment history at a scope to retrieve IDs, names, sequence numbers, tim
 
     Add `--agent data-pipeline` to list the history for one agent.
 
-    <Callout icon="terminal">Reference: [`dome rules list`](/cli/govern/rules#list-rules)</Callout>
+    <Callout icon="terminal">Reference: [`dome rules list`](/docs/cli/govern/rules#list-rules)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_rules_list_versions`
@@ -422,14 +422,14 @@ List deployment history at a scope to retrieve IDs, names, sequence numbers, tim
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_rules_list_versions`](/reference/mcp/rules#rules-list-versions)</Callout>
+    <Callout icon="cpu">Reference: [`dome_rules_list_versions`](/docs/reference/mcp/rules#rules-list-versions)</Callout>
   </Tab>
   <Tab value="API">
     ```http
     GET /v1/rules?scope_kind=workspace&scope_id={{WORKSPACE_ID}}&limit=20
     ```
 
-    <Callout icon="code">Reference: [`ListBundles`](/api/tag/authorization/list-bundles)</Callout>
+    <Callout icon="code">Reference: [`ListBundles`](/docs/api/tag/authorization/list-bundles)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="List Rule history"
@@ -458,7 +458,7 @@ Generated bundles (`kind=generated`, labeled by `generator` — allowed resource
 
     The bundle ID identifies its scope, so no scope flag is required.
 
-    <Callout icon="terminal">Reference: [`dome rules rollback`](/cli/govern/rules#rollback-rules)</Callout>
+    <Callout icon="terminal">Reference: [`dome rules rollback`](/docs/cli/govern/rules#rollback-rules)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_rules_rollback`
@@ -469,7 +469,7 @@ Generated bundles (`kind=generated`, labeled by `generator` — allowed resource
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_rules_rollback`](/reference/mcp/rules#rules-rollback)</Callout>
+    <Callout icon="cpu">Reference: [`dome_rules_rollback`](/docs/reference/mcp/rules#rules-rollback)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -481,7 +481,7 @@ Generated bundles (`kind=generated`, labeled by `generator` — allowed resource
     }
     ```
 
-    <Callout icon="code">Reference: [`RollbackBundle`](/api/tag/authorization/rollback-bundle)</Callout>
+    <Callout icon="code">Reference: [`RollbackBundle`](/docs/api/tag/authorization/rollback-bundle)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Roll back Rules"
@@ -508,7 +508,7 @@ Deleting rules removes the active authorization contribution from the selected s
     DELETE /v1/rules?scope_kind=workspace&scope_id={{WORKSPACE_ID}}
     ```
 
-    <Callout icon="code">Reference: [`DeleteRules`](/api/tag/authorization/delete-rules)</Callout>
+    <Callout icon="code">Reference: [`DeleteRules`](/docs/api/tag/authorization/delete-rules)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Delete Rules"
@@ -539,7 +539,7 @@ The generated rules do not permit tool calls, inspect registered tools, or chang
 
     Omit `--output` to print the generated rules to standard output.
 
-    <Callout icon="terminal">Reference: [`dome rules generate`](/cli/govern/rules#generate-rules)</Callout>
+    <Callout icon="terminal">Reference: [`dome rules generate`](/docs/cli/govern/rules#generate-rules)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_rules_generate`
@@ -548,7 +548,7 @@ The generated rules do not permit tool calls, inspect registered tools, or chang
     {}
     ```
 
-    <Callout icon="cpu">Reference: [`dome_rules_generate`](/reference/mcp/rules#rules-generate)</Callout>
+    <Callout icon="cpu">Reference: [`dome_rules_generate`](/docs/reference/mcp/rules#rules-generate)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Generate starter Rules"

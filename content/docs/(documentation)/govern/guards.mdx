@@ -123,7 +123,7 @@ When more than one JSON action targets the same path, precedence is `BLOCK` > `O
 
     Convenience flags build at most two text components. Redact runs first, then block. Use `--config-from` for a JSON filter or a multi-component text chain.
 
-    <Callout icon="terminal">Reference: [`dome guards filters create`](/cli/govern/guards#create-filter)</Callout>
+    <Callout icon="terminal">Reference: [`dome guards filters create`](/docs/cli/govern/guards#create-filter)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_guards_create_filter`
@@ -140,7 +140,7 @@ When more than one JSON action targets the same path, precedence is `BLOCK` > `O
 
     Pass `config_json` with a protojson `dome.guards.v1.FilterConfig` to author a JSON filter or a multi-component text chain. Convenience params only produce text filters.
 
-    <Callout icon="cpu">Reference: [`dome_guards_create_filter`](/reference/mcp/guards#create-filter)</Callout>
+    <Callout icon="cpu">Reference: [`dome_guards_create_filter`](/docs/reference/mcp/guards#create-filter)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Create a filter"
@@ -164,7 +164,7 @@ Update filter metadata in place, or pass any config flag to deploy a new active 
       --block-substring "TOP-SECRET"
     ```
 
-    <Callout icon="terminal">Reference: [`dome guards filters update`](/cli/govern/guards#update-filter)</Callout>
+    <Callout icon="terminal">Reference: [`dome guards filters update`](/docs/cli/govern/guards#update-filter)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_guards_update_filter`
@@ -178,7 +178,7 @@ Update filter metadata in place, or pass any config flag to deploy a new active 
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_guards_update_filter`](/reference/mcp/guards#update-filter)</Callout>
+    <Callout icon="cpu">Reference: [`dome_guards_update_filter`](/docs/reference/mcp/guards#update-filter)</Callout>
   </Tab>
 </Tabs>
 
@@ -194,7 +194,7 @@ Roll a filter back to an earlier version. The target version's config is copied 
     dome guards filters rollback pii-redact --to-version 1
     ```
 
-    <Callout icon="terminal">Reference: [`dome guards filters rollback`](/cli/govern/guards#rollback-filter)</Callout>
+    <Callout icon="terminal">Reference: [`dome guards filters rollback`](/docs/cli/govern/guards#rollback-filter)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_guards_rollback_filter`
@@ -206,7 +206,7 @@ Roll a filter back to an earlier version. The target version's config is copied 
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_guards_rollback_filter`](/reference/mcp/guards#rollback-filter)</Callout>
+    <Callout icon="cpu">Reference: [`dome_guards_rollback_filter`](/docs/reference/mcp/guards#rollback-filter)</Callout>
   </Tab>
 </Tabs>
 
@@ -226,7 +226,7 @@ Delete removes the filter and every assignment that references it.
     dome guards filters delete pii-redact
     ```
 
-    <Callout icon="terminal">Reference: [`dome guards filters delete`](/cli/govern/guards#delete-filter)</Callout>
+    <Callout icon="terminal">Reference: [`dome guards filters delete`](/docs/cli/govern/guards#delete-filter)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_guards_delete_filter`
@@ -237,7 +237,7 @@ Delete removes the filter and every assignment that references it.
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_guards_delete_filter`](/reference/mcp/guards#delete-filter)</Callout>
+    <Callout icon="cpu">Reference: [`dome_guards_delete_filter`](/docs/reference/mcp/guards#delete-filter)</Callout>
   </Tab>
 </Tabs>
 
@@ -276,7 +276,7 @@ Model connections accept only `text` filters. Tool connections accept only `json
     dome tools guards filters list <connection>
     ```
 
-    <Callout icon="terminal">Reference: [`dome models guards filters set`](/cli/govern/guards#set-model-filters) · [`dome tools guards filters set`](/cli/govern/guards#set-tool-filters)</Callout>
+    <Callout icon="terminal">Reference: [`dome models guards filters set`](/docs/cli/govern/guards#set-model-filters) · [`dome tools guards filters set`](/docs/cli/govern/guards#set-tool-filters)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_models_guards_filters_set`
@@ -299,7 +299,7 @@ Model connections accept only `text` filters. Tool connections accept only `json
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_models_guards_filters_set`](/reference/mcp/guards#set-model-connection-filters) · [`dome_tools_guards_filters_set`](/reference/mcp/guards#set-tool-connection-filters)</Callout>
+    <Callout icon="cpu">Reference: [`dome_models_guards_filters_set`](/docs/reference/mcp/guards#set-model-connection-filters) · [`dome_tools_guards_filters_set`](/docs/reference/mcp/guards#set-tool-connection-filters)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Assign filter chains"
@@ -327,7 +327,7 @@ Content-Type: application/json
 }
 ```
 
-<Callout icon="code">Reference: [`UpdateWorkspaceLLMFilterWindow`](/api/tag/workspaces/update-workspace-llm-filter-window)</Callout>
+<Callout icon="code">Reference: [`UpdateWorkspaceLLMFilterWindow`](/docs/api/tag/workspaces/update-workspace-llm-filter-window)</Callout>
 
 Agents can request a wider buffer for a single call by adding a `_dome` block to the OpenAI- or Anthropic-shaped body:
 
@@ -383,7 +383,7 @@ Create a validator with a protojson `dome.guards.v1.ValidatorConfig`. The config
     }
     ```
 
-    <Callout icon="terminal">Reference: [`dome guards validators create`](/cli/govern/guards#create-validator)</Callout>
+    <Callout icon="terminal">Reference: [`dome guards validators create`](/docs/cli/govern/guards#create-validator)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_guards_create_validator`
@@ -396,7 +396,7 @@ Create a validator with a protojson `dome.guards.v1.ValidatorConfig`. The config
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_guards_create_validator`](/reference/mcp/guards#create-validator)</Callout>
+    <Callout icon="cpu">Reference: [`dome_guards_create_validator`](/docs/reference/mcp/guards#create-validator)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Create a validator"
@@ -419,7 +419,7 @@ Update metadata in place, or pass `--config-from` / `config_json` to deploy a ne
       --config-from ./require-user-id.json
     ```
 
-    <Callout icon="terminal">Reference: [`dome guards validators update`](/cli/govern/guards#update-validator)</Callout>
+    <Callout icon="terminal">Reference: [`dome guards validators update`](/docs/cli/govern/guards#update-validator)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_guards_update_validator`
@@ -432,7 +432,7 @@ Update metadata in place, or pass `--config-from` / `config_json` to deploy a ne
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_guards_update_validator`](/reference/mcp/guards#update-validator)</Callout>
+    <Callout icon="cpu">Reference: [`dome_guards_update_validator`](/docs/reference/mcp/guards#update-validator)</Callout>
   </Tab>
 </Tabs>
 
@@ -448,7 +448,7 @@ Roll a validator back to an earlier version. The target version's config is copi
     dome guards validators rollback require-user-id --to-version 1
     ```
 
-    <Callout icon="terminal">Reference: [`dome guards validators rollback`](/cli/govern/guards#rollback-validator)</Callout>
+    <Callout icon="terminal">Reference: [`dome guards validators rollback`](/docs/cli/govern/guards#rollback-validator)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_guards_rollback_validator`
@@ -460,7 +460,7 @@ Roll a validator back to an earlier version. The target version's config is copi
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_guards_rollback_validator`](/reference/mcp/guards#rollback-validator)</Callout>
+    <Callout icon="cpu">Reference: [`dome_guards_rollback_validator`](/docs/reference/mcp/guards#rollback-validator)</Callout>
   </Tab>
 </Tabs>
 
@@ -480,7 +480,7 @@ Delete removes the validator and every assignment that references it.
     dome guards validators delete require-user-id
     ```
 
-    <Callout icon="terminal">Reference: [`dome guards validators delete`](/cli/govern/guards#delete-validator)</Callout>
+    <Callout icon="terminal">Reference: [`dome guards validators delete`](/docs/cli/govern/guards#delete-validator)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_guards_delete_validator`
@@ -491,7 +491,7 @@ Delete removes the validator and every assignment that references it.
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_guards_delete_validator`](/reference/mcp/guards#delete-validator)</Callout>
+    <Callout icon="cpu">Reference: [`dome_guards_delete_validator`](/docs/reference/mcp/guards#delete-validator)</Callout>
   </Tab>
 </Tabs>
 
@@ -519,7 +519,7 @@ Attach validators to a tool connection as an unordered set on one direction. Dir
     dome tools guards validators list github-mcp
     ```
 
-    <Callout icon="terminal">Reference: [`dome tools guards validators add`](/cli/govern/guards#add-validator)</Callout>
+    <Callout icon="terminal">Reference: [`dome tools guards validators add`](/docs/cli/govern/guards#add-validator)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_tools_guards_validators_add`
@@ -542,7 +542,7 @@ Attach validators to a tool connection as an unordered set on one direction. Dir
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_tools_guards_validators_add`](/reference/mcp/guards#add-tool-connection-validators)</Callout>
+    <Callout icon="cpu">Reference: [`dome_tools_guards_validators_add`](/docs/reference/mcp/guards#add-tool-connection-validators)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Assign validators"

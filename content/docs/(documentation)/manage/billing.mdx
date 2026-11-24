@@ -48,7 +48,7 @@ Read the active plan, period usage, and free-tier caps when they apply.
 
     `dome usage-caps` is read-only and returns empty for paid orgs.
 
-    <Callout icon="terminal">Reference: [`dome billing`](/cli/manage/billing)</Callout>
+    <Callout icon="terminal">Reference: [`dome billing`](/docs/cli/manage/billing)</Callout>
   </Tab>
   <Tab value="Dashboard">
     Open **Billing** in the organization settings. Status, usage, and limit banners appear on the billing page and across the dashboard when alerts fire.
@@ -74,7 +74,7 @@ Change the SKU or purchased workspace count for the organization. Pro is priced 
 
     Increasing the purchased workspace count takes effect immediately and is billed now, prorated for the time left in the current period. Reducing it is scheduled for the period end, with no immediate refund; current workspaces remain available until then. Setting the current effective count cancels a scheduled reduction, and a later request replaces an earlier scheduled reduction.
 
-    <Callout icon="terminal">Reference: [`dome billing change-plan`](/cli/manage/billing#change-plan) and [`dome billing quantity set`](/cli/manage/billing#set-workspace-quantity)</Callout>
+    <Callout icon="terminal">Reference: [`dome billing change-plan`](/docs/cli/manage/billing#change-plan) and [`dome billing quantity set`](/docs/cli/manage/billing#set-workspace-quantity)</Callout>
   </Tab>
   <Tab value="Dashboard">
     Use the billing page to select a plan, adjust the Pro workspace quantity, or cancel. Scheduled downgrades and limit alerts surface as dashboard banners.
@@ -96,7 +96,7 @@ List invoices and payment methods. Add a card through the dashboard.
     dome billing contact set --email billing@example.com
     ```
 
-    <Callout icon="terminal">Reference: [`dome billing invoices`](/cli/manage/billing#list-invoices)</Callout>
+    <Callout icon="terminal">Reference: [`dome billing invoices`](/docs/cli/manage/billing#list-invoices)</Callout>
   </Tab>
   <Tab value="Dashboard">
     Add or replace payment methods and download invoices from the billing page. Billing alerts (past due, org lock, limit reached, scheduled downgrade) are dashboard-only.

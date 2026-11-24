@@ -5,7 +5,7 @@ description: Manage the OIDC and HMAC providers that verify end-user identity on
 
 `dome verification-providers` manages the named OIDC and HMAC configurations Dome verifies an Act-As assertion against. An agent bound to a provider may act for a person, and the gateway checks every such call against that provider before authorizing it.
 
-Set up alongside [`dome callers`](/cli/connect/callers): providers are what you configure, callers are the end users those providers turned out to verify.
+Set up alongside [`dome callers`](/docs/cli/connect/callers): providers are what you configure, callers are the end users those providers turned out to verify.
 
 | Command | |
 |---------|---|
@@ -24,7 +24,7 @@ Set up alongside [`dome callers`](/cli/connect/callers): providers are what you 
 Every command requires `config.manage` at the target scope, and the CLI hides them when the active context does not carry it. Alias: `list` = `ls`.
 
 <Callout type="info">
-These commands configure runtime Act-As only. Signing operators into Dome is [`dome auth login`](/cli/session/auth) and the SSO connection under **Settings → Single Sign-On**.
+These commands configure runtime Act-As only. Signing operators into Dome is [`dome auth login`](/docs/cli/session/auth) and the SSO connection under **Settings → Single Sign-On**.
 </Callout>
 
 ## Scope
@@ -41,7 +41,7 @@ A provider is visible to every workspace beneath the scope that owns it. That vi
 
 Setting up SSO can leave you a provider you did not create: when the issuer is available, the connection also creates a matching org-scoped OIDC provider, and Act-As can reuse it.
 
-`dome workspaces verification-providers` is a workspace-only convenience subset (`list` / `create` / `delete`), documented on [`dome workspaces`](/cli/settings/workspace#verification-providers). Prefer the scope-aware group here for reads, updates, and HMAC secret generation.
+`dome workspaces verification-providers` is a workspace-only convenience subset (`list` / `create` / `delete`), documented on [`dome workspaces`](/docs/cli/settings/workspace#verification-providers). Prefer the scope-aware group here for reads, updates, and HMAC secret generation.
 
 ## Act-As provider selection
 
@@ -70,7 +70,7 @@ Get or update the Act-As policy and provider selection for a workspace. The work
 
 Workspace updates replace the complete policy. Omitted flags clear provider selections and allowed methods; omitting `--required` sets it to `false`. Pass the full intended state each time.
 
-Refer to [`dome workspaces`](/cli/settings/workspace#act-as) for the complete workspace command reference.
+Refer to [`dome workspaces`](/docs/cli/settings/workspace#act-as) for the complete workspace command reference.
 
 ### Tenant Act-As
 
@@ -91,7 +91,7 @@ Get or update the provider selection for a tenant. The provider must be owned by
 
 Tenant scope does not set `--required` or `--allowed-methods`. A required provider itself forces Act-As for non-bound agents beneath the tenant.
 
-Refer to [`dome tenant`](/cli/settings/tenant) for the dedicated command-group reference.
+Refer to [`dome tenant`](/docs/cli/settings/tenant) for the dedicated command-group reference.
 
 ### Organization Act-As
 
@@ -112,7 +112,7 @@ Get or update the provider selection for an organization. The provider must be o
 
 An organization-level required provider applies to every non-bound agent in the organization and overrides required selections at tenant or workspace scope.
 
-Refer to [`dome orgs`](/cli/settings/org) for the dedicated command-group reference.
+Refer to [`dome orgs`](/docs/cli/settings/org) for the dedicated command-group reference.
 
 ## List providers
 

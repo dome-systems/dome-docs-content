@@ -3,7 +3,7 @@ title: Managed agents
 description: MCP tools for configuring and running managed agents
 ---
 
-Use these tools to configure managed agents, whose execution worker Dome runs. For agents whose worker you run in your own runtime, use the [Agents](/reference/mcp/agents) tools. Refer to [Managed agents](/build/agents/managed) for the operating model.
+Use these tools to configure managed agents, whose execution worker Dome runs. For agents whose worker you run in your own runtime, use the [Agents](/docs/reference/mcp/agents) tools. Refer to [Managed agents](/build/agents/managed) for the operating model.
 
 | tool | Permission | Description |
 | --- | --- | --- |
@@ -16,7 +16,7 @@ Use these tools to configure managed agents, whose execution worker Dome runs. F
 
 `dome_managed_agents_create` requires `name`. Pass `system_prompt`, `model`, and `gateway` to configure the worker; the gateway may be omitted only when exactly one workspace gateway admits every agent. The gateway grant permits every tool the gateway exposes, so separate tool grants are rejected.
 
-Use [Triggers](/reference/mcp/triggers) for reusable schedules and webhooks that can start one or more managed agents.
+Use [Triggers](/docs/reference/mcp/triggers) for reusable schedules and webhooks that can start one or more managed agents.
 
 ### dome_managed_agents_rotate_runner_key
 

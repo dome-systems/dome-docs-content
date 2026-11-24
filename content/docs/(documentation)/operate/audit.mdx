@@ -54,7 +54,7 @@ List every audit event type Dome emits, then show field detail for one type. The
 
     List is complete and unpaginated. Filter locally, then call show for field detail.
 
-    <Callout icon="terminal">Reference: [`dome audit catalog`](/cli/operate/audit#catalog)</Callout>
+    <Callout icon="terminal">Reference: [`dome audit catalog`](/docs/cli/operate/audit#catalog)</Callout>
   </Tab>
   <Tab value="MCP">
     Tools: `dome_audit_catalog_list`, `dome_audit_catalog_show`
@@ -63,7 +63,7 @@ List every audit event type Dome emits, then show field detail for one type. The
     { "event_type": "tool.call" }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_audit_catalog_show`](/reference/mcp/audit#catalog-show)</Callout>
+    <Callout icon="cpu">Reference: [`dome_audit_catalog_show`](/docs/reference/mcp/audit#catalog-show)</Callout>
   </Tab>
   <Tab value="Dashboard">
     Open **Settings → Eventing → Event Catalog** to browse payload fields, sample bodies, and JSON schemas.
@@ -84,7 +84,7 @@ Common flags: `--limit`, `--types`, `--classes`, `--results`, `--agent-id`, `--s
     dome audit query --limit 10
     ```
 
-    <Callout icon="terminal">Reference: [`dome audit query`](/cli/operate/audit#query-events)</Callout>
+    <Callout icon="terminal">Reference: [`dome audit query`](/docs/cli/operate/audit#query-events)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_audit_query`
@@ -93,7 +93,7 @@ Common flags: `--limit`, `--types`, `--classes`, `--results`, `--agent-id`, `--s
     { "limit": 10 }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_audit_query`](/reference/mcp/audit#audit-query)</Callout>
+    <Callout icon="cpu">Reference: [`dome_audit_query`](/docs/reference/mcp/audit#audit-query)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -113,7 +113,7 @@ Common flags: `--limit`, `--types`, `--classes`, `--results`, `--agent-id`, `--s
     }
     ```
 
-    <Callout icon="code">Reference: [`QueryEvents`](/api/tag/audit/query-events)</Callout>
+    <Callout icon="code">Reference: [`QueryEvents`](/docs/api/tag/audit/query-events)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Query recent audit events"
@@ -158,7 +158,7 @@ Read audit across every tenant and workspace in one organization from an organiz
     GET /v1/audit/events?event_classes=EVENT_CLASS_GOVERNING&results=RESULT_DENIED&start_time=2026-07-01T00:00:00Z&page_size=100
     ```
 
-    <Callout icon="code">Reference: [`QueryEvents`](/api/tag/audit/query-events)</Callout>
+    <Callout icon="code">Reference: [`QueryEvents`](/docs/api/tag/audit/query-events)</Callout>
   </Tab>
 </Tabs>
 
@@ -204,7 +204,7 @@ dome audit query --actor-kind scheduled_job
 dome audit query --producer-service gateway --request-surface gateway_mcp
 ```
 
-For a gateway, use `producer_gateway_id` through the [QueryEvents API](/api/tag/audit/query-events).
+For a gateway, use `producer_gateway_id` through the [QueryEvents API](/docs/api/tag/audit/query-events).
 
 ### Filter by resource
 
@@ -267,20 +267,20 @@ Retrieve a single audit event by ID. Scope is derived from the caller's session.
 ```bash
 dome audit get <event-id>
 ```
-<Callout icon="terminal">Reference: [`dome audit get`](/cli/operate/audit#get-event)</Callout>
+<Callout icon="terminal">Reference: [`dome audit get`](/docs/cli/operate/audit#get-event)</Callout>
 </Tab>
 <Tab value="MCP">
 Tool: `dome_audit_get_event`
 ```json
 { "event_id": "<uuid>" }
 ```
-<Callout icon="cpu">Reference: [`dome_audit_get_event`](/reference/mcp/audit#audit-get-event)</Callout>
+<Callout icon="cpu">Reference: [`dome_audit_get_event`](/docs/reference/mcp/audit#audit-get-event)</Callout>
 </Tab>
 <Tab value="API">
 ```http
 GET /v1/audit/events/<uuid>
 ```
-<Callout icon="code">Reference: [`GetEvent`](/api/tag/audit/get-event)</Callout>
+<Callout icon="code">Reference: [`GetEvent`](/docs/api/tag/audit/get-event)</Callout>
 </Tab>
 </Tabs>
 
@@ -303,7 +303,7 @@ dome audit chains --classes governing --results denied
 dome audit chains --agent-id agent_01HQ... --since 2026-06-05T00:00:00Z
 ```
 
-<Callout icon="terminal">Reference: [`dome audit chains`](/cli/operate/audit#list-chains)</Callout>
+<Callout icon="terminal">Reference: [`dome audit chains`](/docs/cli/operate/audit#list-chains)</Callout>
 
 ```json
 {
@@ -340,7 +340,7 @@ dome audit stream --activity-id case-12345
 dome audit query --activity-id case-12345 --classes governing --results denied
 ```
 
-<Callout icon="terminal">Reference: [`dome audit chain`](/cli/operate/audit#show-chain)</Callout>
+<Callout icon="terminal">Reference: [`dome audit chain`](/docs/cli/operate/audit#show-chain)</Callout>
 
 ## Denied operations
 

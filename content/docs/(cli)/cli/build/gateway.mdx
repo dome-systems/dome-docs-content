@@ -5,7 +5,7 @@ description: Manage gateways, their members, and agent access grants
 
 `dome gateways` manages workspace-scoped groupings of callable resources — MCP tool connections, LLM pools, and direct LLM model connections — plus the agent access grants that govern each grouping. Refer to [Gateways](/build/gateways) for the concept model.
 
-Resource-side mirrors live under [`dome tools gateways`](/cli/connect/tools#gateway-membership) and [`dome models pool gateways`](/cli/connect/models#gateway-membership) (each with `list`, `add`, `remove`). Attach at create time with `--gateway` on `dome tools add`, `dome models add`, and `dome models pool create`.
+Resource-side mirrors live under [`dome tools gateways`](/docs/cli/connect/tools#gateway-membership) and [`dome models pool gateways`](/docs/cli/connect/models#gateway-membership) (each with `list`, `add`, `remove`). Attach at create time with `--gateway` on `dome tools add`, `dome models add`, and `dome models pool create`.
 
 | Command | |
 |---------|---|
@@ -126,7 +126,7 @@ Delete a gateway. Its memberships are removed, but the underlying tools, pools, 
 dome gateways tools add <gateway-name-or-id> <tool-id>
 ```
 
-Add a single MCP tool to a gateway. `<tool-id>` is the observed tool's ID from [`dome tools catalog list`](/cli/connect/tools#list-tools). To include every tool from a connection — with newly discovered tools joining automatically — use [`tool-sources add`](#add-tool-source) instead.
+Add a single MCP tool to a gateway. `<tool-id>` is the observed tool's ID from [`dome tools catalog list`](/docs/cli/connect/tools#list-tools). To include every tool from a connection — with newly discovered tools joining automatically — use [`tool-sources add`](#add-tool-source) instead.
 
 ### Remove tool
 
@@ -267,4 +267,4 @@ dome gateways interactive disable <name-or-id>
 
 Disable new sign-ins and token renewal. The interactive agent and allow-lists remain for later re-enabling; existing access tokens expire within minutes.
 
-Cap gateway LLM spend with [`dome quotas`](/cli/govern/quota) (`--subject gateway --gateway <name>`).
+Cap gateway LLM spend with [`dome quotas`](/docs/cli/govern/quota) (`--subject gateway --gateway <name>`).

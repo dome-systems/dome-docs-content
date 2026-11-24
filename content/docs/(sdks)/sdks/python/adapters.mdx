@@ -34,7 +34,7 @@ The core package depends on `dome-sdk` and `langchain-core`. Install `dome-langc
 
 Use `DomeGatewayTool` when the tool already lives behind the Dome gateway. The adapter calls `client.gateway.tools.call()` — authorization, credential resolution, and audit all happen server-side.
 
-`gateway_url` must include the `/gateways/{id}` segment naming the agent's [Gateway](/sdks/python/reference#gateways). A bare-root URL fails at `connect()` with `DomeGatewayConfigurationError`.
+`gateway_url` must include the `/gateways/{id}` segment naming the agent's [Gateway](/docs/sdks/python/reference#gateways). A bare-root URL fails at `connect()` with `DomeGatewayConfigurationError`.
 
 ```python
 import dome
@@ -180,7 +180,7 @@ with session(
     # Each child.gateway_url is complete and call-ready.
 ```
 
-If a returned gateway ID or endpoint conflicts with the requested selection, the adapter fails closed with `DomeGatewayConfigurationError`. Refer to [Gateways](/sdks/python/reference#gateways).
+If a returned gateway ID or endpoint conflicts with the requested selection, the adapter fails closed with `DomeGatewayConfigurationError`. Refer to [Gateways](/docs/sdks/python/reference#gateways).
 
 ## Build a new adapter
 
@@ -188,7 +188,7 @@ Adapters live alongside the core SDK in `packages/dome-<framework>/` within `sdk
 
 ## Next steps
 
-- [Python reference](/sdks/python/reference) for Client, act-as, and gateway calls
-- [SDKs](/sdks) for when to use the SDK versus raw gateway calls
+- [Python reference](/docs/sdks/python/reference) for Client, act-as, and gateway calls
+- [SDKs](/docs/sdks) for when to use the SDK versus raw gateway calls
 - [Gateways](/build/gateways) to attach membership and grants
 - [Examples](/tutorials/examples) for working agents you can clone

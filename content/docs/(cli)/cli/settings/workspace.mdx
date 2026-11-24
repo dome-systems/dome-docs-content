@@ -132,7 +132,7 @@ This command uses full-replace semantics. Omitted flags clear their fields.
 
 Default provider precedence is workspace, tenant, then organization. Required provider precedence is organization, tenant, then workspace. Required providers override explicit non-bound agent configuration; bound agents remain exempt.
 
-Tenant and organization scopes can also select default and required providers, but they do not set `--required` or `--allowed-methods`. Refer to [Act-As provider selection](/cli/connect/verification-providers#act-as-provider-selection) for all three scope commands and their precedence.
+Tenant and organization scopes can also select default and required providers, but they do not set `--required` or `--allowed-methods`. Refer to [Act-As provider selection](/docs/cli/connect/verification-providers#act-as-provider-selection) for all three scope commands and their precedence.
 
 ## Freshness window
 
@@ -202,4 +202,4 @@ Deleting a referenced provider removes its binding. Affected agents fail closed 
 
 The CLI creates, updates, and deletes workspace-scoped providers only. Manage organization providers from **Settings → Single Sign-On**. Tenant-scoped provider writes are not exposed yet.
 
-These three are a convenience subset. Refer to [`dome verification-providers`](/cli/connect/verification-providers) for the scope-aware group, which also covers `get`, `update`, and server-minted HMAC secrets.
+These three are a convenience subset. Refer to [`dome verification-providers`](/docs/cli/connect/verification-providers) for the scope-aware group, which also covers `get`, `update`, and server-minted HMAC secrets.

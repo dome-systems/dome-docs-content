@@ -12,7 +12,7 @@ import { dataExport } from '@/snippets/glossary';
 
 Forwarders and one-shot destination pushes read the same audit trail. Configuration and runtime events ship together unless you filter.
 
-Refer to [Audit events](/operate/audit) to query or reconstruct events, including gateway decisions. Refer to [Audit events](/concepts/audit) concept for the unified trail model. Ad-hoc exports to stdout or a file use [`dome audit export`](/cli/operate/audit#export-events) and [`dome_audit_export`](/reference/mcp/audit#audit-export).
+Refer to [Audit events](/operate/audit) to query or reconstruct events, including gateway decisions. Refer to [Audit events](/concepts/audit) concept for the unified trail model. Ad-hoc exports to stdout or a file use [`dome audit export`](/docs/cli/operate/audit#export-events) and [`dome_audit_export`](/docs/reference/mcp/audit#audit-export).
 
 The typical workflow is:
 
@@ -176,12 +176,12 @@ Connect Datadog or Grafana Loki under [Integrations](/operate/integrations) in t
 
     `enable` creates a stream. If one already exists (running or stopped), enable is refused — use `resume`. `disable` stops delivery but keeps the cursor, so backlog while off remains deliverable. `resume --skip-to-now` abandons undelivered backlog permanently (requires `--yes` non-interactively).
 
-    <Callout icon="terminal">Reference: [`dome audit siem`](/cli/operate/audit#siem)</Callout>
+    <Callout icon="terminal">Reference: [`dome audit siem`](/docs/cli/operate/audit#siem)</Callout>
   </Tab>
   <Tab value="MCP">
     Tools: `dome_audit_siem_list`, `dome_audit_siem_enable`, `dome_audit_siem_status`, `dome_audit_siem_disable`, `dome_audit_siem_resume`
 
-    <Callout icon="cpu">Reference: [`dome_audit_siem_enable`](/reference/mcp/audit#siem-enable)</Callout>
+    <Callout icon="cpu">Reference: [`dome_audit_siem_enable`](/docs/reference/mcp/audit#siem-enable)</Callout>
   </Tab>
   <Tab value="Dashboard">
     Open the Datadog or Grafana Loki integration instance and use the SIEM stream controls on that page.

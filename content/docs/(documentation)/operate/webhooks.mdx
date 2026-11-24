@@ -67,7 +67,7 @@ dome webhooks subscriptions create slack-alerts \
   --filter 'result=denied'
 ```
 
-For provider-specific settings, credentials, shared destinations, MCP, and API examples, see the [webhooks CLI reference](/cli/operate/webhooks).
+For provider-specific settings, credentials, shared destinations, MCP, and API examples, see the [webhooks CLI reference](/docs/cli/operate/webhooks).
 
 ### Filters
 
@@ -116,12 +116,12 @@ Send a fixed `eventing.test` event through a subscription's destination to verif
 
     The command prints the queued delivery ID. Check the outcome with `dome webhooks deliveries get <id>`.
 
-    <Callout icon="terminal">Reference: [`dome webhooks subscriptions test`](/cli/operate/webhooks#send-test-event)</Callout>
+    <Callout icon="terminal">Reference: [`dome webhooks subscriptions test`](/docs/cli/operate/webhooks#send-test-event)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_webhooks_subscription_test`
 
-    <Callout icon="cpu">Reference: [`dome_webhooks_subscription_test`](/reference/mcp/webhooks#subscription-test)</Callout>
+    <Callout icon="cpu">Reference: [`dome_webhooks_subscription_test`](/docs/reference/mcp/webhooks#subscription-test)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Test a webhook subscription"
@@ -190,12 +190,12 @@ Inspect delivery attempt history, including the retained body while it is availa
     dome webhooks deliveries get <delivery-id> --body
     ```
 
-    <Callout icon="terminal">Reference: [`dome webhooks deliveries list`](/cli/operate/webhooks#list-deliveries), [`get`](/cli/operate/webhooks#get-delivery)</Callout>
+    <Callout icon="terminal">Reference: [`dome webhooks deliveries list`](/docs/cli/operate/webhooks#list-deliveries), [`get`](/docs/cli/operate/webhooks#get-delivery)</Callout>
   </Tab>
   <Tab value="MCP">
     Tools: `dome_webhooks_delivery_list`, `dome_webhooks_delivery_get`.
 
-    <Callout icon="cpu">Reference: [`dome_webhooks_delivery_list`](/reference/mcp/webhooks#delivery-list), [`dome_webhooks_delivery_get`](/reference/mcp/webhooks#delivery-get)</Callout>
+    <Callout icon="cpu">Reference: [`dome_webhooks_delivery_list`](/docs/reference/mcp/webhooks#delivery-list), [`dome_webhooks_delivery_get`](/docs/reference/mcp/webhooks#delivery-get)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="List failed webhook deliveries"
@@ -232,7 +232,7 @@ Replay one delivery or bulk-replay failures in a window. A replay creates a **ne
 
     `replay-failed` prints `matched · replayed · skipped (body expired) · failed`. It is safe to re-run: deliveries with a live or succeeded replay are not matched again.
 
-    <Callout icon="terminal">Reference: [`dome webhooks deliveries replay`](/cli/operate/webhooks#replay-delivery), [`replay-failed`](/cli/operate/webhooks#replay-failed-deliveries)</Callout>
+    <Callout icon="terminal">Reference: [`dome webhooks deliveries replay`](/docs/cli/operate/webhooks#replay-delivery), [`replay-failed`](/docs/cli/operate/webhooks#replay-failed-deliveries)</Callout>
   </Tab>
   <Tab value="MCP">
     Tools: `dome_webhooks_delivery_replay`, `dome_webhooks_delivery_replay_failed`, `dome_webhooks_delivery_cancel`.
@@ -244,7 +244,7 @@ Replay one delivery or bulk-replay failures in a window. A replay creates a **ne
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_webhooks_delivery_replay_failed`](/reference/mcp/webhooks#delivery-replay-failed)</Callout>
+    <Callout icon="cpu">Reference: [`dome_webhooks_delivery_replay_failed`](/docs/reference/mcp/webhooks#delivery-replay-failed)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -285,12 +285,12 @@ Rotate a destination's signing secret without dropping deliveries. For 24 hours,
 
     The command prints the new signing secret once (`whsec_…`) with its key ID.
 
-    <Callout icon="terminal">Reference: [`dome webhooks subscriptions rotate-secret`](/cli/operate/webhooks#rotate-signing-secret)</Callout>
+    <Callout icon="terminal">Reference: [`dome webhooks subscriptions rotate-secret`](/docs/cli/operate/webhooks#rotate-signing-secret)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_webhooks_subscription_rotate_secret`
 
-    <Callout icon="cpu">Reference: [`dome_webhooks_subscription_rotate_secret`](/reference/mcp/webhooks#subscription-rotate-secret)</Callout>
+    <Callout icon="cpu">Reference: [`dome_webhooks_subscription_rotate_secret`](/docs/reference/mcp/webhooks#subscription-rotate-secret)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Rotate a webhook signing secret"

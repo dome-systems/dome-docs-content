@@ -7,7 +7,7 @@ import { modelConnection } from '@/snippets/glossary';
 
 <p>{modelConnection}</p>
 
-Refer to [Models](/connect/models) for how to connect providers and publish governed endpoints. Group models into [Pools](/reference/mcp/pools) for routing and failover. Cap spend with [Quotas](/reference/mcp/quotas). Connection, OAuth, pool, and quota tools require workspace context. Rate-card tools are organization-scoped (or authenticated-only for Dome's book and suggestions).
+Refer to [Models](/connect/models) for how to connect providers and publish governed endpoints. Group models into [Pools](/docs/reference/mcp/pools) for routing and failover. Cap spend with [Quotas](/docs/reference/mcp/quotas). Connection, OAuth, pool, and quota tools require workspace context. Rate-card tools are organization-scoped (or authenticated-only for Dome's book and suggestions).
 
 ## Models
 
@@ -157,7 +157,7 @@ Disconnect (revoke) shared-OAuth credentials for a model. Idempotent. Marked des
 
 ## Model rates
 
-Organization rate-card tools. They are the MCP surface of [`dome models rates`](/cli/connect/models#model-rates). Org id comes from the active context — there is no `org_id` argument.
+Organization rate-card tools. They are the MCP surface of [`dome models rates`](/docs/cli/connect/models#model-rates). Org id comes from the active context — there is no `org_id` argument.
 
 Rates are integer micro-USD per 1 million tokens (`$3.00/Mtok` = `3000000`). Every rate is a time-windowed **era**: `[valid_from, valid_until)` with `valid_until` unset meaning the open (current) era. Historical usage is priced at the era covering its own time, not at today's rate. `dome_models_rate_set` appends a new era (it closes the match's open era). `dome_models_rate_era_update` is the audited in-place correction of one existing era.
 
@@ -376,7 +376,7 @@ Remove the organization's rate for a model match by **closing** its open era. Re
 
 ## Next steps
 
-- [Pools](/reference/mcp/pools) to route and fail over across model connections
-- [Quotas](/reference/mcp/quotas) to cap USD spend
+- [Pools](/docs/reference/mcp/pools) to route and fail over across model connections
+- [Quotas](/docs/reference/mcp/quotas) to cap USD spend
 - [Models](/connect/models) how-to for the full workflow
-- [`dome models rates`](/cli/connect/models#model-rates) CLI for the same rate-card surface
+- [`dome models rates`](/docs/cli/connect/models#model-rates) CLI for the same rate-card surface

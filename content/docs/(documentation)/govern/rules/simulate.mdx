@@ -85,7 +85,7 @@ Then run the simulation with the caller, action, and resource you care about:
     | `--actas-roles` | string | — | Act-as roles (comma-separated) |
     | `--actas-groups` | string | — | Act-as groups (comma-separated) |
 
-    <Callout icon="terminal">Reference: [`dome rules simulate`](/cli/govern/rules#simulate-rules)</Callout>
+    <Callout icon="terminal">Reference: [`dome rules simulate`](/docs/cli/govern/rules#simulate-rules)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_rules_simulate`
@@ -113,7 +113,7 @@ Then run the simulation with the caller, action, and resource you care about:
 
     `dome_rules_simulate` calls `Authorization.Evaluate` synchronously and returns the decision immediately. The separate `dome_rules_simulate_result` tool polls the historical-replay Simulation service by simulation ID.
 
-    <Callout icon="cpu">Reference: [`dome_rules_simulate`](/reference/mcp/rules#rules-simulate)</Callout>
+    <Callout icon="cpu">Reference: [`dome_rules_simulate`](/docs/reference/mcp/rules#rules-simulate)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -142,7 +142,7 @@ Then run the simulation with the caller, action, and resource you care about:
     | `act_as` | ActAs | — | End-user identity (`sub`, `email`, `roles`, `groups`, `claims`) |
     | `arguments` | bytes | — | JSON object encoded as bytes. Top-level keys become `resource.arguments.<key>` (for example `{"query":"Atlas"}`) |
 
-    <Callout icon="code">Reference: [`Evaluate`](/api/tag/authorization/evaluate)</Callout>
+    <Callout icon="code">Reference: [`Evaluate`](/docs/api/tag/authorization/evaluate)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Simulate Rules"
@@ -213,7 +213,7 @@ Simulation accepts these claims as test input. Live requests must pass [Delegate
     | `--actas-roles` | `principal.act_as.roles` |
     | `--actas-groups` | `principal.act_as.groups` |
 
-    <Callout icon="terminal">Reference: [`dome rules simulate`](/cli/govern/rules#simulate-rules)</Callout>
+    <Callout icon="terminal">Reference: [`dome rules simulate`](/docs/cli/govern/rules#simulate-rules)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_rules_simulate`
@@ -231,7 +231,7 @@ Simulation accepts these claims as test input. Live requests must pass [Delegate
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_rules_simulate`](/reference/mcp/rules#rules-simulate)</Callout>
+    <Callout icon="cpu">Reference: [`dome_rules_simulate`](/docs/reference/mcp/rules#rules-simulate)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -263,7 +263,7 @@ Simulation accepts these claims as test input. Live requests must pass [Delegate
     | `act_as.groups` | string[] | — | Groups claim |
     | `act_as.claims` | map\<string,string\> | — | Additional custom claims |
 
-    <Callout icon="code">Reference: [`Evaluate`](/api/tag/authorization/evaluate)</Callout>
+    <Callout icon="code">Reference: [`Evaluate`](/docs/api/tag/authorization/evaluate)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Simulate with Act-As"
@@ -295,7 +295,7 @@ A rule like `resource.arguments.query like "*Atlas*"` matches the example below.
     |------|------|---------|-------------|
     | `--eval-arguments` | JSON object | — | Per-call arguments as a JSON object surfaced as `resource.arguments.<key>` |
 
-    <Callout icon="terminal">Reference: [`dome rules simulate`](/cli/govern/rules#simulate-rules)</Callout>
+    <Callout icon="terminal">Reference: [`dome rules simulate`](/docs/cli/govern/rules#simulate-rules)</Callout>
   </Tab>
   <Tab value="Dashboard">
     In the Simulate panel, open the **Arguments** section and add one key-value row per argument. Each row becomes `resource.arguments.<key>` for the evaluation.
@@ -319,7 +319,7 @@ A rule like `resource.arguments.query like "*Atlas*"` matches the example below.
     |-------|------|---------|-------------|
     | `arguments` | bytes | — | Base64-encoded JSON object. Top-level keys are surfaced as `resource.arguments.<key>`. Non-object payloads are dropped silently. |
 
-    <Callout icon="code">Reference: [`Evaluate`](/api/tag/authorization/evaluate)</Callout>
+    <Callout icon="code">Reference: [`Evaluate`](/docs/api/tag/authorization/evaluate)</Callout>
   </Tab>
 </Tabs>
 

@@ -39,7 +39,7 @@ Before you begin, authenticate the Dome CLI and select a workspace context.
 
 Workspace settings writes require an `admin` role (or equivalent cascade) with `config.manage`. Each operation states the permission it requires.
 
-For exhaustive flags, tool parameters, and endpoint contracts, refer to the [CLI](/cli/settings/workspace), [MCP](/reference/mcp/workspaces), and [API](/api/tag/platform/get-config) references.
+For exhaustive flags, tool parameters, and endpoint contracts, refer to the [CLI](/docs/cli/settings/workspace), [MCP](/docs/reference/mcp/workspaces), and [API](/docs/api/tag/platform/get-config) references.
 
 | Default roles | Permission | Grants |
 |---------------|------------|--------|
@@ -59,12 +59,12 @@ dome workspaces config set --key audit.retention_days --value 90
 dome workspaces config set --key authorization.rule_sync_interval --value 15s
 ```
 
-<Callout icon="terminal">Reference: [`dome workspaces`](/cli/settings/workspace)</Callout>
+<Callout icon="terminal">Reference: [`dome workspaces`](/docs/cli/settings/workspace)</Callout>
 </Tab>
 <Tab value="MCP">
 Tools: `dome_workspaces_config_list`, `dome_workspaces_config_set`
 
-<Callout icon="cpu">Reference: [`dome_workspaces_config_set`](/reference/mcp/workspaces)</Callout>
+<Callout icon="cpu">Reference: [`dome_workspaces_config_set`](/docs/reference/mcp/workspaces)</Callout>
 </Tab>
 <Tab value="API">
 ```http
@@ -72,7 +72,7 @@ GET /v1/config/{key}?workspace_id={{WORKSPACE_ID}}
 PUT /v1/config/{key}
 ```
 
-<Callout icon="code">Reference: [`GetConfig`](/api/tag/platform/get-config)</Callout>
+<Callout icon="code">Reference: [`GetConfig`](/docs/api/tag/platform/get-config)</Callout>
 </Tab>
 <Tab value="Agent">
 ```text title="Configure workspace defaults"

@@ -417,7 +417,7 @@ Without `--reassign-to`, managed agents configured to run on the pool cannot run
 dome models pool gateways <list|add|remove> <pool-name-or-id> [gateway-name-or-id]
 ```
 
-Manage the pool's membership in [Gateways](/build/gateways) from the pool side. Mirrors [`dome gateways model-pools`](/cli/build/gateway#add-model-pool).
+Manage the pool's membership in [Gateways](/build/gateways) from the pool side. Mirrors [`dome gateways model-pools`](/docs/cli/build/gateway#add-model-pool).
 
 - `list <pool>` — gateways this pool belongs to. Alias: `ls`.
 - `add <pool> <gateway>` — expose the pool's models at the gateway's `/gateways/<id>/v1` endpoint.
@@ -469,4 +469,4 @@ dome models pool member rm <pool> <model>
 
 Remove a member from a pool. Aliases: `remove`, `delete`.
 
-Cap model spend, tokens, or calls with [`dome quotas`](/cli/govern/quota). Use `--subject model`, `--subject pool`, `--subject workspace`, or `--subject gateway` as needed.
+Cap model spend, tokens, or calls with [`dome quotas`](/docs/cli/govern/quota). Use `--subject model`, `--subject pool`, `--subject workspace`, or `--subject gateway` as needed.

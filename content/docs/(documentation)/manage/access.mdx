@@ -72,7 +72,7 @@ Before you begin, authenticate the Dome CLI and select a workspace context.
 
 Member and platform API key management require elevated roles. Each operation states the permission it requires.
 
-For exhaustive flags, tool parameters, and endpoint contracts, refer to the [CLI](/cli/settings/workspace#members), [MCP](/reference/mcp/workspaces#members), and [API](/api/tag/workspaces/set-workspace-membership) references.
+For exhaustive flags, tool parameters, and endpoint contracts, refer to the [CLI](/docs/cli/settings/workspace#members), [MCP](/docs/reference/mcp/workspaces#members), and [API](/docs/api/tag/workspaces/set-workspace-membership) references.
 
 | Default roles | Permission | Grants |
 |---------------|------------|--------|
@@ -103,12 +103,12 @@ dome workspaces members remove --user user@example.com --revoke-all-keys
 | `--revoke-keys` | remove | API key IDs to revoke during removal. |
 | `--revoke-all-keys` | remove | Revokes every API key created by the user. |
 
-<Callout icon="terminal">Reference: [`dome workspaces members`](/cli/settings/workspace#members)</Callout>
+<Callout icon="terminal">Reference: [`dome workspaces members`](/docs/cli/settings/workspace#members)</Callout>
 </Tab>
 <Tab value="MCP">
 Tools: `dome_workspaces_members_list`, `dome_workspaces_members_set`, `dome_workspaces_members_remove`
 
-<Callout icon="cpu">Reference: [`dome_workspaces_members_set`](/reference/mcp/workspaces#workspace-members-set)</Callout>
+<Callout icon="cpu">Reference: [`dome_workspaces_members_set`](/docs/reference/mcp/workspaces#workspace-members-set)</Callout>
 </Tab>
 <Tab value="API">
 RPCs: `ListWorkspaceMemberships`, `SetWorkspaceMembership`, `RemoveWorkspaceMembership`
@@ -124,7 +124,7 @@ Content-Type: application/json
 }
 ```
 
-<Callout icon="code">Reference: [`SetWorkspaceMembership`](/api/tag/workspaces/set-workspace-membership)</Callout>
+<Callout icon="code">Reference: [`SetWorkspaceMembership`](/docs/api/tag/workspaces/set-workspace-membership)</Callout>
 </Tab>
 <Tab value="Agent">
 ```text title="Assign a workspace role"
@@ -181,7 +181,7 @@ Rules:
     }
     ```
 
-    <Callout icon="code">Reference: [`ListOrgMembers`](/api/tag/dome-mgmt-v1-management/list-org-members) · [`AssignOrgRole`](/api/tag/dome-mgmt-v1-management/assign-org-role) · [`RemoveOrgMember`](/api/tag/dome-mgmt-v1-management/remove-org-member)</Callout>
+    <Callout icon="code">Reference: [`ListOrgMembers`](/docs/api/tag/dome-mgmt-v1-management/list-org-members) · [`AssignOrgRole`](/docs/api/tag/dome-mgmt-v1-management/assign-org-role) · [`RemoveOrgMember`](/docs/api/tag/dome-mgmt-v1-management/remove-org-member)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Manage organization members"
@@ -209,12 +209,12 @@ dome platform-keys create \
 dome platform-keys revoke ci-deploy
 ```
 
-<Callout icon="terminal">Reference: [`dome platform-keys`](/cli/settings/platform-keys)</Callout>
+<Callout icon="terminal">Reference: [`dome platform-keys`](/docs/cli/settings/platform-keys)</Callout>
 </Tab>
 <Tab value="MCP">
 Tools: `dome_platform_keys_list`, `dome_platform_keys_create`, `dome_platform_keys_revoke`
 
-<Callout icon="cpu">Reference: [`dome_platform_keys_create`](/reference/mcp/platform#platform-keys-create)</Callout>
+<Callout icon="cpu">Reference: [`dome_platform_keys_create`](/docs/reference/mcp/platform#platform-keys-create)</Callout>
 </Tab>
 <Tab value="API">
 RPCs: `ListAPIKeys`, `CreateAPIKey`, `RevokeAPIKey`
@@ -232,7 +232,7 @@ Content-Type: application/json
 }
 ```
 
-<Callout icon="code">Reference: [`CreateAPIKey`](/api/tag/platform-keys/create-api-key)</Callout>
+<Callout icon="code">Reference: [`CreateAPIKey`](/docs/api/tag/platform-keys/create-api-key)</Callout>
 </Tab>
 <Tab value="Agent">
 ```text title="Create a platform API key"

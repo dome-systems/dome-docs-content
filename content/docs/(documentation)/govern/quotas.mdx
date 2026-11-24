@@ -97,7 +97,7 @@ In the dashboard, open **models → Cost quotas**, choose the subject and target
     | `--per-caller` | No | model only: independent budget per agent and verified end user |
     | `--disabled` | No | Create without enforcement until enabled |
 
-    <Callout icon="terminal">Reference: [`dome quotas set`](/cli/govern/quota#set-quota)</Callout>
+    <Callout icon="terminal">Reference: [`dome quotas set`](/docs/cli/govern/quota#set-quota)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_quotas_set`
@@ -112,7 +112,7 @@ In the dashboard, open **models → Cost quotas**, choose the subject and target
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_quotas_set`](/reference/mcp/quotas#dome_quotas_set)</Callout>
+    <Callout icon="cpu">Reference: [`dome_quotas_set`](/docs/reference/mcp/quotas#dome_quotas_set)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -132,7 +132,7 @@ In the dashboard, open **models → Cost quotas**, choose the subject and target
 
     Limits are micro-USD on the API (`1000000000` is \$1,000.00). `scope` defaults to `total`. Set `per_caller` for per-caller model quotas. For `act_as`, set `subject_key` to the OIDC `sub` instead of `subject_id`.
 
-    <Callout icon="code">Reference: [`CreateLLMQuota`](/api/tag/quotas/create-llm-quota)</Callout>
+    <Callout icon="code">Reference: [`CreateLLMQuota`](/docs/api/tag/quotas/create-llm-quota)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Set a model Quota"
@@ -255,7 +255,7 @@ Create a quota that covers all LLM calls routed through a gateway's model pools 
       --name prod-monthly
     ```
 
-    <Callout icon="terminal">Reference: [`dome quotas set`](/cli/govern/quota#set-quota)</Callout>
+    <Callout icon="terminal">Reference: [`dome quotas set`](/docs/cli/govern/quota#set-quota)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_quotas_set`
@@ -270,7 +270,7 @@ Create a quota that covers all LLM calls routed through a gateway's model pools 
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_quotas_set`](/reference/mcp/quotas#dome_quotas_set)</Callout>
+    <Callout icon="cpu">Reference: [`dome_quotas_set`](/docs/reference/mcp/quotas#dome_quotas_set)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -287,7 +287,7 @@ Create a quota that covers all LLM calls routed through a gateway's model pools 
     }
     ```
 
-    <Callout icon="code">Reference: [`CreateLLMQuota`](/api/tag/quotas/create-llm-quota)</Callout>
+    <Callout icon="code">Reference: [`CreateLLMQuota`](/docs/api/tag/quotas/create-llm-quota)</Callout>
   </Tab>
   <Tab value="Agent">
     ```text title="Set a Gateway Quota"
@@ -312,7 +312,7 @@ Only the fields you pass change. Disable a quota to pause enforcement without de
       --enabled=true
     ```
 
-    <Callout icon="terminal">Reference: [`dome quotas update`](/cli/govern/quota#update-quota)</Callout>
+    <Callout icon="terminal">Reference: [`dome quotas update`](/docs/cli/govern/quota#update-quota)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_quotas_update`
@@ -325,7 +325,7 @@ Only the fields you pass change. Disable a quota to pause enforcement without de
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_quotas_update`](/reference/mcp/quotas#dome_quotas_update)</Callout>
+    <Callout icon="cpu">Reference: [`dome_quotas_update`](/docs/reference/mcp/quotas#dome_quotas_update)</Callout>
   </Tab>
   <Tab value="API">
     ```http
@@ -341,7 +341,7 @@ Only the fields you pass change. Disable a quota to pause enforcement without de
 
     Omitted optional fields keep their current values.
 
-    <Callout icon="code">Reference: [`UpdateLLMQuota`](/api/tag/quotas/update-llm-quota)</Callout>
+    <Callout icon="code">Reference: [`UpdateLLMQuota`](/docs/api/tag/quotas/update-llm-quota)</Callout>
   </Tab>
 </Tabs>
 
@@ -360,7 +360,7 @@ List quotas in the workspace, including disabled ones. Listing returns each quot
 
     Pass `--gateway` to list only the caps on one gateway. Pass `--dimension llm` or `--dimension tool` to list one traffic type.
 
-    <Callout icon="terminal">Reference: [`dome quotas list`](/cli/govern/quota#list-quotas)</Callout>
+    <Callout icon="terminal">Reference: [`dome quotas list`](/docs/cli/govern/quota#list-quotas)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_quotas_list`
@@ -378,14 +378,14 @@ List quotas in the workspace, including disabled ones. Listing returns each quot
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_quotas_list`](/reference/mcp/quotas#dome_quotas_list)</Callout>
+    <Callout icon="cpu">Reference: [`dome_quotas_list`](/docs/reference/mcp/quotas#dome_quotas_list)</Callout>
   </Tab>
   <Tab value="API">
     ```http
     GET /v1/quotas?workspace_id=<workspace-uuid>
     ```
 
-    <Callout icon="code">Reference: [`ListLLMQuotas`](/api/tag/quotas/list-llm-quotas)</Callout>
+    <Callout icon="code">Reference: [`ListLLMQuotas`](/docs/api/tag/quotas/list-llm-quotas)</Callout>
   </Tab>
 </Tabs>
 
@@ -405,7 +405,7 @@ Remove deletes the quota definition. Disable the quota instead when you need to 
     dome quotas rm <quota-id>
     ```
 
-    <Callout icon="terminal">Reference: [`dome quotas rm`](/cli/govern/quota#remove-quota)</Callout>
+    <Callout icon="terminal">Reference: [`dome quotas rm`](/docs/cli/govern/quota#remove-quota)</Callout>
   </Tab>
   <Tab value="MCP">
     Tool: `dome_quotas_remove`
@@ -416,14 +416,14 @@ Remove deletes the quota definition. Disable the quota instead when you need to 
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_quotas_remove`](/reference/mcp/quotas#dome_quotas_remove)</Callout>
+    <Callout icon="cpu">Reference: [`dome_quotas_remove`](/docs/reference/mcp/quotas#dome_quotas_remove)</Callout>
   </Tab>
   <Tab value="API">
     ```http
     DELETE /v1/quotas/<quota-uuid>?workspace_id=<workspace-uuid>
     ```
 
-    <Callout icon="code">Reference: [`DeleteLLMQuota`](/api/tag/quotas/delete-llm-quota)</Callout>
+    <Callout icon="code">Reference: [`DeleteLLMQuota`](/docs/api/tag/quotas/delete-llm-quota)</Callout>
   </Tab>
 </Tabs>
 

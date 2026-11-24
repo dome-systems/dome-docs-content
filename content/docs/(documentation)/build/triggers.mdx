@@ -37,7 +37,7 @@ Create a schedule trigger after the managed agent succeeds in a manual run. A sc
       --max-concurrent 1
     ```
 
-    <Callout icon="terminal">Reference: [`dome triggers create`](/cli/build/triggers#create-trigger)</Callout>
+    <Callout icon="terminal">Reference: [`dome triggers create`](/docs/cli/build/triggers#create-trigger)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -55,7 +55,7 @@ Create a schedule trigger after the managed agent succeeds in a manual run. A sc
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_triggers_create`](/reference/mcp/triggers)</Callout>
+    <Callout icon="cpu">Reference: [`dome_triggers_create`](/docs/reference/mcp/triggers)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -77,7 +77,7 @@ Create a schedule trigger after the managed agent succeeds in a manual run. A sc
     }
     ```
 
-    <Callout icon="code">Reference: [`CreateTrigger`](/api/tag/triggers/create-trigger)</Callout>
+    <Callout icon="code">Reference: [`CreateTrigger`](/docs/api/tag/triggers/create-trigger)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -110,7 +110,7 @@ Create a webhook trigger when another system should start a managed agent run.
       --target nightly-triage
     ```
 
-    <Callout icon="terminal">Reference: [`dome triggers create`](/cli/build/triggers#create-trigger)</Callout>
+    <Callout icon="terminal">Reference: [`dome triggers create`](/docs/cli/build/triggers#create-trigger)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -124,7 +124,7 @@ Create a webhook trigger when another system should start a managed agent run.
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_triggers_create`](/reference/mcp/triggers)</Callout>
+    <Callout icon="cpu">Reference: [`dome_triggers_create`](/docs/reference/mcp/triggers)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -140,7 +140,7 @@ Create a webhook trigger when another system should start a managed agent run.
     }
     ```
 
-    <Callout icon="code">Reference: [`CreateTrigger`](/api/tag/triggers/create-trigger)</Callout>
+    <Callout icon="code">Reference: [`CreateTrigger`](/docs/api/tag/triggers/create-trigger)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -167,7 +167,7 @@ Start a run for every enabled target. Add `--input` to override the trigger's co
       --input "Triage issues filed since the previous run."
     ```
 
-    <Callout icon="terminal">Reference: [`dome triggers fire`](/cli/build/triggers#fire-trigger)</Callout>
+    <Callout icon="terminal">Reference: [`dome triggers fire`](/docs/cli/build/triggers#fire-trigger)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -180,7 +180,7 @@ Start a run for every enabled target. Add `--input` to override the trigger's co
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_triggers_fire`](/reference/mcp/triggers)</Callout>
+    <Callout icon="cpu">Reference: [`dome_triggers_fire`](/docs/reference/mcp/triggers)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -194,7 +194,7 @@ Start a run for every enabled target. Add `--input` to override the trigger's co
     }
     ```
 
-    <Callout icon="code">Reference: [`FireTrigger`](/api/tag/triggers/fire-trigger)</Callout>
+    <Callout icon="code">Reference: [`FireTrigger`](/docs/api/tag/triggers/fire-trigger)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -214,7 +214,7 @@ Pause every target on a trigger without deleting its configuration. Use `--enabl
     dome triggers update nightly-triage --disabled
     ```
 
-    <Callout icon="terminal">Reference: [`dome triggers update`](/cli/build/triggers#update-trigger)</Callout>
+    <Callout icon="terminal">Reference: [`dome triggers update`](/docs/cli/build/triggers#update-trigger)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -227,7 +227,7 @@ Pause every target on a trigger without deleting its configuration. Use `--enabl
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_triggers_update`](/reference/mcp/triggers)</Callout>
+    <Callout icon="cpu">Reference: [`dome_triggers_update`](/docs/reference/mcp/triggers)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -241,7 +241,7 @@ Pause every target on a trigger without deleting its configuration. Use `--enabl
     }
     ```
 
-    <Callout icon="code">Reference: [`UpdateTrigger`](/api/tag/triggers/update-trigger)</Callout>
+    <Callout icon="code">Reference: [`UpdateTrigger`](/docs/api/tag/triggers/update-trigger)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -263,7 +263,7 @@ Disable one target when other targets on the same trigger should continue to run
 
     Use `dome triggers targets enable nightly-triage nightly-triage` to enable it again.
 
-    <Callout icon="terminal">Reference: [`dome triggers targets disable`](/cli/build/triggers#disable-target)</Callout>
+    <Callout icon="terminal">Reference: [`dome triggers targets disable`](/docs/cli/build/triggers#disable-target)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -277,7 +277,7 @@ Disable one target when other targets on the same trigger should continue to run
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_triggers_target_set_enabled`](/reference/mcp/triggers)</Callout>
+    <Callout icon="cpu">Reference: [`dome_triggers_target_set_enabled`](/docs/reference/mcp/triggers)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -295,7 +295,7 @@ Disable one target when other targets on the same trigger should continue to run
 
     The API replaces the target list. Include every target you want to retain.
 
-    <Callout icon="code">Reference: [`UpdateTrigger`](/api/tag/triggers/update-trigger)</Callout>
+    <Callout icon="code">Reference: [`UpdateTrigger`](/docs/api/tag/triggers/update-trigger)</Callout>
   </Tab>
 
   <Tab value="Agent">
@@ -315,7 +315,7 @@ Inspect the runs a trigger started.
     dome triggers runs nightly-triage --limit 50
     ```
 
-    <Callout icon="terminal">Reference: [`dome triggers runs`](/cli/build/triggers#list-trigger-runs)</Callout>
+    <Callout icon="terminal">Reference: [`dome triggers runs`](/docs/cli/build/triggers#list-trigger-runs)</Callout>
   </Tab>
 
   <Tab value="MCP">
@@ -328,7 +328,7 @@ Inspect the runs a trigger started.
     }
     ```
 
-    <Callout icon="cpu">Reference: [`dome_triggers_runs`](/reference/mcp/triggers)</Callout>
+    <Callout icon="cpu">Reference: [`dome_triggers_runs`](/docs/reference/mcp/triggers)</Callout>
   </Tab>
 
   <Tab value="API">
@@ -336,7 +336,7 @@ Inspect the runs a trigger started.
     GET /v1/triggers/{{TRIGGER_ID}}/runs?workspaceId={{WORKSPACE_ID}}&limit=50
     ```
 
-    <Callout icon="code">Reference: [`ListTriggerRuns`](/api/tag/triggers/list-trigger-runs)</Callout>
+    <Callout icon="code">Reference: [`ListTriggerRuns`](/docs/api/tag/triggers/list-trigger-runs)</Callout>
   </Tab>
 
   <Tab value="Agent">

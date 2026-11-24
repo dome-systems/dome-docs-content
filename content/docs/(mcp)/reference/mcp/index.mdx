@@ -103,13 +103,13 @@ Switch workspaces mid-session with `dome_context_use` — the tool list updates 
 The MCP server ships three guided prompts that run end-to-end onboarding flows from your client. Invoke them with `/dome:quickstart`, `/dome:tutorial`, or `/dome:adopt` in Claude Code (other clients expose prompts through their own UI).
 
 <Cards>
-  <Card title="Quickstart" href="/reference/mcp/prompts#quickstart">
+  <Card title="Quickstart" href="/docs/reference/mcp/prompts#quickstart">
     Role-aware first-time setup.
   </Card>
-  <Card title="Tutorial" href="/reference/mcp/prompts#tutorial">
+  <Card title="Tutorial" href="/docs/reference/mcp/prompts#tutorial">
     Guided governed-agent walkthrough.
   </Card>
-  <Card title="Adopt" href="/reference/mcp/prompts#adopt">
+  <Card title="Adopt" href="/docs/reference/mcp/prompts#adopt">
     Brownfield onboarding — route an existing codebase's LLM traffic through the gateway with no code changes.
   </Card>
 </Cards>
@@ -119,16 +119,16 @@ The MCP server ships three guided prompts that run end-to-end onboarding flows f
 ### Build
 
 <Cards>
-  <Card title="Agents" href="/reference/mcp/agents">
+  <Card title="Agents" href="/docs/reference/mcp/agents">
     Register agents, issue credentials, allow resources, and manage lifecycle.
   </Card>
-  <Card title="Managed agents" href="/reference/mcp/managed-agents">
+  <Card title="Managed agents" href="/docs/reference/mcp/managed-agents">
     Configure and run agents that Dome hosts.
   </Card>
-  <Card title="Gateways" href="/reference/mcp/gateway">
+  <Card title="Gateways" href="/docs/reference/mcp/gateway">
     Group tools and models behind gateways and grant agent access.
   </Card>
-  <Card title="Triggers" href="/reference/mcp/triggers">
+  <Card title="Triggers" href="/docs/reference/mcp/triggers">
     Start managed agents manually, on a schedule, or from signed webhooks.
   </Card>
 </Cards>
@@ -136,16 +136,16 @@ The MCP server ships three guided prompts that run end-to-end onboarding flows f
 ### Connect
 
 <Cards>
-  <Card title="Callers" href="/reference/mcp/callers">
+  <Card title="Callers" href="/docs/reference/mcp/callers">
     Inspect or erase verified end users projected from workspace audit activity.
   </Card>
-  <Card title="Tools" href="/reference/mcp/tools">
+  <Card title="Tools" href="/docs/reference/mcp/tools">
     Attach MCP servers, configure upstream authentication, and publish governed tools.
   </Card>
-  <Card title="Models" href="/reference/mcp/models">
+  <Card title="Models" href="/docs/reference/mcp/models">
     Connect LLM providers, secure upstream credentials, and publish governed model endpoints.
   </Card>
-  <Card title="Pools" href="/reference/mcp/pools">
+  <Card title="Pools" href="/docs/reference/mcp/pools">
     Route and fail over LLM traffic across model connections.
   </Card>
 </Cards>
@@ -153,13 +153,13 @@ The MCP server ships three guided prompts that run end-to-end onboarding flows f
 ### Govern
 
 <Cards>
-  <Card title="Rules" href="/reference/mcp/rules">
+  <Card title="Rules" href="/docs/reference/mcp/rules">
     Control which tools and models each agent is allowed to use.
   </Card>
-  <Card title="Guards" href="/reference/mcp/guards">
+  <Card title="Guards" href="/docs/reference/mcp/guards">
     Inspect, redact, and constrain content on tool and model connections.
   </Card>
-  <Card title="Quotas" href="/reference/mcp/quotas">
+  <Card title="Quotas" href="/docs/reference/mcp/quotas">
     Cap governed LLM spend across workspaces, agents, gateways, pools, and models.
   </Card>
 </Cards>
@@ -167,10 +167,10 @@ The MCP server ships three guided prompts that run end-to-end onboarding flows f
 ### Operate
 
 <Cards>
-  <Card title="Audit" href="/reference/mcp/audit">
+  <Card title="Audit" href="/docs/reference/mcp/audit">
     Query audit events by class, result, actor, resource, correlation, and payload.
   </Card>
-  <Card title="Webhooks" href="/reference/mcp/webhooks">
+  <Card title="Webhooks" href="/docs/reference/mcp/webhooks">
     Subscribe to Dome events and deliver signed webhooks with retries and replay.
   </Card>
 </Cards>
@@ -178,22 +178,22 @@ The MCP server ships three guided prompts that run end-to-end onboarding flows f
 ### Manage
 
 <Cards>
-  <Card title="Billing" href="/reference/mcp/billing">
+  <Card title="Billing" href="/docs/reference/mcp/billing">
     Inspect plans and invoices, change seats, and manage subscription state.
   </Card>
-  <Card title="Platform" href="/reference/mcp/platform">
+  <Card title="Platform" href="/docs/reference/mcp/platform">
     Check platform status, manage scoped API keys, read configuration, and create tenants.
   </Card>
-  <Card title="Import & Export" href="/reference/mcp/import-export">
+  <Card title="Import & Export" href="/docs/reference/mcp/import-export">
     Move reviewed configuration between compatible scopes and follow import jobs.
   </Card>
-  <Card title="Workspaces" href="/reference/mcp/workspaces">
+  <Card title="Workspaces" href="/docs/reference/mcp/workspaces">
     Create workspaces, manage members, and configure act-as enforcement and policy freshness.
   </Card>
-  <Card title="Verification" href="/reference/mcp/verification">
+  <Card title="Verification" href="/docs/reference/mcp/verification">
     Configure OIDC and HMAC providers that verify act-as identity for delegated agents.
   </Card>
-  <Card title="Context" href="/reference/mcp/context">
+  <Card title="Context" href="/docs/reference/mcp/context">
     Switch org, tenant, and workspace sessions and check authentication status.
   </Card>
 </Cards>
@@ -210,7 +210,7 @@ After selecting a context with `dome_context_use`, tools are filtered based on y
 | **developer** | agents, agent keys, rules view, audit view, gateway view |
 | **viewer** | Read-only queries and listings |
 
-A handful of tools are gated only by an active context (no role requirement) — refer to [Context](/reference/mcp/context) and the platform tools `dome_status_get`, `dome_config_get`, `dome_workspaces_list`, `dome_workspaces_get`, `dome_platform_keys_available_permissions`. `dome_workspaces_create` requires tenant-level `tenants.manage`; the tenant management tools `dome_tenants_list`, `dome_tenants_get`, and `dome_tenants_create` require an org role.
+A handful of tools are gated only by an active context (no role requirement) — refer to [Context](/docs/reference/mcp/context) and the platform tools `dome_status_get`, `dome_config_get`, `dome_workspaces_list`, `dome_workspaces_get`, `dome_platform_keys_available_permissions`. `dome_workspaces_create` requires tenant-level `tenants.manage`; the tenant management tools `dome_tenants_list`, `dome_tenants_get`, and `dome_tenants_create` require an org role.
 
 <Callout type="info">
   Context management tools are always available regardless of role. You do not need workspace context to list or switch contexts.
@@ -233,6 +233,6 @@ Tools follow the [MCP specification](https://modelcontextprotocol.io/) for tool 
 Connect a client, then start with agents or rules:
 
 - [Setup AI assistant](/setup-ai-assistant) to connect Claude Code, Cursor, Codex, or another client
-- [Agents](/reference/mcp/agents) for the first tool group most operators use
-- [Rules](/reference/mcp/rules) to draft and deploy Cedar from an assistant
+- [Agents](/docs/reference/mcp/agents) for the first tool group most operators use
+- [Rules](/docs/reference/mcp/rules) to draft and deploy Cedar from an assistant
 - [Quickstart](/quickstart) to verify governed traffic end to end

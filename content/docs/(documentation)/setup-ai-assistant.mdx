@@ -218,15 +218,15 @@ The Dome MCP server exposes tools in these groups, filtered by your workspace ro
 
 | Group | Description |
 |-------|-------------|
-| [Context](/reference/mcp/context) | Switch workspaces, manage aliases, check auth status |
-| [Agents](/reference/mcp/agents) | Register, update, suspend, revoke agents and API keys |
-| [Rules](/reference/mcp/rules) | Deploy, validate, simulate, rollback Cedar policies |
-| [Audit](/reference/mcp/audit) | Query, inspect, export audit events |
-| [Platform](/reference/mcp/platform) | Platform status, API keys, configuration |
-| [Workspaces](/reference/mcp/workspaces) | Create workspaces, manage members, configure act-as |
-| [Tools](/reference/mcp/tools) | MCP server connections, catalogs, and managed authentication |
-| [Gateways](/reference/mcp/gateway) | Group tools and models behind named endpoints, grant agent access, set cost caps |
-| [Verification](/reference/mcp/verification) | OIDC and HMAC verification providers |
+| [Context](/docs/reference/mcp/context) | Switch workspaces, manage aliases, check auth status |
+| [Agents](/docs/reference/mcp/agents) | Register, update, suspend, revoke agents and API keys |
+| [Rules](/docs/reference/mcp/rules) | Deploy, validate, simulate, rollback Cedar policies |
+| [Audit](/docs/reference/mcp/audit) | Query, inspect, export audit events |
+| [Platform](/docs/reference/mcp/platform) | Platform status, API keys, configuration |
+| [Workspaces](/docs/reference/mcp/workspaces) | Create workspaces, manage members, configure act-as |
+| [Tools](/docs/reference/mcp/tools) | MCP server connections, catalogs, and managed authentication |
+| [Gateways](/docs/reference/mcp/gateway) | Group tools and models behind named endpoints, grant agent access, set cost caps |
+| [Verification](/docs/reference/mcp/verification) | OIDC and HMAC verification providers |
 
 ### Role to tool exposure
 
@@ -238,7 +238,7 @@ The Dome MCP server exposes tools in these groups, filtered by your workspace ro
 | **developer** | agents, agent keys, rules view, audit view, gateway view |
 | **viewer** | Read-only queries and listings |
 
-See the [MCP Server Reference](/reference/mcp) for the complete tool list with parameters.
+See the [MCP Server Reference](/docs/reference/mcp) for the complete tool list with parameters.
 
 The AI assistant itself can be a registered Dome agent. Connecting Claude Code (or any MCP client) as a registered agent with its own credentials means every action it takes is governed by Cedar and recorded in audit. Refer to [Interactive app](/tutorials/examples/interactive-agent) for an end-to-end pattern.
 
@@ -344,7 +344,7 @@ Skills are multi-step workflows for agent onboarding, policy deployment, and inc
 
 ## Next steps
 
-- [MCP](/reference/mcp) reference for the full tool catalog
+- [MCP](/docs/reference/mcp) reference for the full tool catalog
 - [Govern your first agent](/tutorials/get-started/govern-your-first-agent) for a governed Studio demo
 - [Permissions](/concepts/platform/permissions) concept for the role-to-tool mapping
 - [Interactive app](/tutorials/examples/interactive-agent) to govern the assistant as a first-class Dome agent
